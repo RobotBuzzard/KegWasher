@@ -1,0 +1,26 @@
+# Arduino / ClearCore build artifacts
+build/
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+
+# PlatformIO (if used later)
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local-only SD card config (the example stays tracked)
+config/washer.config

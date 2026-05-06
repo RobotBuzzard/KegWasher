@@ -1,0 +1,37 @@
+# Keg Washer Configuration File
+# Copy this file to "washer.config" on your SD card.
+# All time values are in milliseconds (1000ms = 1 second).
+# Lines starting with # are comments and ignored.
+# Unknown keys are silently ignored, so older firmware will
+# tolerate config files written for newer versions.
+
+# === DIRTY KEG TIMERS (initial drain/rinse before main wash) ===
+# Time to drain old product from the keg (default 3 min)
+dirtyDrainTimer=180000
+
+# Time for initial water rinse to remove gross residue (default 3 min)
+dirtyRinseTimer=180000
+
+# Time for air purge after dirty rinse (default 3 min)
+dirtyPurgeTimer=180000
+
+# === MAIN CYCLE TIMERS ===
+# Water rinse duration after caustic wash (default 3 min)
+rinseTimer=180000
+
+# Air/CO2 purge duration (default 3 min)
+purgeTimer=180000
+
+# Caustic wash duration - most important for cleaning effectiveness
+# (default 3 min)
+washTimer=180000
+
+# Sanitizer cycle duration (default 3 min)
+saniTimer=180000
+
+# === KEG SIZE MODIFIER ===
+# Multiplier applied to all timers when the "large keg" switch is on.
+# 1.5 = 50% longer cycles for 1/2 BBL kegs vs 1/6 BBL kegs.
+# Adjust based on your specific equipment, water flow rates, and
+# how dirty your kegs typically are.
+largeKegMod=1.5
