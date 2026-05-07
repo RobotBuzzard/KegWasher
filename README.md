@@ -40,9 +40,10 @@ ERROR is reachable from any state; clear and acknowledge with the START button t
 
 ## Quick Start
 
-1. Clone the repo, open `src/KegWasher.ino` in Arduino IDE
-2. Install ClearCore board support and the Goldelox_Serial_4DLib library
-3. Compile and upload to the ClearCore
+1. Clone the repo, open `KegWasher.ino` in Arduino IDE (or use `arduino-cli`)
+2. Install the ClearCore board package — add `https://www.teknic.com/files/downloads/package_clearcore_index.json` to Boards Manager URLs, then install `ClearCore:sam`
+3. Install the `Goldelox-Serial-Arduino-Library` from the Library Manager
+4. Compile and upload to the ClearCore (FQBN: `ClearCore:sam:clearcore`)
 4. Copy `config/washer.config.example` → `washer.config` on an SD card, edit timers as needed, insert into ClearCore
 5. Power up. The system heats caustic on first boot — wait for "Press START to begin"
 
@@ -60,13 +61,16 @@ Hold both DRAIN and START buttons at the same time to enter diagnostic mode. Eac
 
 ```
 KegWasher/
-├── src/                 # Arduino source (8 modules + .ino)
+├── KegWasher.ino        # Arduino sketch (entry point)
+├── Keg*.h / Keg*.cpp    # 8 firmware modules
 ├── docs/                # State table, I/O table, reliability TODO
 ├── config/              # Example SD config
 ├── README.md
 ├── LICENSE              # MIT
 └── .gitignore
 ```
+
+The `.ino` and module sources live at the project root by Arduino sketch convention (the sketch folder name must match the `.ino` filename). All modules are #include'd transitively from `KegWasher.ino`.
 
 ## Status
 

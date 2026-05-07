@@ -11,10 +11,13 @@
 #include "KegHardware.h"
 #include "KegTimers.h"
 
-Goldelox_Serial_4DLib Display(&DisplaySerial);
+// Goldelox library wants a Stream*. ClearCore exposes Serial1 (Uart) on
+// COM1; ConnectorCOM1 is the underlying SerialDriver, used here only for
+// the RTS reset toggle.
+Goldelox_Serial_4DLib Display(&Serial1);
 
 void display_init() {
-  DisplaySerial.begin(9600);
+  Serial1.begin(9600);
 
   // Hardware reset via the COM1 RTS line
   ConnectorCOM1.RtsMode(SerialBase::LINE_ON);
@@ -76,7 +79,7 @@ void display_showError(const char* errorMsg) {
 void display_showMessage(const char* message) {
   display_clear();
   Display.println("MadMoon Keg Washer");
-  Display.println();
+  Display.println("");
   Display.println(message);
 }
 
@@ -85,7 +88,7 @@ void display_showProgress(const char* label, int percentage,
                           int remainingMinutes) {
   display_clear();
   Display.println("MadMoon Keg Washer");
-  Display.println();
+  Display.println("");
   Display.println(label);
 
   Display.print(currentValue);
