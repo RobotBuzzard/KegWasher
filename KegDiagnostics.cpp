@@ -31,7 +31,7 @@ void diagnostics_process() {
       && isManualDrainPressed && isCycleStartPressed) {
     diagnosticMode = true;
     display_clear();
-    Display.println("DIAGNOSTIC MODE");
+    display_println("DIAGNOSTIC MODE");
     diagnostics_runTest();
 
     // Block until both buttons are released so we don't immediately re-enter.
@@ -50,7 +50,7 @@ void diagnostics_process() {
     if (isCycleStartPressed) {
       diagnosticMode = false;
       display_clear();
-      Display.println("Exiting diagnostics");
+      display_println("Exiting diagnostics");
       delay(1000);
     }
   }
@@ -58,54 +58,54 @@ void diagnostics_process() {
 
 void diagnostics_runTest() {
   display_clear();
-  Display.println("Testing outputs...");
+  display_println("Testing outputs...");
 
-  Display.println("Testing CO2...");
+  display_println("Testing CO2...");
   hardware_setCo2(true);  delay(1000); hardware_setCo2(false);
 
-  Display.println("Testing fan...");
+  display_println("Testing fan...");
   hardware_setCabinFan(255); delay(1000); hardware_setCabinFan(0);
 
-  Display.println("Testing alarm...");
+  display_println("Testing alarm...");
   hardware_setAlarm(true); delay(1000); hardware_setAlarm(false);
 
-  Display.println("Testing drain...");
+  display_println("Testing drain...");
   hardware_setDrain(true); delay(1000); hardware_setDrain(false);
 
-  Display.println("Testing water...");
+  display_println("Testing water...");
   hardware_setWater(true); delay(1000); hardware_setWater(false);
 
-  Display.println("Testing air...");
+  display_println("Testing air...");
   hardware_setAir(true); delay(1000); hardware_setAir(false);
 
-  Display.println("Testing caustic...");
+  display_println("Testing caustic...");
   hardware_setCaustic(true); delay(1000); hardware_setCaustic(false);
 
-  Display.println("Testing pump...");
+  display_println("Testing pump...");
   hardware_setPump(true); delay(1000); hardware_setPump(false);
 
-  Display.println("Testing sanitizer...");
+  display_println("Testing sanitizer...");
   hardware_setSanitizer(true); delay(1000); hardware_setSanitizer(false);
 
   // Heater is intentionally not exercised here — running it dry or cold-test
   // is unsafe. Use the regular STARTUP heating cycle to validate the heater.
 
-  Display.println("Reading inputs...");
+  display_println("Reading inputs...");
   hardware_readInputs();
 
   display_clear();
-  Display.println("Input status:");
-  Display.print("Water: ");        Display.println(isWaterOk ? "OK" : "FAIL");
-  Display.print("Air: ");          Display.println(isAirOk ? "OK" : "FAIL");
-  Display.print("CO2: ");          Display.println(isCo2Ok ? "OK" : "FAIL");
-  Display.print("ESTOP: ");        Display.println(isEstopActive ? "ACTIVE" : "INACTIVE");
-  Display.print("Keg size: ");     Display.println(isLargeKeg ? "LARGE" : "SMALL");
+  display_println("Input status:");
+  Display.print("Water: ");        display_println(isWaterOk ? "OK" : "FAIL");
+  Display.print("Air: ");          display_println(isAirOk ? "OK" : "FAIL");
+  Display.print("CO2: ");          display_println(isCo2Ok ? "OK" : "FAIL");
+  Display.print("ESTOP: ");        display_println(isEstopActive ? "ACTIVE" : "INACTIVE");
+  Display.print("Keg size: ");     display_println(isLargeKeg ? "LARGE" : "SMALL");
   Display.print("Caustic temp: "); Display.println(hardware_getCausticTemp());
   Display.print("Caustic lvl: ");  Display.println(hardware_getCausticLevel());
   Display.print("Enclosure temp: ");Display.println(hardware_getEnclosureTemp());
 
-  Display.println("\nTest complete");
-  Display.println("Press START to exit");
+  display_println("\nTest complete");
+  display_println("Press START to exit");
 }
 
 void diagnostics_logEvent(const char* eventMsg) {

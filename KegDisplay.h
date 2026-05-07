@@ -11,6 +11,14 @@
 
 extern Goldelox_Serial_4DLib Display;
 
+// Wrappers around Display.println that work around a Goldelox quirk:
+// the first byte after a CR/LF sequence is occasionally dropped while
+// the display is advancing the cursor. These prefix a sacrificial
+// space so the visible text isn't truncated. Use these instead of
+// Display.println() for any user-facing line.
+void display_println(const char* s);
+void display_println();
+
 void display_init();
 void display_showStartup();
 void display_update();

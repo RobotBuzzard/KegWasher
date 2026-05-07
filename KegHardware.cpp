@@ -308,20 +308,44 @@ bool hardware_checkHeatingRate() {
 // ---------- Fan (with hysteresis + safety override) ----------
 void hardware_manageFan() {
   static bool fanOn = false;
+  static unsigned long lastChangeMs = 0;
+  // Hysteresis transitions are rate-limited to avoid PWM thrashing when
+  // the analog input is noisy or floating (e.g., bench testing without
+  // the enclosure-temp sensor wired). With a real sensor, enclosure
+  // temperature changes on the order of seconds, not milliseconds, so
+  // this rate limit is invisible during normal operation.
+  const unsigned long FAN_MIN_CHANGE_MS = 5000;
+
+  // If the sensor is faulted, hold the fan in its last known state
+  // rather than reacting to bogus readings. The accessor returns a
+  // safety-tripping value on fault, but holding here is more honest:
+  // we don't actually know what the temperature is.
+  if (enclosureTempSensorError) return;
+
   int t = hardware_getEnclosureTemp();
 
-  // Force fan on near the enclosure cutoff regardless of hysteresis.
+  // Force fan on near the enclosure cutoff regardless of hysteresis or
+  // rate limit — this is the safety override.
   if (t >= MAX_ENCLOSURE_TEMP - 5) {
-    hardware_setCabinFan(255);
-    fanOn = true;
+    if (!fanOn) {
+      hardware_setCabinFan(255);
+      fanOn = true;
+      lastChangeMs = millis();
+    }
     return;
   }
+
+  // Normal hysteresis, rate-limited.
+  if (millis() - lastChangeMs < FAN_MIN_CHANGE_MS) return;
+
   if (t > FAN_ON_TEMP && !fanOn) {
     hardware_setCabinFan(255);
     fanOn = true;
+    lastChangeMs = millis();
   } else if (t < FAN_OFF_TEMP && fanOn) {
     hardware_setCabinFan(0);
     fanOn = false;
+    lastChangeMs = millis();
   }
 }
 

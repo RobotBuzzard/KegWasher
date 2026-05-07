@@ -351,9 +351,50 @@ void state_finished() {
 }
 
 void state_error() {
-  display_showError(diagnostics_getErrorMessage(errorCode));
-  if (isCycleStartPressed) {
-    errorCode = ERR_NONE;
-    stateMachine_changeState(STATE_STARTUP);
+  // Render once per errorCode change — redrawing every 10ms tick
+  // flickers the 9600-baud Goldelox.
+  static byte lastShown = 255;
+  if (errorCode != lastShown) {
+    display_showError(diagnostics_getErrorMessage(errorCode));
+    lastShown = errorCode;
   }
+
+  // Manual-drain (IO2) silences the alarm without resetting. Useful
+  // for diagnosing without a screaming buzzer.
+  if (isManualDrainPressed) {
+    hardware_setAlarm(false);
+  }
+
+  // Cycle-start (IO1) is short/long press:
+  //   - short press (release before LONG_PRESS_MS): silence the alarm
+  //   - long  press (held past LONG_PRESS_MS):       full reset to STARTUP
+  static bool prevPress = false;
+  static unsigned long pressStartMs = 0;
+  static bool longFired = false;
+  const unsigned long LONG_PRESS_MS = 2000;
+
+  bool nowPressed = isCycleStartPressed;
+
+  if (nowPressed && !prevPress) {
+    // Press began
+    pressStartMs = millis();
+    longFired = false;
+  }
+
+  if (nowPressed && !longFired && (millis() - pressStartMs) >= LONG_PRESS_MS) {
+    // Held long enough — full reset
+    longFired = true;
+    errorCode = ERR_NONE;
+    lastShown = 255;
+    prevPress = nowPressed;
+    stateMachine_changeState(STATE_STARTUP);
+    return;
+  }
+
+  if (!nowPressed && prevPress && !longFired) {
+    // Released before long-press threshold — short-press = silence
+    hardware_setAlarm(false);
+  }
+
+  prevPress = nowPressed;
 }
