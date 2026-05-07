@@ -24,7 +24,7 @@
 | Name | Pin | Description | Type | Active State | Monitored | Watchdog | Notes |
 |------|-----|-------------|------|-------------|-----------|----------|-------|
 | `co2Out` | IO3 | CO2 solenoid valve | Digital Output | HIGH | Yes | 5s | Controls CO2 flow for pressurizing kegs |
-| `alarmOut` | IO5 | Audible/visual alarm | Digital Output | HIGH | No | No | Signals cycle completion or errors |
+| `alarmOut` | IO4 | Audible/visual alarm | Digital Output | HIGH | No | No | Signals cycle completion or errors |
 | `drainOut` | CCIOA0 | Drain solenoid valve | Digital Output | HIGH | Yes | 5s | Controls drain path |
 | `waterOut` | CCIOA1 | Water solenoid valve | Digital Output | HIGH | Yes | 5s | Controls water inlet |
 | `airOut` | CCIOA2 | Air solenoid valve | Digital Output | HIGH | Yes | 5s | Controls compressed air flow |
@@ -36,7 +36,7 @@
 
 | Name | Pin | Description | Type | Bit Depth | Range | Notes |
 |------|-----|-------------|------|-----------|-------|-------|
-| `cabinFanPWM` | IO4 | Cabinet cooling fan | PWM Output | 8-bit | 0-255 | Temperature-controlled cooling fan |
+| `cabinFanPWM` | IO5 | Cabinet cooling fan | PWM Output | 8-bit | 0-255 | Temperature-controlled cooling fan. IO4/IO5 both support PWM via SAME53 TCC; choice is wiring-driven. |
 
 ## Communication Ports
 

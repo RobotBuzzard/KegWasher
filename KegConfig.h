@@ -27,8 +27,11 @@
 
 // Outputs
 #define co2Out                 IO3
-#define cabinFanPWM            IO4
-#define alarmOut               IO5
+// Swapped from the original io-table to match as-wired bench hardware:
+// the cabinet fan is on IO5 and the alarm is on IO4. Both pins support
+// PWM via the SAME53's TCC channels — the choice is wiring-driven.
+#define alarmOut               IO4
+#define cabinFanPWM            IO5
 #define drainOut               CLEARCORE_PIN_CCIOA0
 #define waterOut               CLEARCORE_PIN_CCIOA1
 #define airOut                 CLEARCORE_PIN_CCIOA2
