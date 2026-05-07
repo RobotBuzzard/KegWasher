@@ -1,6 +1,58 @@
 # Keg Washer Reliability Improvements TODO
 
-This document outlines the planned reliability improvements for the Keg Washer Control System, organized by priority and module.
+This document outlines the planned reliability improvements for the Keg Washer Control System, organized by priority and module. The system is intended to run for weeks or months between resets, which informs every priority below.
+
+## Priority 0: Bring-Up, Documentation & Long-Term Stability
+
+Immediate-next-steps before the existing reliability priorities matter. Nothing else below is verified until the firmware compiles and runs on real hardware.
+
+- [ ] **Verify compile + flash on the ClearCore**
+  - Install the ClearCore Arduino board package and Teknic ClearCore library
+  - Install `Goldelox_Serial_4DLib` (Arduino Library Manager)
+  - Resolve compile errors — most likely candidates: `CCIO-8` symbols, `Connector::CCIO` mode, `attachInterrupt` on `DI8`, `analogReadResolution(12)`, `CLEARCORE_PIN_CCIOA*` macros
+  - Flash over USB; confirm the boot sequence reaches "Press START" on the display
+  - Run diagnostic mode (hold DRAIN + START) before any wet test, so we exercise every output and confirm input wiring without product in the keg
+
+- [ ] **Per-state display pages**
+  - Today, state handlers and the main loop's `display_update()` both write to the screen. The Goldelox at 9600 baud cannot keep up — flicker, dropped writes, partial frames.
+  - Refactor: each state owns a render function. State handlers call `display_setPending(...)`. The main loop's render tick (4 Hz) calls `display_render()` which actually pushes pixels.
+  - Pages to design:
+    - **STARTUP** — heating progress with current/target temp and an ETA bar
+    - **DRAINING / RINSING / WASHING / SANITIZE / PRESSURE** — state name, keg size, mm:ss remaining, OK/FAIL grid for water/air/CO2/ESTOP/temp
+    - **FINISHED** — "DONE" banner + cycle count
+    - **ERROR** — error code + message + recovery hint
+    - **DIAGNOSTIC** — live I/O readout
+  - Goldelox lacks a widget toolkit. If a layout-driven UI ever becomes desirable, migrate to a 4D Gen4 display + GenieArduino library (separate hardware change).
+
+- [ ] **Hardware watchdog (verify ClearCore exposure)**
+  - SAMD51 has a hardware WDT, but the ClearCore Arduino API may or may not expose it cleanly. Check:
+    - `ClearCore.h` for a `SystemMgr.WdtEnable()` / similar API
+    - Direct register access via `WDT->CTRLA.reg` (SAMD51 datasheet, WDT chapter)
+  - Loop budget: main loop must fit well under typical 8 s WDT timeout. Two known offenders need attention:
+    - `display_init()` has 4 s of `delay()` for the Goldelox boot — happens once in `setup()`, before WDT is armed. OK.
+    - `diagnostics_runTest()` has ~10 s of cumulative `delay(1000)`s. Either disable WDT on entry / re-enable on exit, or sprinkle `wdt_reset()` calls inside.
+  - Wire `wdt_reset()` into `loop()` after `stateMachine_process()`. Confirm reset behaviour by introducing a deliberate infinite loop in test firmware.
+
+- [ ] **Reference docs index** — `docs/clearcore-reference.md`
+  - Teknic ClearCore product page + datasheet
+  - ClearCore Arduino API documentation
+  - ClearCore Motion Library (if motion is added later)
+  - CCIO-8 protocol + connector pinout
+  - SAMD51 datasheet (for register-level access — WDT, NVM, ADC)
+  - 4D Systems Goldelox internal function reference + `Goldelox_Serial_4DLib` source
+  - 4D Systems Workshop4 IDE (if we ever generate display-side images)
+  - Inline `// See: <ref> §<section>` comments wherever the code touches hardware-specific behaviour (CCIO mode, ESTOP interrupt, ADC resolution, PWM frequency).
+
+- [ ] **Long-term stability hardening** (weeks / months between resets)
+  - **`millis()` rollover audit** — every comparison must use `(now - then)` against an `unsigned long` duration; never compare two absolute timestamps with `<`. The rollover at ~49.7 days can't be tested on the bench, so the math has to be defensible by inspection.
+  - **No `String()` allocations in hot paths** — heap fragmentation over weeks will eventually fail an allocation. Current uses are setup-only or rare config-load paths; keep it that way. Hot-path logging uses `snprintf` to a stack buffer.
+  - **Display health check** — Goldelox can lose serial sync. Add a periodic ACK round-trip; on no-response, re-run `display_init()` to recover.
+  - **SD wear budget** — only `config_saveToSD()` writes today, and only on operator action. Resist adding periodic SD logging without an explicit wear budget.
+  - **Heap monitoring** — expose `diagnostics_freeMemory()` (SAMD51: derive from `&__heap_start` and `__brkval` like AVR's pattern). Log periodically; a downward trend over days = a leak.
+  - **Cycle + uptime counters** — `unsigned long` cycle count; `uint64_t` seconds-uptime accumulator so we don't roll over inside the operational window.
+  - **Sensor drift** — temperature sensors drift over time. Plan a `diagnostics_calibrateSensors()` operator routine at known reference points (ice water = 0°C, boil = 100°C). Persist offsets.
+  - **Idle self-test** — at FINISHED with no operator activity for N hours, read all sensors, verify ranges, log a heartbeat. Do *not* actuate outputs.
+  - **Power-failure recovery** (also Priority 2) — a power blip mid-WASHING should either recover or fail safely. Restarting from STARTUP would lose the keg.
 
 ## Priority 1: Hardware Interface Improvements (KegHardware.cpp)
 
