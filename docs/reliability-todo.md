@@ -58,7 +58,7 @@ Immediate-next-steps before the existing reliability priorities matter. Nothing 
 
 Hardware interfaces are the most common failure points in control systems. Improvements here provide the biggest reliability gains.
 
-- [ ] **Input debouncing**
+- [x] **Input debouncing** — *Done in merge.* All six debounced digital inputs (`airOk`, `co2Ok`, `waterOk`, `largeKeg`, `cycleStart`, `manualDrain`) go through `debounceRead()` in `KegHardware.cpp` with a 50 ms IIR. ESTOP is intentionally not debounced — fastest possible response.
   - Implement debounce function for all digital inputs
   - Apply to cycle start, manual drain, and keg size switches
   - Example implementation:
@@ -85,10 +85,7 @@ Hardware interfaces are the most common failure points in control systems. Impro
     }
     ```
 
-- [ ] **Sensor validation and filtering**
-  - Add min/max bounds checking for temperature sensors
-  - Implement moving average filter for temperature readings
-  - Add sensor failure detection
+- [x] **Sensor validation and filtering** — *Done in merge.* `readTemperatureSensors()` rejects readings near ADC rails (≤5 or ≥4090) as wiring faults, sets `causticTempSensorError` / `enclosureTempSensorError` on fault, and applies an IIR low-pass `(prev * 3 + raw) / 4` to valid readings. Faulted accessors return safety-tripping values so callers act conservatively. The level sensor holds its last valid reading silently (non-safety-critical channel).
   - Example:
     ```cpp
     int getFilteredTemperature(int sensorValue, int &lastValue) {
@@ -104,9 +101,7 @@ Hardware interfaces are the most common failure points in control systems. Impro
     }
     ```
 
-- [ ] **Output verification**
-  - Add feedback checking for critical outputs when possible
-  - Add timeouts for expected state changes
+- [ ] **Output verification** — *Hardware-gated.* No feedback inputs exist on the bench wiring; would need flow / pressure / current-sense per actuator before this is implementable. Defer until wiring grows the feedback channels.
   - Example:
     ```cpp
     bool activateOutputWithVerification(int outputPin, int feedbackPin, int timeoutMs) {
@@ -125,9 +120,7 @@ Hardware interfaces are the most common failure points in control systems. Impro
     }
     ```
 
-- [ ] **Redundant sensors**
-  - Add dual temperature sensors for critical measurements
-  - Implement voting logic for sensor readings
+- [ ] **Redundant sensors** — *Hardware-gated.* The "improved" draft simulated this with `random(-5, 5)` noise on a single reading — that wasn't redundancy, just self-deception, and the merge dropped it. Real redundancy requires a second physical sensor on each critical channel (caustic temp, level). Defer until that wiring is in place.
   - Example:
     ```cpp
     int getRedundantTemperature(int sensor1, int sensor2) {
@@ -147,9 +140,9 @@ Hardware interfaces are the most common failure points in control systems. Impro
 
 Overall system stability ensures the control system can recover from unexpected conditions.
 
-- [ ] **Watchdog timer implementation**
+- [ ] **Watchdog timer implementation** — *See Priority 0.* The example below uses AVR's `<avr/wdt.h>`; the ClearCore is SAMD51, so the actual implementation will use the SAME53 WDT block (either via the ClearCore Arduino API if it exposes one, or direct register access — verifying which is the open Priority 0 sub-task).
   - Enable hardware watchdog timer to reset system when frozen
-  - Example:
+  - Example (AVR — placeholder, **not** the right API for SAME53):
     ```cpp
     #include <avr/wdt.h>
     
@@ -215,7 +208,7 @@ Overall system stability ensures the control system can recover from unexpected 
     }
     ```
 
-- [ ] **System health monitoring**
+- [ ] **System health monitoring** — *Partial.* No CPU-load or free-heap monitoring yet. The diagnostic logEvent path is in place (Serial), but periodic `freeMemory()` checks and loop-time tracking are not wired. Open work.
   - Regular checks of all subsystems
   - CPU load monitoring
   - Memory usage tracking
@@ -247,9 +240,7 @@ Overall system stability ensures the control system can recover from unexpected 
 
 Ensuring configuration is valid prevents many operational issues.
 
-- [ ] **Configuration validation**
-  - Add min/max range checks for all configuration values
-  - Implement validation for each parameter individually
+- [x] **Configuration validation** — *Done in merge.* `KegConfig.cpp`'s `applyTimerKey()` enforces `[30 s, 30 min]` on every timer key, and `largeKegMod` is bounded to `[1.0, 3.0]`. Out-of-range values log "Config out of range: …" via `diagnostics_logEvent` and keep the existing default — no silent wrong-config behavior.
   - Example:
     ```cpp
     bool validateConfigValue(const char* key, const char* value) {
@@ -305,9 +296,7 @@ Ensuring configuration is valid prevents many operational issues.
     }
     ```
 
-- [ ] **Individual setting fallbacks**
-  - Handle invalid settings individually rather than reverting all settings
-  - Log when fallbacks are used
+- [x] **Individual setting fallbacks** — *Done in merge.* Per-key validation in `KegConfig.cpp` keeps the previously loaded (or compiled-default) value for the failing key only — rest of the config still applies. Logged via `diagnostics_logEvent`.
   - Example:
     ```cpp
     void processSetting(const char* key, const char* value) {
@@ -328,9 +317,7 @@ Ensuring configuration is valid prevents many operational issues.
 
 Ensuring the state machine never gets stuck or enters invalid states.
 
-- [ ] **State timeouts**
-  - Add maximum duration for each state
-  - Implement timeout handling for all states
+- [x] **State timeouts** — *Done in merge.* `KegStateMachine.cpp` has a `stateMaxDuration[NUM_STATES]` table (16 min STARTUP, 10 min DRAINING/RINSING/SANITIZE/PRESSURE, 20 min WASHING, 0 = no timeout for FINISHED/ERROR). `checkStateTimeout()` runs first in `stateMachine_process()` and transitions to ERROR with `ERR_STATE_TIMEOUT` if the bound is exceeded.
   - Example:
     ```cpp
     void checkStateTimeout() {
@@ -381,9 +368,7 @@ Ensuring the state machine never gets stuck or enters invalid states.
     }
     ```
 
-- [ ] **Enhanced state validation**
-  - Add preconditions for each state
-  - Verify all required resources before state transitions
+- [ ] **Enhanced state validation** — *Partial.* `canTransitionTo()` enforces the linear cycle order; `enterState(STATE_WASHING)` checks `causticTemp >= MIN_CAUSTIC_TEMP` and aborts to ERROR if not. Other state-entry preconditions (CO2 OK before PRESSURE, water OK before RINSING, etc.) are not yet enforced — open work.
   - Example:
     ```cpp
     bool canEnterState(byte targetState) {
@@ -443,9 +428,7 @@ Ensuring the state machine never gets stuck or enters invalid states.
 
 Ensuring accurate and reliable timing even with unusual conditions.
 
-- [ ] **Millis overflow handling**
-  - Handle the ~49-day overflow of millis()
-  - Use safe time difference calculations
+- [x] **Millis overflow handling** — *Done in merge.* All elapsed-time math uses the `(now - then) < duration` pattern on `unsigned long`, which is naturally safe across the ~49-day rollover as long as the measured interval is under 2^31 ms (~24 days). Every state duration here is measured in minutes, so this is comfortable. The `safeElapsedTime` example below is over-defensive for our case — kept as reference if we ever need it.
   - Example:
     ```cpp
     unsigned long safeElapsedTime(unsigned long startTime) {
@@ -516,9 +499,7 @@ Ensuring accurate and reliable timing even with unusual conditions.
 
 Enhanced diagnostics for better troubleshooting and problem prevention.
 
-- [ ] **Comprehensive logging system**
-  - Log all state changes, errors, and key events
-  - Store logs on SD card with timestamps
+- [ ] **Comprehensive logging system** — *Partial.* `diagnostics_logEvent` writes timestamped entries to USB Serial (state ID + message). SD-backed logging with rotation is not yet wired — open work, mind the SD wear budget when it lands.
   - Example:
     ```cpp
     void enhancedLogging(const char* eventType, const char* message) {
@@ -548,9 +529,7 @@ Enhanced diagnostics for better troubleshooting and problem prevention.
     }
     ```
 
-- [ ] **Self-test sequences**
-  - Enhance diagnostic test mode
-  - Add automated self-tests on startup
+- [ ] **Self-test sequences** — *Partial.* `diagnostics_runTest()` is wired (DRAIN+START hold from STARTUP/FINISHED) — exercises every output for 1 s and dumps input states. The heater is intentionally skipped (dry-run is unsafe). Automated startup self-test, idle self-test (FINISHED + N hours of inactivity), and calibration sequences are open.
   - Example:
     ```cpp
     bool runSelfTest() {
