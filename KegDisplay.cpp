@@ -44,12 +44,14 @@ void display_init() {
 
 void display_showStartup() {
   display_clear();
-  display_println("MadMoon Keg Washer\n");
+  display_println("MadMoon Keg Washer");
+  display_println();
   display_println("Reading settings");
   display_println("Checking Controls");
   display_println("Checking Temps");
-  display_println("Checking Inputs\n");
-  Display.print("Checking Outputs\n");
+  display_println("Checking Inputs");
+  display_println();
+  display_println("Checking Outputs");
   delay(2000);
 }
 
@@ -82,7 +84,12 @@ void display_showError(const char* errorMsg) {
   display_clear();
   display_println("ERROR:");
   display_println(errorMsg);
-  display_println("\nPress START to reset");
+  // Embedded "\n" inside a single println re-triggers the Goldelox first-
+  // char drop on whatever follows the newline, defeating the wrapper's
+  // sacrificial space. Split the blank line + the prompt into their own
+  // calls so each is independently protected.
+  display_println();
+  display_println("Press START to reset");
 }
 
 void display_showMessage(const char* message) {
