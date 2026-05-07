@@ -44,7 +44,7 @@ void display_init() {
 
 void display_showStartup() {
   display_clear();
-  display_println("MadMoon Keg Washer");
+  display_println("Robot Keg Washer");
   display_println();
   display_println("Reading settings");
   display_println("Checking Controls");
@@ -58,7 +58,7 @@ void display_showStartup() {
 void display_update() {
   display_clear();
 
-  display_println("MadMoon Keg Washer");
+  display_println("Robot Keg Washer");
   Display.print("Mode: ");
   display_println(stateNames[currentState]);
 
@@ -97,7 +97,7 @@ void display_showError(const char* errorMsg) {
 
 void display_showMessage(const char* message) {
   display_clear();
-  display_println("MadMoon Keg Washer");
+  display_println("Robot Keg Washer");
   display_println("");
   display_println(message);
 }
@@ -106,7 +106,7 @@ void display_showProgress(const char* label, int percentage,
                           int currentValue, int targetValue,
                           int remainingMinutes) {
   display_clear();
-  display_println("MadMoon Keg Washer");
+  display_println("Robot Keg Washer");
   display_println("");
   display_println(label);
 
