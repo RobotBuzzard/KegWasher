@@ -6,12 +6,12 @@ This document outlines the planned reliability improvements for the Keg Washer C
 
 Immediate-next-steps before the existing reliability priorities matter. Nothing else below is verified until the firmware compiles and runs on real hardware.
 
-- [ ] **Verify compile + flash on the ClearCore**
-  - Install the ClearCore Arduino board package and Teknic ClearCore library
-  - Install `Goldelox_Serial_4DLib` (Arduino Library Manager)
-  - Resolve compile errors — most likely candidates: `CCIO-8` symbols, `Connector::CCIO` mode, `attachInterrupt` on `DI8`, `analogReadResolution(12)`, `CLEARCORE_PIN_CCIOA*` macros
-  - Flash over USB; confirm the boot sequence reaches "Press START" on the display
-  - Run diagnostic mode (hold DRAIN + START) before any wet test, so we exercise every output and confirm input wiring without product in the keg
+- [x] **Toolchain compile + flash verified** — see [`RobotBuzzard/teknic-clearcore-cli`](https://github.com/RobotBuzzard/teknic-clearcore-cli) for the canonical, project-agnostic procedure (arduino-cli + Teknic platform + bossac, plus the ModemManager/dialout/udev gotchas). The `examples/BlinkLED` smoke test compiles to ~26% flash and uploads cleanly via the published commands; verified end-to-end on this bench with the LED blinking.
+
+  - [x] `KegWasher.ino` compiles for `ClearCore:sam:clearcore` (33% flash, ~10 KB globals).
+  - [x] `tests/DisplayTest/DisplayTest.ino` compiles + flashes + draws to the Goldelox display.
+  - [ ] **Flash the full `KegWasher.ino` and confirm the boot sequence reaches "Press START" on the display.** Display physical-mounting orientation needs correcting first (software is correct in PORTRAIT mode).
+  - [ ] Run **diagnostic mode** (hold DRAIN + START) before any wet test — exercises every output and reports input states without product in the keg.
 
 - [ ] **Per-state display pages**
   - Today, state handlers and the main loop's `display_update()` both write to the screen. The Goldelox at 9600 baud cannot keep up — flicker, dropped writes, partial frames.
