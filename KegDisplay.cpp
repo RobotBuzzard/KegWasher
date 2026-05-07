@@ -88,8 +88,11 @@ void display_showError(const char* errorMsg) {
   // char drop on whatever follows the newline, defeating the wrapper's
   // sacrificial space. Split the blank line + the prompt into their own
   // calls so each is independently protected.
+  // Default Goldelox text size in portrait fits ~17 chars/line. Split
+  // the prompt so it doesn't get truncated, and document both buttons.
   display_println();
-  display_println("Press START to reset");
+  display_println("DRAIN: silence");
+  display_println("Hold START: reset");
 }
 
 void display_showMessage(const char* message) {
