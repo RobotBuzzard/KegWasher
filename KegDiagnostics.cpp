@@ -13,6 +13,7 @@
 #include "KegHardware.h"
 #include "KegDisplay.h"
 #include "KegStateMachine.h"
+#include "KegWatchdog.h"
 
 bool diagnosticMode = false;
 byte errorCode = ERR_NONE;
@@ -32,15 +33,23 @@ void diagnostics_process() {
     diagnosticMode = true;
     display_clear();
     display_println("DIAGNOSTIC MODE");
+
+    // diagnostics_runTest() does ~10 s of delay()-driven output
+    // exercises, plus the button-release wait below can hold for
+    // as long as the operator does. Both exceed the 8 s WDT timeout,
+    // so disable the watchdog around them and re-arm on exit.
+    bool wdtWasEnabled = watchdog_isEnabled();
+    if (wdtWasEnabled) watchdog_disable();
+
     diagnostics_runTest();
 
     // Block until both buttons are released so we don't immediately re-enter.
-    // This blocks the main loop for as long as the operator holds the
-    // buttons; tolerable in this mode since no cycle is in progress.
     while (isManualDrainPressed || isCycleStartPressed) {
       delay(50);
       hardware_readInputs();
     }
+
+    if (wdtWasEnabled) watchdog_enable();
   }
 
   if (diagnosticMode) {
