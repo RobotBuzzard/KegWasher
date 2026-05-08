@@ -10,8 +10,17 @@ Immediate-next-steps before the existing reliability priorities matter. Nothing 
 
   - [x] `KegWasher.ino` compiles for `ClearCore:sam:clearcore` (33% flash, ~10 KB globals).
   - [x] `tests/DisplayTest/DisplayTest.ino` compiles + flashes + draws to the Goldelox display.
-  - [ ] **Flash the full `KegWasher.ino` and confirm the boot sequence reaches "Press START" on the display.** Display physical-mounting orientation needs correcting first (software is correct in PORTRAIT mode).
-  - [ ] Run **diagnostic mode** (hold DRAIN + START) before any wet test — exercises every output and reports input states without product in the keg.
+  - [ ] **Flash the full `KegWasher.ino` and confirm the boot sequence reaches "Press START" on the display.** Currently blocked: with no sensors wired, `hardware_allSystemsGo()` fails on `ERR_AIR_PRESSURE` immediately, so the firmware lands in ERROR before ever showing "Press START". Resolved by the bench-mode item below, OR by jumpering the sensor inputs to active.
+  - [ ] Run **diagnostic mode** (hold DRAIN + START) before any wet test — exercises every output and reports input states without product in the keg. Diagnostic-mode entry is gated to `STATE_STARTUP` / `STATE_FINISHED`, so this also benefits from bench mode.
+
+- [ ] **Bench-mode override** *(gated by a compile-time `#define`)*
+  - Without sensors wired, the firmware can't progress past `STATE_STARTUP` → `STATE_ERROR` (`hardware_allSystemsGo()` fails on the first absent input). This blocks every downstream bench validation: per-state display, diagnostic mode, state timeouts end-to-end, output-relay smoke testing.
+  - **Mechanism**: a `#define BENCH_MODE` in `KegConfig.h` (commented out by default, enabled on dev builds) that:
+    - Makes `hardware_allSystemsGo()` return `true` unconditionally (skips air/CO2/water/sensor-fault gates).
+    - Leaves heater interlocks untouched — those are hardware-safety (caustic level, overtemp), not operating-policy.
+    - Logs a loud `BENCH_MODE: systems-go bypassed` line on every boot so it can never silently ship in a release.
+    - Optionally: a brief on-display banner during STARTUP so the operator sees "BENCH MODE" if a bench-build ever ends up in the field.
+  - **Why this isn't a hack**: it's a development-build feature flag, gated at compile time. The shipped firmware has the flag undefined → identical behavior to today.
 
 - [ ] **Per-state display pages**
   - Today, state handlers and the main loop's `display_update()` both write to the screen. The Goldelox at 9600 baud cannot keep up — flicker, dropped writes, partial frames.
