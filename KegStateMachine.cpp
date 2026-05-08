@@ -140,12 +140,14 @@ static bool enterState(byte s) {
       hardware_setDrain(true);
       return true;
     case STATE_WASHING:
+#ifndef BENCH_MODE
       if (hardware_getCausticTemp() < MIN_CAUSTIC_TEMP) {
         errorCode = ERR_CAUSTIC_TEMP;
         display_showError("Caustic temp too low");
         stateMachine_changeState(STATE_ERROR);
         return false;
       }
+#endif
       hardware_setCaustic(true);
       hardware_setPump(true);
       return true;
@@ -217,7 +219,15 @@ void state_startup() {
       display_showMessage("Initializing...");
       diagnostics_logEvent("Startup: init");
       errorCode = ERR_NONE;
+#ifdef BENCH_MODE
+      // Skip heating in bench mode: with no real caustic sensor wired,
+      // heater interlocks would fail us into ERROR. The cycle still
+      // advances normally from IO_CHECK → READY → DRAINING.
+      startupSubState = STARTUP_IO_CHECK;
+      diagnostics_logEvent("Startup: BENCH_MODE — skipping heating");
+#else
       startupSubState = STARTUP_HEATING;
+#endif
       break;
 
     case STARTUP_HEATING:
@@ -251,14 +261,31 @@ void state_startup() {
       }
       break;
 
-    case STARTUP_READY:
-      display_showMessage("Press START to begin");
+    case STARTUP_READY: {
+      // Render the screen once on entry. Without this the redraw fires
+      // every 10 ms loop tick and the 9600-baud Goldelox can't keep up,
+      // catching the screen mid-write produces partial-line frames.
+      static bool drawn = false;
+      if (!drawn) {
+        display_clear();
+        display_println("Robot Keg Washer");
+        display_println();
+#ifdef BENCH_MODE
+        display_println("** BENCH MODE **");
+        display_println();
+#endif
+        display_println("Press START");
+        display_println("to begin");
+        drawn = true;
+      }
       if (isCycleStartPressed) {
         diagnostics_logEvent("Cycle start");
+        drawn = false;     // reset for next entry
         startupSubState = STARTUP_INIT;
         stateMachine_changeState(STATE_DRAINING);
       }
       break;
+    }
   }
 }
 
@@ -309,14 +336,17 @@ void state_rinsing() {
 }
 
 void state_washing() {
+#ifndef BENCH_MODE
   // Temp check first: a low reading on the final tick should still abort
-  // rather than letting the timer advance us into SANITIZE.
+  // rather than letting the timer advance us into SANITIZE. Skipped in
+  // bench mode since the caustic-temp sensor isn't wired.
   if (hardware_getCausticTemp() < MIN_CAUSTIC_TEMP) {
     errorCode = ERR_CAUSTIC_TEMP;
     display_showError("Low caustic temp");
     stateMachine_changeState(STATE_ERROR);
     return;
   }
+#endif
 
   unsigned long washTime = isLargeKeg
                          ? timers_adjustForKegSize(washTimer)

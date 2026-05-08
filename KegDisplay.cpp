@@ -46,6 +46,10 @@ void display_showStartup() {
   display_clear();
   display_println("Robot Keg Washer");
   display_println();
+#ifdef BENCH_MODE
+  display_println("** BENCH MODE **");
+  display_println();
+#endif
   display_println("Reading settings");
   display_println("Checking Controls");
   display_println("Checking Temps");

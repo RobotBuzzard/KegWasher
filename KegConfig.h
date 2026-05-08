@@ -12,6 +12,36 @@
 #include <SPI.h>
 #include <SD.h>
 
+// ======================================================================
+// BENCH_MODE — DEVELOPMENT-ONLY FLAG. **NEVER SHIP DEFINED.**
+// ======================================================================
+// When defined, the firmware bypasses the sensor-driven gates that
+// otherwise refuse to run a cycle without real plumbing connected.
+// The state machine actually progresses through DRAINING → RINSING →
+// WASHING → SANITIZE → PRESSURE → FINISHED, with output relays
+// toggling visibly.
+//
+// SPECIFICALLY BYPASSED:
+//   - hardware_allSystemsGo() returns true unconditionally
+//   - STARTUP_HEATING substate is skipped (INIT → IO_CHECK direct)
+//   - enterState(WASHING) skips the precondition caustic-temp check
+//   - state_washing skips the per-tick caustic-temp check
+//
+// NOT BYPASSED (these are hardware-safety, not operating-policy):
+//   - hardware_setCausticHeater() interlocks (level, overtemp) — but
+//     unreachable here because heating is skipped entirely in bench mode
+//   - state timeouts (still fire if a stage runs too long)
+//   - ESTOP (still works — both ISR and main-loop paths)
+//   - Watchdog (still fires on hangs)
+//
+// Every BENCH_MODE boot logs a loud banner to USB Serial AND shows a
+// "BENCH MODE" notice on the boot splash. Grep the .ino for
+// "BENCH_MODE" before any release to confirm it's commented out.
+//
+// Uncomment for dev builds; leave commented for production:
+#define BENCH_MODE
+// ======================================================================
+
 // ---------- Pin map (mirrors docs/io-table.md) ----------
 // Inputs
 #define airOk                  DI6

@@ -31,6 +31,15 @@ void setup() {
   // Diagnostics first so any later init failure can be logged.
   Serial.begin(DIAG_SERIAL_BAUD);
 
+#ifdef BENCH_MODE
+  // Loud, unmissable warning on the wire so a bench-mode build can
+  // never silently end up running a real cleaner. See KegConfig.h.
+  Serial.println();
+  Serial.println(F("=============================================="));
+  Serial.println(F("**  BENCH_MODE ACTIVE — DO NOT SHIP THIS  **"));
+  Serial.println(F("=============================================="));
+#endif
+
   // Display before config, hardware, etc. — failures in those modules
   // call display_showError() and need somewhere to render. Goldelox boot
   // sequence is the longest single step in setup (~4 s).
