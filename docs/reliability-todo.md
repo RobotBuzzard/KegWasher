@@ -24,14 +24,7 @@ Immediate-next-steps before the existing reliability priorities matter. Nothing 
     - **DIAGNOSTIC** — live I/O readout
   - Goldelox lacks a widget toolkit. If a layout-driven UI ever becomes desirable, migrate to a 4D Gen4 display + GenieArduino library (separate hardware change).
 
-- [ ] **Hardware watchdog (verify ClearCore exposure)**
-  - SAMD51 has a hardware WDT, but the ClearCore Arduino API may or may not expose it cleanly. Check:
-    - `ClearCore.h` for a `SystemMgr.WdtEnable()` / similar API
-    - Direct register access via `WDT->CTRLA.reg` (SAMD51 datasheet, WDT chapter)
-  - Loop budget: main loop must fit well under typical 8 s WDT timeout. Two known offenders need attention:
-    - `display_init()` has 4 s of `delay()` for the Goldelox boot — happens once in `setup()`, before WDT is armed. OK.
-    - `diagnostics_runTest()` has ~10 s of cumulative `delay(1000)`s. Either disable WDT on entry / re-enable on exit, or sprinkle `wdt_reset()` calls inside.
-  - Wire `wdt_reset()` into `loop()` after `stateMachine_process()`. Confirm reset behaviour by introducing a deliberate infinite loop in test firmware.
+- [x] **Hardware watchdog** — *Done.* Teknic's ClearCore API has no WDT abstraction (verified — `SysManager` exposes only `ConnectorByIndex` and `ResetBoard`), so the bench investigation produced a published, bench-validated library: **[`RobotBuzzard/ClearCoreWatchdog`](https://github.com/RobotBuzzard/ClearCoreWatchdog)**. Direct CMSIS register access to the SAMD51/SAME53 WDT block. KegWasher now uses it as a third-party library (no in-tree copy). 8-second default timeout, kicked at the end of `loop()`, bracketed `disable`/`enable` around `diagnostics_runTest`'s ~10s of blocking work. Hang-test verified: `057→058→059→060` device-number bumps in 60s confirms automatic reset within timeout.
 
 - [ ] **Reference docs index** — `docs/clearcore-reference.md`
   - Teknic ClearCore product page + datasheet

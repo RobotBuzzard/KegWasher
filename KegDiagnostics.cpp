@@ -13,7 +13,7 @@
 #include "KegHardware.h"
 #include "KegDisplay.h"
 #include "KegStateMachine.h"
-#include "KegWatchdog.h"
+#include <ClearCoreWatchdog.h>    // RobotBuzzard/ClearCoreWatchdog
 
 bool diagnosticMode = false;
 byte errorCode = ERR_NONE;
@@ -38,8 +38,8 @@ void diagnostics_process() {
     // exercises, plus the button-release wait below can hold for
     // as long as the operator does. Both exceed the 8 s WDT timeout,
     // so disable the watchdog around them and re-arm on exit.
-    bool wdtWasEnabled = watchdog_isEnabled();
-    if (wdtWasEnabled) watchdog_disable();
+    bool wdtWasEnabled = Watchdog.isEnabled();
+    if (wdtWasEnabled) Watchdog.disable();
 
     diagnostics_runTest();
 
@@ -49,7 +49,7 @@ void diagnostics_process() {
       hardware_readInputs();
     }
 
-    if (wdtWasEnabled) watchdog_enable();
+    if (wdtWasEnabled) Watchdog.enable();
   }
 
   if (diagnosticMode) {

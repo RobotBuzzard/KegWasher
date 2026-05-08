@@ -11,7 +11,7 @@
 #include "KegTimers.h"
 #include "KegDiagnostics.h"
 #include "KegUtils.h"
-#include "KegWatchdog.h"
+#include <ClearCoreWatchdog.h>     // RobotBuzzard/ClearCoreWatchdog
 
 // ----- Serial logging -----
 // USB Serial is only used for diagnostics_logEvent output. The CCIO
@@ -57,7 +57,7 @@ void setup() {
   // (software reset). Multiple bits can be set if causes pile up.
   {
     char buf[40];
-    snprintf(buf, sizeof(buf), "Reset cause=0x%02X", watchdog_lastResetCause());
+    snprintf(buf, sizeof(buf), "Reset cause=0x%02X", Watchdog.lastResetCause());
     diagnostics_logEvent(buf);
   }
 
@@ -66,7 +66,7 @@ void setup() {
   // here on, every loop iteration must kick within 8 seconds or the
   // chip resets. diagnostics_runTest() disables the WDT around its
   // ~10 s of output exercises and re-enables it on exit.
-  watchdog_enable();
+  Watchdog.enable();
   diagnostics_logEvent("Watchdog armed");
 }
 
@@ -113,7 +113,7 @@ void loop() {
   // Kick the watchdog after all per-loop work is done. If anything
   // above hangs, the WDT will fire within 8 s and the bootloader
   // brings us back through setup() cleanly.
-  watchdog_kick();
+  Watchdog.kick();
 
   // 10 ms loop pacing keeps the debounce window stable and bounds CPU.
   delay(10);
