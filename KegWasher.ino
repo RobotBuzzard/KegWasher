@@ -23,10 +23,16 @@ static const unsigned long DIAG_SERIAL_BAUD = 115200;
 
 // ----- Ethernet -----
 // DHCP lease state; populated once at boot, refreshed via Ethernet.maintain()
-// in loop(). Set both to defaults so the rest of the firmware can read them
-// safely even on a no-cable / no-DHCP build.
-IPAddress kwLocalIP;
-bool      kwEthernetReady = false;
+// in loop(). Stored as a 4-byte array (not Arduino's IPAddress class) so
+// display / status code can include this without pulling in <Ethernet.h>
+// and the whole lwIP transitive dependency.
+uint8_t  kwLocalIP[4]      = {0, 0, 0, 0};
+bool     kwEthernetReady   = false;
+
+// Live count of HTTP clients currently being served. Read by the display
+// footer to show a connection indicator. Will be incremented/decremented
+// by the HTTP server when that lands (Phase 0 #3 onward); 0 for now.
+volatile uint8_t kwHttpClients = 0;
 
 // How long to wait for the cable link to come up before giving up and
 // continuing in offline-degraded mode. Generous because the rest of setup
@@ -56,14 +62,16 @@ static void setupEthernet() {
   // doing this BEFORE Watchdog.enable() — a slow DHCP shouldn't trip an
   // 8 s watchdog.
   if (Ethernet.begin(mac)) {
-    kwLocalIP = Ethernet.localIP();
+    IPAddress ip = Ethernet.localIP();
+    kwLocalIP[0] = ip[0]; kwLocalIP[1] = ip[1];
+    kwLocalIP[2] = ip[2]; kwLocalIP[3] = ip[3];
     kwEthernetReady = true;
     char buf[64];
     snprintf(buf, sizeof(buf), "Ethernet: IP=%u.%u.%u.%u",
              kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
     diagnostics_logEvent(buf);
   } else {
-    diagnostics_logEvent("Ethernet: DHCP failed — running offline");
+    diagnostics_logEvent("Ethernet: DHCP failed - running offline");
   }
 }
 

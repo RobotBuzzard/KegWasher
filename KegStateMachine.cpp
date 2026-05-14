@@ -282,6 +282,7 @@ void state_startup() {
 #endif
         display_println("Press START");
         display_println("to begin");
+        display_footer();
         drawn = true;
       }
       if (isCycleStartPressed) {
@@ -394,6 +395,7 @@ void state_finished() {
 #endif
     display_println("Press START");
     display_println("for next keg");
+    display_footer();
     drawn = true;
   }
 

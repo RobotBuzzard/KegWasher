@@ -33,4 +33,18 @@ void display_showStatus(bool waterStatus, bool airStatus, bool co2Status,
                         bool estopStatus, int causticTemp);
 void display_clear();
 
+// Renders the network footer line (IP address + connection indicator)
+// at the current cursor position. Pulls live state from kwLocalIP /
+// kwEthernetReady / kwHttpClients (all defined in KegWasher.ino).
+// Call at the END of any persistent screen render so every page has
+// the same footer.
+void display_footer();
+
+// Network state — defined in KegWasher.ino, declared here so the
+// display footer (and anything else that wants to surface network
+// status) can read them without pulling in <Ethernet.h>.
+extern uint8_t kwLocalIP[4];
+extern bool    kwEthernetReady;
+extern volatile uint8_t kwHttpClients;
+
 #endif // KEG_DISPLAY_H

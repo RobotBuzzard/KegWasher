@@ -77,6 +77,7 @@ void display_update() {
     Display.print(hardware_getCausticLevel());
     display_println("%");
   }
+  display_footer();
 }
 
 void display_showState(byte state) {
@@ -97,6 +98,7 @@ void display_showError(const char* errorMsg) {
   display_println();
   display_println("DRAIN: silence");
   display_println("Hold START: reset");
+  display_footer();
 }
 
 void display_showMessage(const char* message) {
@@ -104,6 +106,7 @@ void display_showMessage(const char* message) {
   display_println("Robot Keg Washer");
   display_println("");
   display_println(message);
+  display_footer();
 }
 
 void display_showProgress(const char* label, int percentage,
@@ -137,6 +140,7 @@ void display_showProgress(const char* label, int percentage,
   Display.print("Level: ");
   Display.print(hardware_getCausticLevel());
   display_println("%");
+  display_footer();
 }
 
 void display_showTimer(unsigned long elapsedTime) {
@@ -180,4 +184,20 @@ void display_showStatus(bool waterStatus, bool airStatus, bool co2Status,
 
 void display_clear() {
   Display.gfx_Cls();
+}
+
+void display_footer() {
+  char buf[20];
+  if (kwEthernetReady) {
+    // '*' if any HTTP client is currently being served; space otherwise.
+    // The connection indicator will only ever flip away from space once
+    // the HTTP server in Phase 0 starts incrementing kwHttpClients.
+    char ind = (kwHttpClients > 0) ? '*' : ' ';
+    snprintf(buf, sizeof(buf), "%u.%u.%u.%u %c",
+             kwLocalIP[0], kwLocalIP[1],
+             kwLocalIP[2], kwLocalIP[3], ind);
+  } else {
+    snprintf(buf, sizeof(buf), "offline");
+  }
+  display_println(buf);
 }
