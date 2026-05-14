@@ -12,12 +12,60 @@
 #include "KegDiagnostics.h"
 #include "KegUtils.h"
 #include <ClearCoreWatchdog.h>     // RobotBuzzard/ClearCoreWatchdog
+#include <SPI.h>
+#include <Ethernet.h>
 
 // ----- Serial logging -----
 // USB Serial is only used for diagnostics_logEvent output. The CCIO
 // expansion talks over COM0 and the Goldelox display talks over COM1 —
 // neither uses USB.
 static const unsigned long DIAG_SERIAL_BAUD = 115200;
+
+// ----- Ethernet -----
+// DHCP lease state; populated once at boot, refreshed via Ethernet.maintain()
+// in loop(). Set both to defaults so the rest of the firmware can read them
+// safely even on a no-cable / no-DHCP build.
+IPAddress kwLocalIP;
+bool      kwEthernetReady = false;
+
+// How long to wait for the cable link to come up before giving up and
+// continuing in offline-degraded mode. Generous because the rest of setup
+// runs before the watchdog is armed.
+static const unsigned long ETH_LINK_WAIT_MS = 3000;
+
+static void setupEthernet() {
+  // Empty MAC array → Ethernet library uses the ClearCore's burned-in MAC,
+  // which is the right thing for production (unique per board, no risk of
+  // collision on the LAN). The example in the platform shows this idiom.
+  uint8_t mac[6] = {0};
+
+  // Wait briefly for the PHY to see link, but don't block forever — a
+  // bench/dev build may run with no cable plugged in.
+  unsigned long t0 = millis();
+  while (Ethernet.linkStatus() == LinkOFF) {
+    if (millis() - t0 >= ETH_LINK_WAIT_MS) {
+      diagnostics_logEvent("Ethernet: no link — running offline");
+      return;
+    }
+    delay(100);
+  }
+  diagnostics_logEvent("Ethernet: link up; requesting DHCP...");
+
+  // Ethernet.begin() with a single mac arg drives DHCP. Returns truthy on
+  // success. lwIP's default DHCP timeout is in the tens of seconds, hence
+  // doing this BEFORE Watchdog.enable() — a slow DHCP shouldn't trip an
+  // 8 s watchdog.
+  if (Ethernet.begin(mac)) {
+    kwLocalIP = Ethernet.localIP();
+    kwEthernetReady = true;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Ethernet: IP=%u.%u.%u.%u",
+             kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
+    diagnostics_logEvent(buf);
+  } else {
+    diagnostics_logEvent("Ethernet: DHCP failed — running offline");
+  }
+}
 
 // ----- Display refresh -----
 // State handlers do their own display calls during transient phases
@@ -62,6 +110,11 @@ void setup() {
   if (!hardware_allSystemsGo()) {
     stateMachine_changeState(STATE_ERROR);
   }
+
+  // Bring up Ethernet before the watchdog is armed — DHCP can legitimately
+  // take many seconds, well over an 8 s WDT timeout. Degrades gracefully
+  // to offline mode if no link or no DHCP server.
+  setupEthernet();
 
   diagnostics_logEvent("Boot complete");
 
@@ -123,6 +176,12 @@ void loop() {
   }
 
   diagnostics_process();
+
+  // Renew DHCP lease as needed; no-op if no lease or no link. Cheap call
+  // (just checks an internal timer in lwIP), safe to invoke every loop.
+  if (kwEthernetReady) {
+    Ethernet.maintain();
+  }
 
   // Kick the watchdog after all per-loop work is done. If anything
   // above hangs, the WDT will fire within 8 s and the bootloader
