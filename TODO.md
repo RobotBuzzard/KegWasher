@@ -6,21 +6,36 @@ Live roadmap from current bench-only build to a production-ready keg cleaner con
 
 Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed via `#define BENCH_MODE` in `KegConfig.h`.
 
-Ethernet cable just plugged in. Firmware doesn't touch the network yet — Phase 0 below is where that work starts.
+Ethernet up, DHCP working, MQTT log mirror live to Mosquitto on CheapBourbon (`192.168.1.111:1883`). Footer of every running-cycle screen shows the device IP plus a purple `M*` indicator when the broker is connected.
+
+Decided 2026-05-14: **no HTTP server on the ClearCore.** All remote status/control flows through MQTT pub/sub instead — fewer protocols, broker handles auth, LWT + retained topics give "is it alive?" and "what's it doing right now?" for free. Dashboards and command UIs live off-device on Node-RED. HTTP-server items previously listed in Phase 0 have been removed.
 
 ---
 
-## Phase 0 — Ethernet & remote access (in progress)
+## Phase 0 — Remote operability via MQTT (in progress)
 
-The cable's in. Goal: an HTTP control panel for start/silence/reset plus a JSON status endpoint, so we can monitor and drive the bench (and eventually production rigs) from any browser on the LAN.
+Goal: full status read-out + full command surface available to any MQTT subscriber on the LAN, then a Node-RED operator dashboard on top of those topics. Replaces the originally-planned on-device HTTP server.
 
-- [ ] **Init Ethernet + DHCP** — minimal setup() addition using the ClearCore-bundled `Ethernet` library. Print the assigned IP via `diagnostics_logEvent` and on the boot splash. Verify `ping` works from the dev machine.
-- [ ] **Network log mirror** — `diagnostics_logEvent()` writes to a configured TCP/UDP endpoint *in addition to* USB Serial. Side-steps the Serial-Monitor-port-holder gotcha and lets us tail logs from anywhere.
-- [ ] **`GET /` static HTML status page** — single self-contained page with current state, mm:ss remaining, sensor readings (best-effort under BENCH_MODE), last error. Meta-refresh @ 1 Hz for v1 (no JS) so even a phone browser works.
-- [ ] **`GET /api/status` JSON** — same data as the HTML page, machine-readable. `{ "state": "WASHING", "remaining_ms": 142000, ... }`.
-- [ ] **`POST /api/start` / `/api/silence` / `/api/reset`** — same effects as the physical buttons. Shared-key auth via `X-API-Key` header. `start` only valid in STARTUP_READY / FINISHED.
-- [ ] **WDT cooperation** — request handling must fit under the 8 s watchdog. Kick the WDT in the HTTP loop. Document the constraint in code comments.
-- [ ] **LAN-only by default** — listen on the link-local interface; no auth bypass; future: TLS or VPN for off-network access.
+- [x] **Init Ethernet + DHCP** — `setupEthernet()` in `KegWasher.ino`. Local IP exposed to the display footer.
+- [x] **Network log mirror via MQTT** — every `diagnostics_logEvent` line is published to `kegwasher/log`. LWT publishes `kegwasher/online=false` on disconnect; retained `kegwasher/online=true` and `kegwasher/ip` give new subscribers immediate liveness.
+- [x] **Footer indicators** — `M*` (purple) when MQTT is connected; HTTP `H*` slot reserved but unused (HTTP server is no longer planned, slot may be repurposed).
+- [ ] **MQTT status publish** — on every state transition + on a periodic heartbeat, retained publish to: `kegwasher/state` (canonical state name), `kegwasher/state/sub` (startup sub-state when applicable), `kegwasher/keg` (small/large), `kegwasher/timer/elapsed_ms`, `kegwasher/timer/remaining_ms`, `kegwasher/temp/caustic`, `kegwasher/temp/enclosure`, `kegwasher/level/caustic`, `kegwasher/sensors/{water,air,co2,estop}`, `kegwasher/error/code`, `kegwasher/error/message`. Retained so dashboards land hot.
+- [ ] **MQTT command subscribe** — subscribe to `kegwasher/cmd/start`, `/silence`, `/reset`, `/keg_size`. In `PubSubClient` callback, route each to the same code paths the physical buttons use. `start` only accepted in `STARTUP_READY` / `STATE_FINISHED`. Auth is whatever the broker enforces — no per-message X-API-Key plumbing needed.
+- [ ] **Heartbeat + free-RAM publish** — `kegwasher/heartbeat/uptime_s`, `kegwasher/heartbeat/free_ram`, `kegwasher/heartbeat/loop_max_us` at ~5 s cadence. Lightweight smoke test for "is the loop still healthy."
+- [ ] **Node-RED dashboard on CheapBourbon** — install Node-RED + `node-red-dashboard` alongside Mosquitto on `.111`. Single page: state badge, mm:ss timer, temp gauges, sensor LED grid, Start/Silence/Reset/Keg-size buttons. Wired purely to the MQTT topics above; not coupled to the ClearCore beyond the broker.
+- [ ] **Light alerting** — Node-RED flow: if `kegwasher/state` stays in `ERROR` for >5 min, ping somewhere (initially just a Node-RED notification; later email/SMS).
+
+## Phase 0.5 — SD-card configurator app
+
+Right now MQTT broker IP, credentials, topic root, and timer/threshold values are either hard-coded in firmware (`KegSecrets.h`) or hand-edited in `washer.config` on the SD card. Both are tedious and easy to typo in the field. Goal: a host-side configurator app (web or desktop) that produces a fully-validated `washer.config` written directly to a mounted SD card, with mandatory-field enforcement so an under-configured card can never produce a partially-broken cleaner.
+
+- [ ] **Pick host-side stack** — likely a small Python/Tk or a tiny single-page web app (Flask + form, mounted in Node-RED, or static + browser-native file save). Decide based on cross-platform reach (Windows brewer laptop vs. Linux dev machine).
+- [ ] **Define `washer.config` schema** — promote the current key=value file to a versioned schema. Mandatory fields: `mqtt.broker_ip`, `mqtt.broker_port`, `mqtt.user`, `mqtt.pass`, `mqtt.client_id`, `mqtt.topic_root`. Optional/overridable: every timer in `KegConfig.h` (`dirtyDrainTimer`, `rinseTimer`, …), every threshold (`MAX_CAUSTIC_TEMP`, `MIN_HEATING_RATE`, …), `keg_large_modifier`.
+- [ ] **Host-side validation** — IP format + reachability ping, port 1-65535, non-empty creds, client_id charset, topic_root no-slash-prefix, all numerics within firmware-enforced ranges. Refuse to write a card with any mandatory field empty or any value out of range.
+- [ ] **Output: full `washer.config` + a checksum line** — atomic write (tmp file + rename), include a CRC32 in the file so the firmware can detect corruption (ties into Phase 3's checksum item).
+- [ ] **Firmware-side: load broker config from SD instead of `KegSecrets.h`** — make `MQTT_BROKER_IP_*` / user / pass / client_id / topic_root all SD-driven. Drop the gitignored secrets header for production builds; keep a fallback hard-coded set for emergency boot when no card is present (logs a loud "CONFIG MISSING" banner).
+- [ ] **Pre-flight on the device** — at boot, if `washer.config` is missing or fails checksum, display "INSERT CONFIG SD" on the Goldelox and halt before arming any outputs. No silent default-to-bench mode in production.
+- [ ] **Configurator app distributed alongside the firmware** — README pointer; packaged as a standalone runnable so a brewery tech with no Python install can run it from a USB stick.
 
 ## Phase 1 — Hardware bring-up (gated on real machine existing)
 
@@ -50,7 +65,7 @@ Items that don't block first wet test but should land before a customer ever see
 - [ ] **Per-state display pages refactor** ([`reliability-todo.md` P0](docs/reliability-todo.md)) — replace the every-handler-writes-the-screen pattern with a pending-render queue. Dedicated layouts per state (heating ETA bar, mm:ss countdown grid, FINISHED banner, error code + recovery hint).
 - [ ] **Power-fail recovery** ([`reliability-todo.md` P2](docs/reliability-todo.md)) — persist `currentState`, `errorCode`, and stage elapsed time to NVM on each state transition. On boot, prompt the operator to resume or abort if the previous cycle was interrupted.
 - [ ] **Config checksum + EEPROM/NVM backup** ([`reliability-todo.md` P3](docs/reliability-todo.md)) — CRC on `washer.config`; if the SD copy is corrupt, fall back to the NVM-saved copy instead of compiled defaults.
-- [ ] **State history ring buffer** ([`reliability-todo.md` P4](docs/reliability-todo.md)) — last N state changes with millis timestamps; exposed via `/api/history` for post-incident analysis.
+- [ ] **State history ring buffer** ([`reliability-todo.md` P4](docs/reliability-todo.md)) — last N state changes with millis timestamps; published to `kegwasher/history` on demand (subscribe-triggered) for post-incident analysis. Off-device historical trends are a separate deferred item (see Phase 4).
 - [ ] **SD card cycle logging** ([`reliability-todo.md` P6](docs/reliability-todo.md)) — append-only log of completed cycles (timestamp, keg size, duration per stage, peak/min temps). Mind the SD wear budget — daily file rotation, not per-event flush.
 - [ ] **Heap + loop-time monitoring** ([`reliability-todo.md` P6](docs/reliability-todo.md)) — periodic `diagnostics_logEvent` with free RAM and longest recent loop iteration. Visible in network log + status JSON.
 - [ ] **`docs/clearcore-reference.md`** ([`reliability-todo.md` P0](docs/reliability-todo.md)) — index of permalinks to ClearCore datasheet, CCIO-8 protocol, SAME53 datasheet, Goldelox library docs; inline `// See: <ref> §<section>` comments at every hardware-specific touch point.
@@ -62,7 +77,8 @@ Cross-cutting items for the weeks/months-between-resets goal. Most can land any 
 
 - [ ] **Display health check** — periodic Goldelox ACK round-trip; on no-response, re-run `display_init()` to re-sync.
 - [ ] **Idle self-test** — FINISHED + N hours of inactivity → read all sensors, verify in-range, log heartbeat. No actuator output.
-- [ ] **Uptime + cycle counters** — `uint64_t` seconds-uptime accumulator (rolls in centuries), `unsigned long` cycle count. Display on a diagnostics page; published via `/api/status`.
+- [ ] **Uptime + cycle counters** — `uint64_t` seconds-uptime accumulator (rolls in centuries), `unsigned long` cycle count. Display on a diagnostics page; published as retained `kegwasher/uptime_s` and `kegwasher/cycle_count`.
+- [ ] **InfluxDB + Grafana for trends** (deferred — only when we want historical analysis of caustic-temp drift, cycle-count over time, heating-time over time). Node-RED writes via `node-red-contrib-influxdb` from the same flow that drives the dashboard — no Telegraf needed for a single device. Lives on CheapBourbon alongside Mosquitto + Node-RED.
 - [ ] **Sensor drift recalibration prompt** — track expected vs observed at known points (e.g. caustic temp at end of fill vs ambient); flag a recommended re-cal when drift exceeds tolerance.
 - [ ] **Output verification feedback** ([`reliability-todo.md` P1](docs/reliability-todo.md)) — *hardware-gated.* Needs flow / pressure / current-sense feedback inputs per actuator before it's implementable.
 - [ ] **Redundant temperature sensors** ([`reliability-todo.md` P1](docs/reliability-todo.md)) — *hardware-gated.* Real redundancy requires a second physical sensor per critical channel.
@@ -93,3 +109,6 @@ Cross-cutting items for the weeks/months-between-resets goal. Most can land any 
 - ✅ ESTOP polarity fixed for NC wiring (LOW = closed = not pressed → input HIGH on press; ISR now RISING).
 - ✅ Display refresh slowed to 1 Hz (was thrashing the 9600-baud Goldelox at 4 Hz).
 - ✅ README pre-production warnings — bench-only state unmissable on the project front page.
+- ✅ Ethernet + DHCP at boot; IP shown in display footer; live IP also retained-published to `kegwasher/ip`.
+- ✅ MQTT log mirror to Mosquitto at `192.168.1.111:1883` with LWT + retained `online`/`ip` topics. Every `diagnostics_logEvent` line streams to `kegwasher/log`. Tail with `mosquitto_sub -h 192.168.1.111 -u rr1 -P <pass> -t 'kegwasher/#' -v`.
+- ✅ Purple `M*` MQTT-connected indicator in display footer's bottom-right corner.
