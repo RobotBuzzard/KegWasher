@@ -189,15 +189,32 @@ void display_clear() {
 void display_footer() {
   char buf[20];
   if (kwEthernetReady) {
-    // '*' if any HTTP client is currently being served; space otherwise.
-    // The connection indicator will only ever flip away from space once
-    // the HTTP server in Phase 0 starts incrementing kwHttpClients.
-    char ind = (kwHttpClients > 0) ? '*' : ' ';
-    snprintf(buf, sizeof(buf), "%u.%u.%u.%u %c",
+    snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
              kwLocalIP[0], kwLocalIP[1],
-             kwLocalIP[2], kwLocalIP[3], ind);
+             kwLocalIP[2], kwLocalIP[3]);
   } else {
     snprintf(buf, sizeof(buf), "offline");
   }
   display_println(buf);
+
+  // Status icons in the bottom-right corner. Overlays via the text
+  // character grid with the default Goldelox font (cell height appears
+  // to be ~12 px in this build, giving ~10 visible rows on the 128x128
+  // panel — row 9 is a safe last-on-screen line). Column 14 of the
+  // 16-column-wide grid leaves the rightmost two cells for a 2-char
+  // indicator. Drawn AFTER the IP println so the text cursor advance
+  // from println doesn't disturb the overlay.
+  //
+  // VIOLET "M*" = MQTT log mirror is connected to the broker. (The
+  // named PURPLE 0x8010 is half-brightness and tends to disappear on
+  // camera against a green-tinted enclosure; VIOLET reads as purple
+  // to the eye but stays visible.) Absence means we're either offline
+  // or the broker is unreachable — in either case kwMqttReady was
+  // cleared by mqtt_loop().
+  if (kwMqttReady) {
+    Display.txt_MoveCursor(9, 14);
+    Display.txt_FGcolour(VIOLET);
+    Display.putstr((char *)"M*");
+    Display.txt_FGcolour(WHITE);
+  }
 }

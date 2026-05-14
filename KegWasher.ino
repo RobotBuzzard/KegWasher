@@ -36,6 +36,12 @@ bool     kwEthernetReady   = false;
 // by the HTTP server when that lands (Phase 0 #3 onward); 0 for now.
 volatile uint8_t kwHttpClients = 0;
 
+// MQTT broker connectivity, surfaced to the display footer so the screen
+// can show a purple "M*" indicator when the log mirror is live. Updated
+// strictly from mqtt_try_connect / mqtt_loop, both of which run only
+// from the main loop / setup — no concurrency, no volatile needed.
+bool kwMqttReady = false;
+
 // MQTT plumbing. EthernetClient wraps a TCP connection to the broker;
 // PubSubClient handles framing, keepalive, and pub/sub semantics on top.
 static EthernetClient kwEthClient;
@@ -77,6 +83,7 @@ static bool mqtt_try_connect() {
   snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
            kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
   kwMqtt.publish(kwTopicIp, buf, true);
+  kwMqttReady = true;
   return true;
 }
 
@@ -90,6 +97,9 @@ static void mqtt_loop() {
     kwMqtt.loop();
     return;
   }
+  // Lost the connection — clear the flag so the footer indicator goes
+  // away immediately, then schedule a throttled reconnect.
+  kwMqttReady = false;
   if (millis() < kwMqttNextRetryMs) return;
   kwMqttNextRetryMs = millis() + MQTT_RETRY_INTERVAL_MS;
   mqtt_try_connect();

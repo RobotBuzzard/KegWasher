@@ -46,5 +46,6 @@ void display_footer();
 extern uint8_t kwLocalIP[4];
 extern bool    kwEthernetReady;
 extern volatile uint8_t kwHttpClients;
+extern bool    kwMqttReady;
 
 #endif // KEG_DISPLAY_H
