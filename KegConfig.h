@@ -74,6 +74,10 @@
 #define CcioPort               ConnectorCOM0
 #define displayPort            ConnectorCOM1
 
+// MQTT broker / credentials / topic layout live in KegSecrets.h
+// (gitignored — see KegSecrets.h.example for the template). Topics
+// published / subscribed are all under MQTT_TOPIC_ROOT.
+
 // ---------- SD config file ----------
 #define settingsFileName       "washer.config"
 #define KEY_MAX_LENGTH         30

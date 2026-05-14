@@ -14,6 +14,8 @@
 #include <ClearCoreWatchdog.h>     // RobotBuzzard/ClearCoreWatchdog
 #include <SPI.h>
 #include <Ethernet.h>
+#include <PubSubClient.h>
+#include "KegSecrets.h"            // gitignored — see KegSecrets.h.example
 
 // ----- Serial logging -----
 // USB Serial is only used for diagnostics_logEvent output. The CCIO
@@ -33,6 +35,73 @@ bool     kwEthernetReady   = false;
 // footer to show a connection indicator. Will be incremented/decremented
 // by the HTTP server when that lands (Phase 0 #3 onward); 0 for now.
 volatile uint8_t kwHttpClients = 0;
+
+// MQTT plumbing. EthernetClient wraps a TCP connection to the broker;
+// PubSubClient handles framing, keepalive, and pub/sub semantics on top.
+static EthernetClient kwEthClient;
+static PubSubClient   kwMqtt(kwEthClient);
+
+// Pre-built topic strings — saves re-snprintf-ing every publish.
+static char kwTopicLog[48];
+static char kwTopicOnline[48];
+static char kwTopicIp[48];
+
+// Reconnect throttle so a broker outage doesn't bury the loop in
+// connect attempts (each connect() can block up to a few seconds).
+static unsigned long kwMqttNextRetryMs = 0;
+static const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+
+// Attempt one connection to the broker. Returns true on success.
+// Publishes online=true (retained) and ip (retained) on connect, and
+// registers a Last-Will-Testament so the broker auto-publishes
+// online=false when this connection dies for any reason.
+static bool mqtt_try_connect() {
+  if (!kwEthernetReady) return false;
+  if (kwMqtt.connected()) return true;
+
+  // LWT: when the broker stops hearing from us, it publishes "false"
+  // to the online topic (retained, so any new subscriber sees the
+  // last-known liveness).
+  bool ok = kwMqtt.connect(
+      MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS,
+      kwTopicOnline,  // will topic
+      0,              // will QoS
+      true,           // will retain
+      "false");       // will message
+
+  if (!ok) return false;
+
+  // Announce ourselves on connect.
+  kwMqtt.publish(kwTopicOnline, "true", true);
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
+           kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
+  kwMqtt.publish(kwTopicIp, buf, true);
+  return true;
+}
+
+// Maintenance: call from loop(). Drives the keepalive ping, lets the
+// library process incoming traffic (none yet, but plumbed for the
+// upcoming command-topic subscriptions), and retries the broker
+// connection with a throttle when down.
+static void mqtt_loop() {
+  if (!kwEthernetReady) return;
+  if (kwMqtt.connected()) {
+    kwMqtt.loop();
+    return;
+  }
+  if (millis() < kwMqttNextRetryMs) return;
+  kwMqttNextRetryMs = millis() + MQTT_RETRY_INTERVAL_MS;
+  mqtt_try_connect();
+}
+
+// Network log sender. Safe to call before MQTT comes up — it just
+// short-circuits when the client isn't connected. Non-blocking;
+// one MQTT PUBLISH per call.
+void net_log_send(const char* msg) {
+  if (!kwEthernetReady || !kwMqtt.connected()) return;
+  kwMqtt.publish(kwTopicLog, msg, false);
+}
 
 // How long to wait for the cable link to come up before giving up and
 // continuing in offline-degraded mode. Generous because the rest of setup
@@ -70,6 +139,27 @@ static void setupEthernet() {
     snprintf(buf, sizeof(buf), "Ethernet: IP=%u.%u.%u.%u",
              kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
     diagnostics_logEvent(buf);
+
+    // Bring up the MQTT log mirror. From here on, every
+    // diagnostics_logEvent call also publishes to the broker.
+    snprintf(kwTopicLog,    sizeof(kwTopicLog),    "%s/log",    MQTT_TOPIC_ROOT);
+    snprintf(kwTopicOnline, sizeof(kwTopicOnline), "%s/online", MQTT_TOPIC_ROOT);
+    snprintf(kwTopicIp,     sizeof(kwTopicIp),     "%s/ip",     MQTT_TOPIC_ROOT);
+
+    IPAddress brokerIP(MQTT_BROKER_IP_0, MQTT_BROKER_IP_1,
+                       MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);
+    kwMqtt.setServer(brokerIP, MQTT_BROKER_PORT);
+    // setBufferSize default is 256 bytes — fine for short log lines.
+
+    if (mqtt_try_connect()) {
+      snprintf(buf, sizeof(buf),
+               "MQTT: %u.%u.%u.%u:%u as %s",
+               MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2,
+               MQTT_BROKER_IP_3, (unsigned)MQTT_BROKER_PORT, MQTT_USER);
+      diagnostics_logEvent(buf);
+    } else {
+      diagnostics_logEvent("MQTT: initial connect failed — will retry in loop");
+    }
   } else {
     diagnostics_logEvent("Ethernet: DHCP failed - running offline");
   }
@@ -190,6 +280,10 @@ void loop() {
   if (kwEthernetReady) {
     Ethernet.maintain();
   }
+
+  // Drive MQTT keepalive + retry. Non-blocking when broker is up;
+  // throttled to MQTT_RETRY_INTERVAL_MS when down.
+  mqtt_loop();
 
   // Kick the watchdog after all per-loop work is done. If anything
   // above hangs, the WDT will fire within 8 s and the bootloader

@@ -24,3 +24,6 @@ Thumbs.db
 
 # Local-only SD card config (the example stays tracked)
 config/washer.config
+
+# Secrets — broker credentials, etc. Use KegSecrets.h.example as the template.
+KegSecrets.h

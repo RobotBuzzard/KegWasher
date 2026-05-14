@@ -117,12 +117,25 @@ void diagnostics_runTest() {
   display_println("Press START to exit");
 }
 
+// Defined in KegWasher.ino. Sends one UDP packet to the LAN broadcast
+// address if the network log mirror is up; no-op otherwise. We don't
+// pull <Ethernet.h> in here just to declare it — extern is enough.
+extern void net_log_send(const char* msg);
+
 void diagnostics_logEvent(const char* eventMsg) {
-  Serial.print(millis());
-  Serial.print(" [");
-  Serial.print((int)currentState);
-  Serial.print("] ");
-  Serial.println(eventMsg);
+  // Format once into a stack buffer so both sinks see identical bytes
+  // and the network packet doesn't have a partial timestamp.
+  char buf[160];
+  int n = snprintf(buf, sizeof(buf), "%lu [%u] %s\n",
+                   millis(), (unsigned)currentState, eventMsg);
+  if (n < 0) return;
+  if ((size_t)n >= sizeof(buf)) n = sizeof(buf) - 1;
+
+  Serial.write(reinterpret_cast<const uint8_t*>(buf), n);
+
+  // Mirror to UDP. Short-circuits cheaply if Ethernet isn't ready;
+  // safe to call from anywhere except an ISR.
+  net_log_send(buf);
 }
 
 const char* diagnostics_getErrorMessage(byte code) {
