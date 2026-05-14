@@ -6,14 +6,25 @@
 #include "KegDisplay.h"
 #include "KegDiagnostics.h"
 
-// Defaults (3 minutes per stage, 1.5x for large kegs)
-unsigned long dirtyDrainTimer = 180000UL;
-unsigned long dirtyRinseTimer = 180000UL;
-unsigned long dirtyPurgeTimer = 180000UL;
-unsigned long rinseTimer      = 180000UL;
-unsigned long purgeTimer      = 180000UL;
-unsigned long washTimer       = 180000UL;
-unsigned long saniTimer       = 180000UL;
+// Default cycle timer.
+//   Production: 3 min per stage (15 min full cycle).
+//   BENCH_MODE: 5 sec per stage (~30 sec full cycle), so bench demos
+//   can exercise the entire state machine in well under a minute.
+//   The validation bounds [30s, 30min] still apply to SD-loaded values
+//   — the override only affects compiled defaults.
+#ifdef BENCH_MODE
+  #define DEFAULT_STAGE_MS 5000UL
+#else
+  #define DEFAULT_STAGE_MS 180000UL
+#endif
+
+unsigned long dirtyDrainTimer = DEFAULT_STAGE_MS;
+unsigned long dirtyRinseTimer = DEFAULT_STAGE_MS;
+unsigned long dirtyPurgeTimer = DEFAULT_STAGE_MS;
+unsigned long rinseTimer      = DEFAULT_STAGE_MS;
+unsigned long purgeTimer      = DEFAULT_STAGE_MS;
+unsigned long washTimer       = DEFAULT_STAGE_MS;
+unsigned long saniTimer       = DEFAULT_STAGE_MS;
 double        largeKegMod     = 1.5;
 
 static File settingsFile;
@@ -121,12 +132,12 @@ void config_saveToSD() {
 }
 
 void config_setDefaults() {
-  dirtyDrainTimer = 180000UL;
-  dirtyRinseTimer = 180000UL;
-  dirtyPurgeTimer = 180000UL;
-  rinseTimer      = 180000UL;
-  purgeTimer      = 180000UL;
-  washTimer       = 180000UL;
-  saniTimer       = 180000UL;
+  dirtyDrainTimer = DEFAULT_STAGE_MS;
+  dirtyRinseTimer = DEFAULT_STAGE_MS;
+  dirtyPurgeTimer = DEFAULT_STAGE_MS;
+  rinseTimer      = DEFAULT_STAGE_MS;
+  purgeTimer      = DEFAULT_STAGE_MS;
+  washTimer       = DEFAULT_STAGE_MS;
+  saniTimer       = DEFAULT_STAGE_MS;
   largeKegMod     = 1.5;
 }

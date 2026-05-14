@@ -22,9 +22,14 @@ static const unsigned long DIAG_SERIAL_BAUD = 115200;
 // ----- Display refresh -----
 // State handlers do their own display calls during transient phases
 // (heating progress, air-burst messages). The standard status panel
-// (state name / timer / temps) is refreshed here at a moderate cadence
-// so the 9600-baud Goldelox link can keep up.
-static const unsigned long DISPLAY_INTERVAL_MS = 250;
+// (state name / timer / temps) is refreshed here.
+//
+// 1000 ms cadence: a full display_update() at 9600 baud takes ~300-500 ms
+// (clear + ~7 lines of text, plus Goldelox processing). At the previous
+// 250 ms interval we were queuing redraws faster than they could finish,
+// catching the screen mid-write — visible as a partial-frame "slow
+// repeating refresh" of the status panel.
+static const unsigned long DISPLAY_INTERVAL_MS = 1000;
 static unsigned long lastDisplayMs = 0;
 
 void setup() {

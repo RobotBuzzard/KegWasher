@@ -151,7 +151,9 @@ void hardware_init() {
 
   hardware_allStop();
 
-  attachInterrupt(digitalPinToInterrupt(ESTOP), hardware_estopIsr, FALLING);
+  // ESTOP wiring is NC + internal pull-up; pressing OPENS the circuit,
+  // input transitions LOW (not pressed) → HIGH (pressed). Hence RISING.
+  attachInterrupt(digitalPinToInterrupt(ESTOP), hardware_estopIsr, RISING);
 
   // Seed analog filters with one valid sample so the first cycle isn't
   // smeared by the zero-initialised previous value.
@@ -170,9 +172,13 @@ void hardware_readInputs() {
   isManualDrainPressed = debounceRead(DI_MANUAL_DRAIN);
 
   // ESTOP is intentionally not debounced — fastest possible response.
-  // The ISR catches the falling edge; this poll tracks the held/released
-  // state so the system can recover when the operator releases the button.
-  isEstopActive = (digitalRead(ESTOP) == LOW);
+  // Wiring is normally-closed (NC) with an internal pull-up:
+  //   not pressed → button closed → input pulled to GND → LOW
+  //   pressed     → button opens   → pull-up wins        → HIGH
+  // ISR catches the rising edge (LOW→HIGH = press); this poll tracks
+  // the held/released state so the system can recover when the
+  // operator twists the button to release.
+  isEstopActive = (digitalRead(ESTOP) == HIGH);
 
   readTemperatureSensors();
 

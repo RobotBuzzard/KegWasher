@@ -27,9 +27,15 @@ static byte startupSubState = STARTUP_INIT;
 // Hard upper bounds on time-in-state. Normal completion happens via
 // timer-driven transitions; these are last-resort safety nets if a
 // transition condition never triggers (sensor stuck, valve failure, etc.).
-// 0 = no timeout (operator-acknowledged states).
+// 0 = no timeout (operator-paced or self-bounded states).
+//
+// STARTUP has no state-level timeout — STARTUP_HEATING is bounded by
+// hardware_monitorHeating's MAX_HEATING_TIME (15 min), and the other
+// substates are operator-paced (READY can wait indefinitely for the
+// cycleStart press). A blanket STARTUP timeout would expire on
+// operators who set up the bench and then walk away.
 static const unsigned long stateMaxDuration[NUM_STATES] = {
-  16UL * 60 * 1000,   // STARTUP  — heater max (15 min) + buffer
+  0,                  // STARTUP  — heater bounded internally; READY is operator-paced
   10UL * 60 * 1000,   // DRAINING
   10UL * 60 * 1000,   // RINSING
   20UL * 60 * 1000,   // WASHING  — longest stage with size modifier
@@ -375,7 +381,31 @@ void state_pressure() {
 }
 
 void state_finished() {
+  // Render once on entry. Without this the screen is stuck on whatever
+  // the last PRESSURE-state frame happened to be when the cycle ended.
+  static bool drawn = false;
+  if (!drawn) {
+    display_clear();
+    display_println("Cycle complete!");
+    display_println();
+#ifdef BENCH_MODE
+    display_println("** BENCH MODE **");
+    display_println();
+#endif
+    display_println("Press START");
+    display_println("for next keg");
+    drawn = true;
+  }
+
+  // Manual-drain silences the alarm without resetting (same pattern as
+  // state_error). FINISHED's alarm announces completion; the operator
+  // can quiet it once they're aware.
+  if (isManualDrainPressed) {
+    hardware_setAlarm(false);
+  }
+
   if (isCycleStartPressed) {
+    drawn = false;
     stateMachine_changeState(STATE_STARTUP);
   }
 }
