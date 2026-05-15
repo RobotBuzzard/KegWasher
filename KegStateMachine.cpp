@@ -22,7 +22,7 @@ const char* stateNames[NUM_STATES] = {
   "ERROR"
 };
 
-static byte startupSubState = STARTUP_INIT;
+byte startupSubState = STARTUP_INIT;
 
 // Hard upper bounds on time-in-state. Normal completion happens via
 // timer-driven transitions; these are last-resort safety nets if a

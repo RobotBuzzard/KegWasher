@@ -11,10 +11,28 @@
 #include "KegHardware.h"
 #include "KegTimers.h"
 
-// Goldelox library wants a Stream*. ClearCore exposes Serial1 (Uart) on
-// COM1; ConnectorCOM1 is the underlying SerialDriver, used here only for
-// the RTS reset toggle.
-Goldelox_Serial_4DLib Display(&Serial1);
+// MCU-side baud-rate handler used by Display.setbaudWait().
+//
+// The library's default hwSetBaudRateHndl calls Serial1.end() → PortClose(),
+// which on ClearCore *switches RTS from output to input* (see
+// SerialBase::PortClose() at libClearCore/src/SerialBase.cpp:125). RTS is
+// wired to the Goldelox RESET line — when it floats, the display resets
+// and reboots at its 9600 default while the MCU has already moved to the
+// new rate. Result: silent baud mismatch and a dead display until power
+// cycle. Bench-confirmed failure mode 2026-05-14.
+//
+// ConnectorCOM1.Speed() changes the SERCOM baud rate via PortDisable
+// (peripheral-only) rather than PortClose (peripheral + RTS-as-input),
+// keeping RTS driven the whole time. The two-arg Goldelox_Serial_4DLib
+// constructor below routes setbaudWait through this callback instead of
+// the library's default.
+static void displaySetBaudRate(unsigned long newRate) {
+  Serial1.flush();
+  ConnectorCOM1.Speed(newRate);
+  delay(50);  // Goldelox sleeps ~100 ms while switching; GetAck handles the rest
+}
+
+Goldelox_Serial_4DLib Display(&Serial1, displaySetBaudRate);
 
 void display_println(const char* s) {
   Display.print(' ');
@@ -26,6 +44,9 @@ void display_println() {
 }
 
 void display_init() {
+  // Goldelox boots at 9600 default after RTS reset; bring up the link
+  // there, then negotiate up to 115200 to drop full-screen redraw time
+  // from ~400 ms (UART-bound at 9600) to ~35 ms.
   Serial1.begin(9600);
 
   // Hardware reset via the COM1 RTS line
@@ -33,6 +54,12 @@ void display_init() {
   delay(1000);
   ConnectorCOM1.RtsMode(SerialBase::LINE_OFF);
   delay(3000);
+
+  // Bump the link to 115200. Routes through displaySetBaudRate() above
+  // — the library's default handler closes Serial1 and that floats RTS,
+  // which the Goldelox interprets as RESET. See the comment block on
+  // displaySetBaudRate for the full forensics.
+  Display.setbaudWait(BAUD_115200);
 
   Display.gfx_ScreenMode(2);   // portrait
   Display.SSTimeout(0);
