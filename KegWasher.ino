@@ -113,6 +113,208 @@ void net_log_send(const char* msg) {
   kwMqtt.publish(kwTopicLog, msg, false);
 }
 
+// ---------------------------------------------------------------------
+// MQTT status publish — Phase 0 #2 of the operator/dashboard surface.
+// ---------------------------------------------------------------------
+// Every operating value the firmware knows is mirrored to a retained
+// MQTT topic under MQTT_TOPIC_ROOT. "Retained" means a Node-RED (or
+// other) subscriber that connects fresh sees the last known value of
+// every topic immediately, no polling. We only publish when a value
+// actually changes (vs. a cached copy), so steady-state traffic is just
+// the per-second timer ticks.
+//
+// Topic layout (under MQTT_TOPIC_ROOT, default "kegwasher"):
+//
+//   state                — STARTUP|DRAINING|RINSING|WASHING|SANITIZE|
+//                          PRESSURE|FINISHED|ERROR
+//   state/sub            — INIT|HEATING|IO_CHECK|READY (cleared
+//                          to "" when not in STARTUP)
+//   keg                  — SMALL|LARGE
+//   sensors/water        — OK|FAIL
+//   sensors/air          — OK|FAIL
+//   sensors/co2          — OK|FAIL
+//   sensors/estop        — INACTIVE|ACTIVE
+//   temp/caustic         — int °C
+//   temp/enclosure       — int °C
+//   level/caustic        — int %
+//   timer/elapsed_s      — seconds in current state
+//   timer/remaining_s    — seconds remaining (0 outside operating states)
+//   error/code           — int (0 == ERR_NONE)
+//   error/message        — human-readable from diagnostics_getErrorMessage
+//
+// Topic strings are built on the fly via kwTopic() into a single shared
+// buffer; PubSubClient copies its inputs immediately on publish() so
+// reuse is safe.
+
+static char kwTopicBuf[64];
+static const char* kwTopic(const char* leaf) {
+  snprintf(kwTopicBuf, sizeof(kwTopicBuf), "%s/%s", MQTT_TOPIC_ROOT, leaf);
+  return kwTopicBuf;
+}
+
+// Sentinel cache. Initial values are deliberately impossible
+// (state=255, errorCode=255, temps=-999) so the first call to
+// mqtt_publishStatus() flushes everything to the broker.
+struct MqttStatusCache {
+  byte          state         = 255;
+  byte          subState      = 255;
+  bool          isLargeKeg    = false;
+  bool          kegInit       = false;
+  byte          errorCode     = 255;
+  bool          waterOk       = false;
+  bool          airOk         = false;
+  bool          co2Ok         = false;
+  bool          estopActive   = false;
+  bool          sensorsInit   = false;
+  int           causticTemp   = -999;
+  int           enclosureTemp = -999;
+  int           causticLevel  = -999;
+  unsigned long elapsedSec    = 0xFFFFFFFFUL;
+  unsigned long remainingSec  = 0xFFFFFFFFUL;
+};
+static MqttStatusCache kwMqttCache;
+
+// Throttle the work itself; per-loop publish is unnecessary since
+// nothing on this device changes faster than a few Hz. State
+// transitions still propagate within ~250 ms of being committed.
+static unsigned long kwMqttStatusNextMs = 0;
+static const unsigned long MQTT_STATUS_INTERVAL_MS = 250;
+
+static const char* startupSubName(byte s) {
+  switch (s) {
+    case STARTUP_INIT:     return "INIT";
+    case STARTUP_HEATING:  return "HEATING";
+    case STARTUP_IO_CHECK: return "IO_CHECK";
+    case STARTUP_READY:    return "READY";
+    default:               return "?";
+  }
+}
+
+static void mqtt_publishStatus() {
+  if (!kwMqttReady) return;
+  unsigned long now = millis();
+  if (now < kwMqttStatusNextMs) return;
+  kwMqttStatusNextMs = now + MQTT_STATUS_INTERVAL_MS;
+
+  char buf[24];
+
+  // ----- State -----
+  if (currentState != kwMqttCache.state) {
+    kwMqttCache.state = currentState;
+    if (currentState < NUM_STATES) {
+      kwMqtt.publish(kwTopic("state"), stateNames[currentState], true);
+    }
+    // Force the substate publish below to re-evaluate so a STARTUP→
+    // DRAINING transition can clear the lingering substate value.
+    kwMqttCache.subState = 254;
+  }
+
+  // ----- Sub-state (only meaningful in STARTUP) -----
+  if (currentState == STATE_STARTUP) {
+    if (startupSubState != kwMqttCache.subState) {
+      kwMqttCache.subState = startupSubState;
+      kwMqtt.publish(kwTopic("state/sub"),
+                     startupSubName(startupSubState), true);
+    }
+  } else if (kwMqttCache.subState != 255) {
+    // Just left STARTUP — clear the topic so the dashboard doesn't show
+    // a stale "READY" alongside e.g. "WASHING".
+    kwMqttCache.subState = 255;
+    kwMqtt.publish(kwTopic("state/sub"), "", true);
+  }
+
+  // ----- Keg size -----
+  if (!kwMqttCache.kegInit || isLargeKeg != kwMqttCache.isLargeKeg) {
+    kwMqttCache.isLargeKeg = isLargeKeg;
+    kwMqttCache.kegInit = true;
+    kwMqtt.publish(kwTopic("keg"), isLargeKeg ? "LARGE" : "SMALL", true);
+  }
+
+  // ----- Error -----
+  if (errorCode != kwMqttCache.errorCode) {
+    kwMqttCache.errorCode = errorCode;
+    snprintf(buf, sizeof(buf), "%u", errorCode);
+    kwMqtt.publish(kwTopic("error/code"), buf, true);
+    kwMqtt.publish(kwTopic("error/message"),
+                   diagnostics_getErrorMessage(errorCode), true);
+  }
+
+  // ----- Sensors -----
+  if (!kwMqttCache.sensorsInit || isWaterOk != kwMqttCache.waterOk) {
+    kwMqttCache.waterOk = isWaterOk;
+    kwMqtt.publish(kwTopic("sensors/water"),
+                   isWaterOk ? "OK" : "FAIL", true);
+  }
+  if (!kwMqttCache.sensorsInit || isAirOk != kwMqttCache.airOk) {
+    kwMqttCache.airOk = isAirOk;
+    kwMqtt.publish(kwTopic("sensors/air"),
+                   isAirOk ? "OK" : "FAIL", true);
+  }
+  if (!kwMqttCache.sensorsInit || isCo2Ok != kwMqttCache.co2Ok) {
+    kwMqttCache.co2Ok = isCo2Ok;
+    kwMqtt.publish(kwTopic("sensors/co2"),
+                   isCo2Ok ? "OK" : "FAIL", true);
+  }
+  if (!kwMqttCache.sensorsInit || isEstopActive != kwMqttCache.estopActive) {
+    kwMqttCache.estopActive = isEstopActive;
+    kwMqtt.publish(kwTopic("sensors/estop"),
+                   isEstopActive ? "ACTIVE" : "INACTIVE", true);
+  }
+  kwMqttCache.sensorsInit = true;
+
+  // ----- Temps & level -----
+  int causticT = hardware_getCausticTemp();
+  if (causticT != kwMqttCache.causticTemp) {
+    kwMqttCache.causticTemp = causticT;
+    snprintf(buf, sizeof(buf), "%d", causticT);
+    kwMqtt.publish(kwTopic("temp/caustic"), buf, true);
+  }
+  int enclosureT = hardware_getEnclosureTemp();
+  if (enclosureT != kwMqttCache.enclosureTemp) {
+    kwMqttCache.enclosureTemp = enclosureT;
+    snprintf(buf, sizeof(buf), "%d", enclosureT);
+    kwMqtt.publish(kwTopic("temp/enclosure"), buf, true);
+  }
+  int level = hardware_getCausticLevel();
+  if (level != kwMqttCache.causticLevel) {
+    kwMqttCache.causticLevel = level;
+    snprintf(buf, sizeof(buf), "%d", level);
+    kwMqtt.publish(kwTopic("level/caustic"), buf, true);
+  }
+
+  // ----- Timers (operating states only) -----
+  unsigned long elapsedMs = timers_getStateElapsed();
+  unsigned long durationMs = 0;
+  switch (currentState) {
+    case STATE_DRAINING:
+      durationMs = isLargeKeg ? timers_adjustForKegSize(dirtyDrainTimer) : dirtyDrainTimer; break;
+    case STATE_RINSING:
+      durationMs = isLargeKeg ? timers_adjustForKegSize(rinseTimer)      : rinseTimer; break;
+    case STATE_WASHING:
+      durationMs = isLargeKeg ? timers_adjustForKegSize(washTimer)       : washTimer; break;
+    case STATE_SANITIZE:
+      durationMs = isLargeKeg ? timers_adjustForKegSize(saniTimer)       : saniTimer; break;
+    case STATE_PRESSURE:
+      durationMs = isLargeKeg ? timers_adjustForKegSize(purgeTimer)      : purgeTimer; break;
+    default:
+      durationMs = 0;
+  }
+  unsigned long elapsedSec   = elapsedMs / 1000;
+  unsigned long remainingMs  = (durationMs > elapsedMs) ? (durationMs - elapsedMs) : 0;
+  unsigned long remainingSec = remainingMs / 1000;
+
+  if (elapsedSec != kwMqttCache.elapsedSec) {
+    kwMqttCache.elapsedSec = elapsedSec;
+    snprintf(buf, sizeof(buf), "%lu", elapsedSec);
+    kwMqtt.publish(kwTopic("timer/elapsed_s"), buf, true);
+  }
+  if (remainingSec != kwMqttCache.remainingSec) {
+    kwMqttCache.remainingSec = remainingSec;
+    snprintf(buf, sizeof(buf), "%lu", remainingSec);
+    kwMqtt.publish(kwTopic("timer/remaining_s"), buf, true);
+  }
+}
+
 // How long to wait for the cable link to come up before giving up and
 // continuing in offline-degraded mode. Generous because the rest of setup
 // runs before the watchdog is armed.
@@ -294,6 +496,12 @@ void loop() {
   // Drive MQTT keepalive + retry. Non-blocking when broker is up;
   // throttled to MQTT_RETRY_INTERVAL_MS when down.
   mqtt_loop();
+
+  // Mirror state, sensors, temps, timers to retained MQTT topics.
+  // Internally throttled to MQTT_STATUS_INTERVAL_MS and only publishes
+  // values that have actually changed since last call — cheap enough
+  // to invoke every loop.
+  mqtt_publishStatus();
 
   // Kick the watchdog after all per-loop work is done. If anything
   // above hangs, the WDT will fire within 8 s and the bootloader

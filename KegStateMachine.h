@@ -9,6 +9,10 @@
 
 extern volatile byte currentState;
 extern const char* stateNames[];
+// Startup sub-state — promoted from file-static so MQTT status publish
+// (and any other observer) can surface it. Only meaningful when
+// currentState == STATE_STARTUP.
+extern byte startupSubState;
 
 void stateMachine_init();
 void stateMachine_process();
