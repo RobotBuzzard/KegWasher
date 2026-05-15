@@ -313,6 +313,41 @@ static MqttStatusCache kwMqttCache;
 static unsigned long kwMqttStatusNextMs = 0;
 static const unsigned long MQTT_STATUS_INTERVAL_MS = 250;
 
+// ----- Heartbeat -----
+// Three retained topics published every 5 s as a "is the firmware loop
+// itself healthy?" signal — separate from kegwasher/online which only
+// reflects TCP-level liveness (the broker can think we're connected
+// while the loop is wedged behind, e.g., a runaway display call).
+//
+//   heartbeat/uptime_s     monotonic seconds since boot
+//   heartbeat/free_ram     bytes between current stack frame and heap
+//                          end — useful as a memory-pressure trend
+//   heartbeat/loop_max_us  longest single loop iteration in the last
+//                          5 s window. Reset to 0 after each publish so
+//                          the next reading reflects the next window
+//                          fresh, not a peak that never decays.
+//
+// 5 s cadence picked because it gives a watching client enough margin
+// to flag "no heartbeat for >10 s = wedged" without false positives
+// from network jitter, and is 500x lower broker load than per-loop.
+static unsigned long kwHeartbeatNextMs = 0;
+static const unsigned long MQTT_HEARTBEAT_INTERVAL_MS = 5000;
+// Per-tick max-loop accumulator, sampled in loop() between work and
+// the pacing delay. 0 between publishes; the first loop after a
+// heartbeat publish writes the new max.
+static unsigned long kwLoopMaxUs = 0;
+
+// newlib's sbrk(0) returns the current heap break — the address just
+// past the end of allocated heap memory. Subtracting that from a
+// stack-frame address gives the gap between the heap top and the
+// stack bottom, which is the practical "headroom" measure on this
+// chip. Doesn't account for fragmentation inside the heap.
+extern "C" char* sbrk(int incr);
+static int freeRam() {
+  char stackTop;
+  return (int)((char*)&stackTop - (char*)sbrk(0));
+}
+
 static const char* startupSubName(byte s) {
   switch (s) {
     case STARTUP_INIT:     return "INIT";
@@ -446,6 +481,33 @@ static void mqtt_publishStatus() {
     snprintf(buf, sizeof(buf), "%lu", remainingSec);
     kwMqtt.publish(kwTopic("timer/remaining_s"), buf, true);
   }
+}
+
+// Publish loop-health heartbeat. Throttled to MQTT_HEARTBEAT_INTERVAL_MS
+// (5 s); always publishes all three fields when the gate fires (no
+// change-detection — these are the "is anything happening" signal, so
+// a value that didn't change is meaningful information too).
+static void mqtt_publishHeartbeat() {
+  if (!kwMqttReady) return;
+  unsigned long now = millis();
+  if (now < kwHeartbeatNextMs) return;
+  kwHeartbeatNextMs = now + MQTT_HEARTBEAT_INTERVAL_MS;
+
+  char buf[16];
+
+  snprintf(buf, sizeof(buf), "%lu", now / 1000);
+  kwMqtt.publish(kwTopic("heartbeat/uptime_s"), buf, true);
+
+  snprintf(buf, sizeof(buf), "%d", freeRam());
+  kwMqtt.publish(kwTopic("heartbeat/free_ram"), buf, true);
+
+  // Snapshot then reset so the next window measures fresh — otherwise
+  // a single 400 ms display redraw at boot would dominate the reading
+  // forever.
+  unsigned long maxUs = kwLoopMaxUs;
+  kwLoopMaxUs = 0;
+  snprintf(buf, sizeof(buf), "%lu", maxUs);
+  kwMqtt.publish(kwTopic("heartbeat/loop_max_us"), buf, true);
 }
 
 // How long to wait for the cable link to come up before giving up and
@@ -583,6 +645,11 @@ void setup() {
 }
 
 void loop() {
+  // Stamp the start of work so the heartbeat can report the longest
+  // iteration in the last 5 s window. Measured before the trailing
+  // pacing delay so the constant 10 ms doesn't swamp the signal.
+  unsigned long loopStartUs = micros();
+
   timers_update();
   hardware_readInputs();
 
@@ -645,6 +712,16 @@ void loop() {
   // values that have actually changed since last call — cheap enough
   // to invoke every loop.
   mqtt_publishStatus();
+
+  // Loop-health heartbeat (uptime, free RAM, longest loop). Internally
+  // throttled to MQTT_HEARTBEAT_INTERVAL_MS (5 s).
+  mqtt_publishHeartbeat();
+
+  // Update the loop-max accumulator with this iteration's work time.
+  // Done BEFORE the pacing delay so the constant 10 ms tail isn't
+  // counted — what we want to see is real work spikes.
+  unsigned long loopUs = micros() - loopStartUs;
+  if (loopUs > kwLoopMaxUs) kwLoopMaxUs = loopUs;
 
   // Kick the watchdog after all per-loop work is done. If anything
   // above hangs, the WDT will fire within 8 s and the bootloader
