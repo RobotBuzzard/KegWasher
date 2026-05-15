@@ -57,10 +57,21 @@ static char kwTopicIp[48];
 static unsigned long kwMqttNextRetryMs = 0;
 static const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 
+// Build a topic string under MQTT_TOPIC_ROOT into a shared buffer.
+// PubSubClient copies its inputs immediately on publish/subscribe so
+// reuse is safe. Defined here (not next to its other callers below)
+// so mqtt_try_connect can subscribe at connect time.
+static char kwTopicBuf[64];
+static const char* kwTopic(const char* leaf) {
+  snprintf(kwTopicBuf, sizeof(kwTopicBuf), "%s/%s", MQTT_TOPIC_ROOT, leaf);
+  return kwTopicBuf;
+}
+
 // Attempt one connection to the broker. Returns true on success.
 // Publishes online=true (retained) and ip (retained) on connect, and
 // registers a Last-Will-Testament so the broker auto-publishes
-// online=false when this connection dies for any reason.
+// online=false when this connection dies for any reason. Subscribes
+// to the cmd/+ topics so the operator/dashboard can drive the cleaner.
 static bool mqtt_try_connect() {
   if (!kwEthernetReady) return false;
   if (kwMqtt.connected()) return true;
@@ -83,6 +94,13 @@ static bool mqtt_try_connect() {
   snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
            kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
   kwMqtt.publish(kwTopicIp, buf, true);
+
+  // Subscribe to the command surface. Single-level wildcard '+' matches
+  // any leaf under cmd/ (start, silence, reset, future additions).
+  // Subscriptions don't survive a disconnect, so we re-subscribe on
+  // every successful (re)connect.
+  kwMqtt.subscribe(kwTopic("cmd/+"));
+
   kwMqttReady = true;
   return true;
 }
@@ -111,6 +129,126 @@ static void mqtt_loop() {
 void net_log_send(const char* msg) {
   if (!kwEthernetReady || !kwMqtt.connected()) return;
   kwMqtt.publish(kwTopicLog, msg, false);
+}
+
+// ---------------------------------------------------------------------
+// MQTT command subscribe — Phase 0 #5 of the operator/dashboard surface.
+// ---------------------------------------------------------------------
+// Mirrors the physical buttons over MQTT so a Node-RED dashboard (or
+// any other subscriber) can drive the cleaner from anywhere on the
+// LAN. Topics:
+//
+//   kegwasher/cmd/start    Same as the physical cycleStart (IO1) press.
+//                          STARTUP_READY  → start cycle.
+//                          FINISHED       → next keg.
+//                          ERROR          → silence alarm (the one-
+//                                           tick MQTT pulse falls
+//                                           under the 2 s long-press
+//                                           threshold, so it's read
+//                                           as a short press).
+//   kegwasher/cmd/silence  Same as the physical manualDrain (IO2)
+//                          press in ERROR / FINISHED — silences the
+//                          alarm without changing state.
+//   kegwasher/cmd/reset    Hard reset out of ERROR back to STARTUP.
+//                          Equivalent to the physical 2 s long-press
+//                          on START in ERROR.
+//   kegwasher/cmd/keg_size DEFERRED — isLargeKeg is overwritten by
+//                          hardware_readInputs() every loop, so any
+//                          MQTT-set value is immediately clobbered.
+//                          Needs a remote-override mechanism (out of
+//                          scope here).
+//
+// Hardening:
+//   - Any command is refused if ESTOP is currently active. The intent
+//     is "an e-stop button must dominate any remote start"; trying to
+//     remote-clear an e-stop with the button still held is a footgun.
+//   - Every received command is logged via diagnostics_logEvent which
+//     mirrors to kegwasher/log, giving a free audit trail.
+//   - Payload is ignored — presence of a publish on the topic is the
+//     command. (Some MQTT button-source UIs send "1" or "true" on
+//     press, others send empty; treat any payload as a trigger.)
+//   - Auth is whatever the broker enforces. We don't add per-message
+//     X-API-Key plumbing — the broker's username/password is the
+//     authorisation surface.
+
+// Pending command flags set by the MQTT callback, drained at the top
+// of loop() into the button-pressed flags so the state machine acts on
+// them through its existing code paths.
+static volatile bool kwMqttCmdStart   = false;
+static volatile bool kwMqttCmdSilence = false;
+static volatile bool kwMqttCmdReset   = false;
+
+// PubSubClient invokes this synchronously from kwMqtt.loop() when a
+// message arrives on a subscribed topic. Topic and payload are valid
+// only for the duration of the call.
+//
+// **Critical**: this callback MUST NOT call kwMqtt.publish() (directly
+// or transitively via diagnostics_logEvent → net_log_send). PubSubClient
+// shares a single 256-byte buffer between send and receive paths;
+// publishing mid-receive corrupts the inbound packet parser and causes
+// phantom callback re-entries on garbled topics. All logging and side
+// effects are deferred to mqtt_applyCmdFlags() which runs in the safe
+// main-loop context. See bench-confirmed failure 2026-05-14.
+static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
+  (void)payload; (void)length;  // payload ignored — see header comment
+
+  const char *leaf = strrchr(topic, '/');
+  if (!leaf || !leaf[1]) return;
+  leaf++;
+
+  // Refuse commands while ESTOP is active. Silent at the callback —
+  // mqtt_applyCmdFlags can't observe the refusal because we never set
+  // the flag, so this won't show up in the audit log. That's the right
+  // tradeoff: under ESTOP the operator's attention is on the physical
+  // device, not the dashboard.
+  if (isEstopActive) return;
+
+  if (strcmp(leaf, "start") == 0) {
+    kwMqttCmdStart = true;
+  } else if (strcmp(leaf, "silence") == 0) {
+    kwMqttCmdSilence = true;
+  } else if (strcmp(leaf, "reset") == 0) {
+    kwMqttCmdReset = true;
+  }
+  // Unknown leaves are silently dropped. We can't safely log from here
+  // for the same reason — see header comment. A dashboard publishing to
+  // bogus topics is a dashboard bug, surfaced via mosquitto_sub on the
+  // operator side, not via firmware logs.
+}
+
+// Drain the MQTT command flags into the button-pressed flags. Must run
+// AFTER hardware_readInputs() (which overwrites them) but BEFORE
+// stateMachine_process() (which reads them). One-tick pulses; the next
+// hardware_readInputs() will reset to actual hardware state.
+//
+// All logging happens here, NOT in the callback — see the warning on
+// mqtt_callback for why.
+//
+// `reset` skips the button path entirely because it has no physical-
+// button equivalent that we can simulate — the long-press timing model
+// in state_error doesn't translate cleanly to a single MQTT publish.
+// We just clear errorCode and force the state transition directly.
+static void mqtt_applyCmdFlags() {
+  if (kwMqttCmdStart) {
+    kwMqttCmdStart = false;
+    diagnostics_logEvent("Remote cmd: start");
+    isCycleStartPressed = true;
+  }
+  if (kwMqttCmdSilence) {
+    kwMqttCmdSilence = false;
+    diagnostics_logEvent("Remote cmd: silence");
+    isManualDrainPressed = true;
+  }
+  if (kwMqttCmdReset) {
+    kwMqttCmdReset = false;
+    diagnostics_logEvent("Remote cmd: reset");
+    if (currentState == STATE_ERROR) {
+      errorCode = ERR_NONE;
+      stateMachine_changeState(STATE_STARTUP);
+    } else {
+      diagnostics_logEvent("Reset cmd ignored (not in ERROR)");
+    }
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -143,14 +281,9 @@ void net_log_send(const char* msg) {
 //   error/message        — human-readable from diagnostics_getErrorMessage
 //
 // Topic strings are built on the fly via kwTopic() into a single shared
-// buffer; PubSubClient copies its inputs immediately on publish() so
-// reuse is safe.
-
-static char kwTopicBuf[64];
-static const char* kwTopic(const char* leaf) {
-  snprintf(kwTopicBuf, sizeof(kwTopicBuf), "%s/%s", MQTT_TOPIC_ROOT, leaf);
-  return kwTopicBuf;
-}
+// buffer (defined further up, near mqtt_try_connect, so subscribe can
+// use it at connect time). PubSubClient copies its inputs immediately
+// on publish() so reuse is safe.
 
 // Sentinel cache. Initial values are deliberately impossible
 // (state=255, errorCode=255, temps=-999) so the first call to
@@ -361,7 +494,9 @@ static void setupEthernet() {
     IPAddress brokerIP(MQTT_BROKER_IP_0, MQTT_BROKER_IP_1,
                        MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);
     kwMqtt.setServer(brokerIP, MQTT_BROKER_PORT);
-    // setBufferSize default is 256 bytes — fine for short log lines.
+    kwMqtt.setCallback(mqtt_callback);
+    // setBufferSize default is 256 bytes — fine for short log lines
+    // and for the empty/single-byte command payloads we expect.
 
     if (mqtt_try_connect()) {
       snprintf(buf, sizeof(buf),
@@ -450,6 +585,14 @@ void setup() {
 void loop() {
   timers_update();
   hardware_readInputs();
+
+  // Inject any pending MQTT command flags into the button-pressed
+  // flags. Must run AFTER hardware_readInputs (which overwrites them)
+  // and BEFORE stateMachine_process / the ESTOP block (which read them).
+  // mqtt_loop() runs at the bottom of this same loop iteration, so a
+  // command published from the dashboard takes effect ~one loop tick
+  // later (~10-20 ms).
+  mqtt_applyCmdFlags();
 
   // ESTOP: the ISR has already killed safety-critical outputs. Here we
   // do the non-ISR-safe follow-up: log it, set the error code, and move
