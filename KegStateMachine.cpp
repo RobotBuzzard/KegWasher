@@ -23,6 +23,7 @@ const char* stateNames[NUM_STATES] = {
 };
 
 byte startupSubState = STARTUP_INIT;
+bool kegSizeLatched  = false;  // set at START press; used by all timer calculations
 
 // Hard upper bounds on time-in-state. Normal completion happens via
 // timer-driven transitions; these are last-resort safety nets if a
@@ -201,8 +202,6 @@ static void showHeatingProgress() {
   int targetTemp  = OPTIMAL_CAUSTIC_TEMP;
   int pct = constrain(map(currentTemp, heatingStartTemp, targetTemp, 0, 100), 0, 100);
 
-  // Without an active heater there's no meaningful elapsed time to base
-  // an ETA on — show progress only.
   if (!isHeaterActive) {
     display_showProgress("Heating", pct, currentTemp, targetTemp);
     return;
@@ -222,74 +221,135 @@ static void showHeatingProgress() {
 void state_startup() {
   switch (startupSubState) {
     case STARTUP_INIT:
-      display_showMessage("Initializing...");
-      diagnostics_logEvent("Startup: init");
       errorCode = ERR_NONE;
-#ifdef BENCH_MODE
-      // Skip heating in bench mode: with no real caustic sensor wired,
-      // heater interlocks would fail us into ERROR. The cycle still
-      // advances normally from IO_CHECK → READY → DRAINING.
-      startupSubState = STARTUP_IO_CHECK;
-      diagnostics_logEvent("Startup: BENCH_MODE — skipping heating");
-#else
-      startupSubState = STARTUP_HEATING;
-#endif
+      diagnostics_logEvent("Startup: init");
+      startupSubState = STARTUP_NOT_READY;
       break;
 
-    case STARTUP_HEATING:
-      if (hardware_getCausticTemp() < OPTIMAL_CAUSTIC_TEMP) {
-        if (!isHeaterActive) {
-          if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
-            errorCode = ERR_CAUSTIC_LEVEL;
-            display_showError("Low caustic level");
-            stateMachine_changeState(STATE_ERROR);
-            return;
-          }
-          hardware_setCausticHeater(true);
-          display_showMessage("Heating caustic...");
-        }
-        showHeatingProgress();
-      } else {
-        hardware_setCausticHeater(false);
-        startupSubState = STARTUP_IO_CHECK;
-        diagnostics_logEvent("Heating complete");
+    case STARTUP_NOT_READY: {
+      bool waterOk = isWaterOk;
+      bool airOk   = isAirOk;
+      bool co2Ok   = isCo2Ok;
+      bool estopOk = !isEstopActive;
+
+      static bool prevWater = false, prevAir = false, prevCo2 = false, prevEstop = false;
+      static bool drawn = false;
+      static unsigned long lastBannerMs = 0;
+      static bool bannerVisible = false;
+
+      bool changed = (!drawn || waterOk != prevWater || airOk != prevAir ||
+                      co2Ok != prevCo2 || estopOk != prevEstop);
+      if (changed) {
+        display_showNotReady(waterOk, airOk, co2Ok, estopOk);
+        drawn = true;
+        prevWater = waterOk; prevAir = airOk; prevCo2 = co2Ok; prevEstop = estopOk;
+        display_flashBanner("NOT READY", RED, bannerVisible);
       }
-      break;
 
-    case STARTUP_IO_CHECK:
-      display_showMessage("Checking systems...");
+      if (millis() - lastBannerMs >= 500UL) {
+        bannerVisible = !bannerVisible;
+        display_flashBanner("NOT READY", RED, bannerVisible);
+        lastBannerMs = millis();
+      }
+
       if (hardware_allSystemsGo()) {
+        errorCode = ERR_NONE;
+        drawn = false;
+        prevWater = prevAir = prevCo2 = prevEstop = true;
         startupSubState = STARTUP_READY;
         diagnostics_logEvent("Systems ready");
-      } else {
-        diagnostics_logEvent("Systems check failed");
-        stateMachine_changeState(STATE_ERROR);
       }
       break;
+    }
 
     case STARTUP_READY: {
-      // Render the screen once on entry. Without this the redraw fires
-      // every 10 ms loop tick and the 9600-baud Goldelox can't keep up,
-      // catching the screen mid-write produces partial-line frames.
       static bool drawn = false;
+      static unsigned long lastBannerMs = 0;
+      static bool bannerVisible = false;
+
       if (!drawn) {
-        display_clear();
-        display_println("Robot Keg Washer");
-        display_println();
-#ifdef BENCH_MODE
-        display_println("** BENCH MODE **");
-        display_println();
-#endif
-        display_println("Press START");
-        display_println("to begin");
-        display_footer();
+        display_showReadyScreen();
         drawn = true;
+        lastBannerMs = millis();
+        bannerVisible = true;
+        display_flashBanner("READY", GREEN, true);
       }
+
+      if (millis() - lastBannerMs >= 500UL) {
+        bannerVisible = !bannerVisible;
+        display_flashBanner("READY", GREEN, bannerVisible);
+        lastBannerMs = millis();
+      }
+
+      // Drop back to NOT_READY if a system goes offline
+      if (!hardware_allSystemsGo()) {
+        drawn = false;
+        bannerVisible = false;
+        startupSubState = STARTUP_NOT_READY;
+        diagnostics_logEvent("Systems lost");
+        break;
+      }
+
       if (isCycleStartPressed) {
-        diagnostics_logEvent("Cycle start");
-        drawn = false;     // reset for next entry
+        kegSizeLatched = isLargeKeg;
+        diagnostics_logEvent(kegSizeLatched ? "Cycle start (LARGE)" : "Cycle start (SMALL)");
+        drawn = false;
+        bannerVisible = false;
+#ifdef BENCH_MODE
         startupSubState = STARTUP_INIT;
         stateMachine_changeState(STATE_DRAINING);
+#else
+        if (hardware_getCausticTemp() >= OPTIMAL_CAUSTIC_TEMP) {
+          startupSubState = STARTUP_INIT;
+          stateMachine_changeState(STATE_DRAINING);
+        } else {
+          startupSubState = STARTUP_HEATING;
+          diagnostics_logEvent("Startup: heating");
+        }
+#endif
+      }
+      break;
+    }
+
+    case STARTUP_HEATING: {
+      static bool heatingDrawn = false;
+      static unsigned long lastHeatDisplayMs = 0;
+      static unsigned long lastBannerMs = 0;
+      static bool bannerVisible = false;
+
+      if (hardware_getCausticTemp() >= OPTIMAL_CAUSTIC_TEMP) {
+        hardware_setCausticHeater(false);
+        heatingDrawn = false;
+        diagnostics_logEvent("Heating complete");
+        startupSubState = STARTUP_INIT;
+        stateMachine_changeState(STATE_DRAINING);
+        return;
+      }
+
+      if (!isHeaterActive) {
+        if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
+          errorCode = ERR_CAUSTIC_LEVEL;
+          display_showError("Low caustic level");
+          stateMachine_changeState(STATE_ERROR);
+          return;
+        }
+        hardware_setCausticHeater(true);
+        heatingDrawn = false;
+      }
+
+      // Full screen redraw at 3s cadence; restore banner after each clear
+      if (!heatingDrawn || millis() - lastHeatDisplayMs >= 3000UL) {
+        showHeatingProgress();
+        heatingDrawn = true;
+        lastHeatDisplayMs = millis();
+        display_flashBanner("HEATING", RED, bannerVisible);
+      }
+
+      // Flash HEATING banner at 500ms
+      if (millis() - lastBannerMs >= 500UL) {
+        bannerVisible = !bannerVisible;
+        display_flashBanner("HEATING", RED, bannerVisible);
+        lastBannerMs = millis();
       }
       break;
     }
@@ -298,7 +358,7 @@ void state_startup() {
 
 // ---------- Operating states ----------
 void state_draining() {
-  unsigned long drainTime = isLargeKeg
+  unsigned long drainTime = kegSizeLatched
                           ? timers_adjustForKegSize(dirtyDrainTimer)
                           : dirtyDrainTimer;
 
@@ -315,7 +375,7 @@ void state_draining() {
 }
 
 void state_rinsing() {
-  unsigned long rinseTime = isLargeKeg
+  unsigned long rinseTime = kegSizeLatched
                           ? timers_adjustForKegSize(rinseTimer)
                           : rinseTimer;
 
@@ -355,7 +415,7 @@ void state_washing() {
   }
 #endif
 
-  unsigned long washTime = isLargeKeg
+  unsigned long washTime = kegSizeLatched
                          ? timers_adjustForKegSize(washTimer)
                          : washTimer;
   if (timers_isStateDone(washTime)) {
@@ -364,7 +424,7 @@ void state_washing() {
 }
 
 void state_sanitize() {
-  unsigned long saniTime = isLargeKeg
+  unsigned long saniTime = kegSizeLatched
                          ? timers_adjustForKegSize(saniTimer)
                          : saniTimer;
   if (timers_isStateDone(saniTime)) {
@@ -373,7 +433,7 @@ void state_sanitize() {
 }
 
 void state_pressure() {
-  unsigned long purgeTime = isLargeKeg
+  unsigned long purgeTime = kegSizeLatched
                           ? timers_adjustForKegSize(purgeTimer)
                           : purgeTimer;
   if (timers_isStateDone(purgeTime)) {
@@ -382,54 +442,91 @@ void state_pressure() {
 }
 
 void state_finished() {
-  // Render once on entry. Without this the screen is stuck on whatever
-  // the last PRESSURE-state frame happened to be when the cycle ended.
   static bool drawn = false;
+  static bool alarmAcked = false;
+  static bool prevPress = false;
+  static unsigned long lastBannerMs = 0;
+  static bool bannerVisible = false;
+
   if (!drawn) {
-    display_clear();
-    display_println("Cycle complete!");
-    display_println();
-#ifdef BENCH_MODE
-    display_println("** BENCH MODE **");
-    display_println();
-#endif
-    display_println("Press START");
-    display_println("for next keg");
-    display_footer();
+    display_showFinishedScreen();
     drawn = true;
+    alarmAcked = false;
+    lastBannerMs = millis();
+    bannerVisible = true;
+    display_flashBanner("COMPLETE", GREEN, true);
   }
 
-  // Manual-drain silences the alarm without resetting (same pattern as
-  // state_error). FINISHED's alarm announces completion; the operator
-  // can quiet it once they're aware.
-  if (isManualDrainPressed) {
-    hardware_setAlarm(false);
+  bool nowPressed = isCycleStartPressed;
+
+  if (!alarmAcked) {
+    // DRAIN button or first START press silences alarm and switches to READY banner
+    if (isManualDrainPressed || (nowPressed && !prevPress)) {
+      hardware_setAlarm(false);
+      alarmAcked = true;
+      display_flashBanner("READY", GREEN, true);
+    } else if (millis() - lastBannerMs >= 500UL) {
+      bannerVisible = !bannerVisible;
+      display_flashBanner("COMPLETE", GREEN, bannerVisible);
+      lastBannerMs = millis();
+    }
+  } else {
+    // Alarm acked: next START press begins the next cycle
+    if (nowPressed && !prevPress) {
+      drawn = false;
+      alarmAcked = false;
+      stateMachine_changeState(STATE_STARTUP);
+    }
   }
 
-  if (isCycleStartPressed) {
-    drawn = false;
-    stateMachine_changeState(STATE_STARTUP);
+  prevPress = nowPressed;
+}
+
+static const char* errorBannerText(byte code) {
+  switch (code) {
+    case ERR_WATER_PRESSURE:  return "WATER FAULT";
+    case ERR_AIR_PRESSURE:    return "AIR FAULT";
+    case ERR_CO2_PRESSURE:    return "CO2 FAULT";
+    case ERR_CAUSTIC_TEMP:    return "TEMP FAULT";
+    case ERR_ENCLOSURE_TEMP:  return "OVERHEAT";
+    case ERR_ESTOP:           return "ESTOP";
+    case ERR_HEATING_TIMEOUT: return "HEAT TIMEOUT";
+    case ERR_HEATING_RATE:    return "HEAT SLOW";
+    case ERR_CAUSTIC_LEVEL:   return "CAUSTIC LOW";
+    case ERR_STATE_TIMEOUT:   return "TIMEOUT";
+    case ERR_SD_INIT:         return "SD FAIL";
+    case ERR_CONFIG_FILE:     return "CONFIG FAIL";
+    case ERR_HEATER_OVERTEMP: return "HEAT OVERTEMP";
+    case ERR_SENSOR_FAULT:    return "SENSOR FAIL";
+    default:                  return "ERROR";
   }
 }
 
 void state_error() {
-  // Render once per errorCode change — redrawing every 10ms tick
-  // flickers the 9600-baud Goldelox.
   static byte lastShown = 255;
+  static unsigned long lastBannerMs = 0;
+  static bool bannerVisible = false;
+
+  // Redraw full screen only when the error code changes
   if (errorCode != lastShown) {
     display_showError(diagnostics_getErrorMessage(errorCode));
     lastShown = errorCode;
+    display_flashBanner(errorBannerText(errorCode), RED, bannerVisible);
   }
 
-  // Manual-drain (IO2) silences the alarm without resetting. Useful
-  // for diagnosing without a screaming buzzer.
+  // Flash fault banner at 500ms
+  if (millis() - lastBannerMs >= 500UL) {
+    bannerVisible = !bannerVisible;
+    display_flashBanner(errorBannerText(errorCode), RED, bannerVisible);
+    lastBannerMs = millis();
+  }
+
+  // Manual-drain (IO2) silences the alarm without resetting
   if (isManualDrainPressed) {
     hardware_setAlarm(false);
   }
 
-  // Cycle-start (IO1) is short/long press:
-  //   - short press (release before LONG_PRESS_MS): silence the alarm
-  //   - long  press (held past LONG_PRESS_MS):       full reset to STARTUP
+  // Cycle-start (IO1): short press = silence alarm, long press = reset to STARTUP
   static bool prevPress = false;
   static unsigned long pressStartMs = 0;
   static bool longFired = false;
@@ -438,13 +535,11 @@ void state_error() {
   bool nowPressed = isCycleStartPressed;
 
   if (nowPressed && !prevPress) {
-    // Press began
     pressStartMs = millis();
     longFired = false;
   }
 
   if (nowPressed && !longFired && (millis() - pressStartMs) >= LONG_PRESS_MS) {
-    // Held long enough — full reset
     longFired = true;
     errorCode = ERR_NONE;
     lastShown = 255;
@@ -454,7 +549,6 @@ void state_error() {
   }
 
   if (!nowPressed && prevPress && !longFired) {
-    // Released before long-press threshold — short-press = silence
     hardware_setAlarm(false);
   }
 

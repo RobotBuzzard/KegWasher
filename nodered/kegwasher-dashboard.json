@@ -1,0 +1,1334 @@
+[
+  {
+    "id": "broker_kw",
+    "type": "mqtt-broker",
+    "name": "Mosquitto local",
+    "broker": "127.0.0.1",
+    "port": "1883",
+    "clientid": "nodered-dashboard",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "closeTopic": "",
+    "closePayload": "",
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": ""
+  },
+  {
+    "id": "tab_kw",
+    "type": "tab",
+    "label": "KegWasher",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "tab_vision",
+    "type": "tab",
+    "label": "Vision",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "9565e253.f79532",
+    "type": "ui_base",
+    "theme": {
+      "name": "theme-dark",
+      "lightTheme": {
+        "default": "#0094CE",
+        "baseColor": "#0094CE",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
+        "edited": true
+      },
+      "darkTheme": {
+        "default": "#097479",
+        "baseColor": "#097479",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
+        "edited": false
+      },
+      "customTheme": {
+        "name": "Untitled Theme 1",
+        "default": "#4B7930",
+        "baseColor": "#4B7930",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif"
+      },
+      "themeState": {
+        "base-color": {
+          "default": true,
+          "value": "#097479",
+          "edited": false
+        },
+        "page-titlebar-backgroundColor": {
+          "value": "#097479",
+          "edited": false
+        },
+        "page-backgroundColor": {
+          "value": "#111111",
+          "edited": false
+        },
+        "page-sidebar-backgroundColor": {
+          "value": "#000000",
+          "edited": false
+        },
+        "group-textColor": {
+          "value": "#0eb8c0",
+          "edited": false
+        },
+        "group-borderColor": {
+          "value": "#555555",
+          "edited": false
+        },
+        "group-backgroundColor": {
+          "value": "#333333",
+          "edited": false
+        },
+        "widget-textColor": {
+          "value": "#eeeeee",
+          "edited": false
+        },
+        "widget-backgroundColor": {
+          "value": "#097479",
+          "edited": false
+        },
+        "widget-borderColor": {
+          "value": "#333333",
+          "edited": false
+        },
+        "base-font": {
+          "value": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif"
+        }
+      }
+    },
+    "site": {
+      "name": "KegWasher",
+      "hideToolbar": "false",
+      "allowSwipe": "false",
+      "lockMenu": "false",
+      "allowTempTheme": "true",
+      "dateFormat": "DD/MM/YYYY",
+      "sizes": {
+        "sx": 48,
+        "sy": 48,
+        "gx": 6,
+        "gy": 6,
+        "cx": 6,
+        "cy": 6,
+        "px": 0,
+        "py": 0
+      }
+    }
+  },
+  {
+    "id": "grp_status",
+    "type": "ui_group",
+    "name": "Status",
+    "tab": "ui_tab_kw",
+    "order": 1,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "grp_sensors",
+    "type": "ui_group",
+    "name": "Sensors",
+    "tab": "ui_tab_kw",
+    "order": 2,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "grp_temps",
+    "type": "ui_group",
+    "name": "Temperatures",
+    "tab": "ui_tab_kw",
+    "order": 3,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "grp_commands",
+    "type": "ui_group",
+    "name": "Commands",
+    "tab": "ui_tab_kw",
+    "order": 4,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "grp_heartbeat",
+    "type": "ui_group",
+    "name": "Heartbeat",
+    "tab": "ui_tab_kw",
+    "order": 5,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "grp_vision",
+    "type": "ui_group",
+    "name": "Camera",
+    "tab": "ui_tab_vision",
+    "order": 1,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "grp_vision_stats",
+    "type": "ui_group",
+    "name": "Vision Stats",
+    "tab": "ui_tab_vision",
+    "order": 2,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "ui_tab_kw",
+    "type": "ui_tab",
+    "name": "KegWasher",
+    "icon": "home",
+    "order": 1
+  },
+  {
+    "id": "ui_tab_vision",
+    "type": "ui_tab",
+    "name": "Vision",
+    "icon": "camera",
+    "order": 2
+  },
+  {
+    "id": "mqtt_state",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/state",
+    "topic": "kegwasher/state",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 80,
+    "y": 80,
+    "wires": [
+      [
+        "fmt_state"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_state",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "state \u2192 badge color",
+    "func": "var s = msg.payload;\nvar colors = {\n  'STARTUP':   '#888888',\n  'IDLE':      '#00aa44',\n  'RUNNING':   '#0077cc',\n  'DRAINING':  '#ff8800',\n  'ERROR':     '#cc2200',\n  'ESTOP':     '#ff0000'\n};\nmsg.color = colors[s] || '#555555';\nmsg.payload = s;\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 80,
+    "wires": [
+      [
+        "ui_state_text"
+      ]
+    ]
+  },
+  {
+    "id": "ui_state_text",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_status",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "name": "State",
+    "label": "State",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "mqtt_online",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/online",
+    "topic": "kegwasher/online",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 80,
+    "y": 140,
+    "wires": [
+      [
+        "fmt_online"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_online",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "online \u2192 indicator",
+    "func": "msg.payload = msg.payload === 'true' ? 'ONLINE' : 'OFFLINE';\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 140,
+    "wires": [
+      [
+        "ui_online"
+      ]
+    ]
+  },
+  {
+    "id": "ui_online",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_status",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "name": "Online",
+    "label": "Connection",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "mqtt_timer",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/timer/remaining_s",
+    "topic": "kegwasher/timer/remaining_s",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 110,
+    "y": 200,
+    "wires": [
+      [
+        "fmt_timer"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_timer",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "seconds \u2192 mm:ss",
+    "func": "var s = parseInt(msg.payload) || 0;\nvar m = Math.floor(s / 60);\nvar ss = ('0' + (s % 60)).slice(-2);\nmsg.payload = m + ':' + ss;\nreturn msg;",
+    "outputs": 1,
+    "x": 310,
+    "y": 200,
+    "wires": [
+      [
+        "ui_timer"
+      ]
+    ]
+  },
+  {
+    "id": "ui_timer",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_status",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "name": "Timer",
+    "label": "Remaining",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "mqtt_elapsed",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/timer/elapsed_s",
+    "topic": "kegwasher/timer/elapsed_s",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 260,
+    "wires": [
+      [
+        "fmt_elapsed"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_elapsed",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "seconds \u2192 mm:ss",
+    "func": "var s = parseInt(msg.payload) || 0;\nvar m = Math.floor(s / 60);\nvar ss = ('0' + (s % 60)).slice(-2);\nmsg.payload = m + ':' + ss;\nreturn msg;",
+    "outputs": 1,
+    "x": 310,
+    "y": 260,
+    "wires": [
+      [
+        "ui_elapsed"
+      ]
+    ]
+  },
+  {
+    "id": "ui_elapsed",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_status",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "name": "Elapsed",
+    "label": "Elapsed",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "mqtt_error",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/error/message",
+    "topic": "kegwasher/error/message",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 80,
+    "y": 320,
+    "wires": [
+      [
+        "ui_error_text"
+      ]
+    ]
+  },
+  {
+    "id": "ui_error_text",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_status",
+    "order": 5,
+    "width": "6",
+    "height": "1",
+    "name": "Error",
+    "label": "Error",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 290,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "mqtt_water",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/sensors/water",
+    "topic": "kegwasher/sensors/water",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 420,
+    "wires": [
+      [
+        "fmt_sensor_water"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_sensor_water",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "bool \u2192 led",
+    "func": "msg.payload = msg.payload === \"OK\" ? true : false;\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 420,
+    "wires": [
+      [
+        "ui_led_water"
+      ]
+    ]
+  },
+  {
+    "id": "ui_led_water",
+    "type": "ui_led",
+    "z": "tab_kw",
+    "group": "grp_sensors",
+    "order": 1,
+    "width": "3",
+    "height": "1",
+    "label": "Water",
+    "colorForValue": [
+      {
+        "color": "#ff0000",
+        "value": "false",
+        "valueType": "bool"
+      },
+      {
+        "color": "#00bb00",
+        "value": "true",
+        "valueType": "bool"
+      }
+    ],
+    "allowColorForValueInMessage": false,
+    "x": 440,
+    "y": 420,
+    "wires": []
+  },
+  {
+    "id": "mqtt_air",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/sensors/air",
+    "topic": "kegwasher/sensors/air",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 480,
+    "wires": [
+      [
+        "fmt_sensor_air"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_sensor_air",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "bool \u2192 led",
+    "func": "msg.payload = msg.payload === \"OK\" ? true : false;\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 480,
+    "wires": [
+      [
+        "ui_led_air"
+      ]
+    ]
+  },
+  {
+    "id": "ui_led_air",
+    "type": "ui_led",
+    "z": "tab_kw",
+    "group": "grp_sensors",
+    "order": 2,
+    "width": "3",
+    "height": "1",
+    "label": "Air",
+    "colorForValue": [
+      {
+        "color": "#ff0000",
+        "value": "false",
+        "valueType": "bool"
+      },
+      {
+        "color": "#00bb00",
+        "value": "true",
+        "valueType": "bool"
+      }
+    ],
+    "allowColorForValueInMessage": false,
+    "x": 440,
+    "y": 480,
+    "wires": []
+  },
+  {
+    "id": "mqtt_co2",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/sensors/co2",
+    "topic": "kegwasher/sensors/co2",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 540,
+    "wires": [
+      [
+        "fmt_sensor_co2"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_sensor_co2",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "bool \u2192 led",
+    "func": "msg.payload = msg.payload === \"OK\" ? true : false;\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 540,
+    "wires": [
+      [
+        "ui_led_co2"
+      ]
+    ]
+  },
+  {
+    "id": "ui_led_co2",
+    "type": "ui_led",
+    "z": "tab_kw",
+    "group": "grp_sensors",
+    "order": 3,
+    "width": "3",
+    "height": "1",
+    "label": "CO2",
+    "colorForValue": [
+      {
+        "color": "#ff0000",
+        "value": "false",
+        "valueType": "bool"
+      },
+      {
+        "color": "#00bb00",
+        "value": "true",
+        "valueType": "bool"
+      }
+    ],
+    "allowColorForValueInMessage": false,
+    "x": 440,
+    "y": 540,
+    "wires": []
+  },
+  {
+    "id": "mqtt_estop",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/sensors/estop",
+    "topic": "kegwasher/sensors/estop",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 600,
+    "wires": [
+      [
+        "fmt_sensor_estop"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_sensor_estop",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "bool \u2192 led (estop inverted)",
+    "func": "msg.payload = msg.payload === \"INACTIVE\" ? true : false;\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 600,
+    "wires": [
+      [
+        "ui_led_estop"
+      ]
+    ]
+  },
+  {
+    "id": "ui_led_estop",
+    "type": "ui_led",
+    "z": "tab_kw",
+    "group": "grp_sensors",
+    "order": 4,
+    "width": "3",
+    "height": "1",
+    "label": "E-Stop",
+    "colorForValue": [
+      {
+        "color": "#ff0000",
+        "value": "false",
+        "valueType": "bool"
+      },
+      {
+        "color": "#00bb00",
+        "value": "true",
+        "valueType": "bool"
+      }
+    ],
+    "allowColorForValueInMessage": false,
+    "x": 450,
+    "y": 600,
+    "wires": []
+  },
+  {
+    "id": "mqtt_temp_caustic",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/temp/caustic",
+    "topic": "kegwasher/temp/caustic",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 700,
+    "wires": [
+      [
+        "fmt_temp_caustic"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_temp_caustic",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "temp format",
+    "func": "var v = parseFloat(msg.payload);\nmsg.payload = isNaN(v) ? '---' : v.toFixed(1) + ' \u00b0C';\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 700,
+    "wires": [
+      [
+        "ui_temp_caustic"
+      ]
+    ]
+  },
+  {
+    "id": "ui_temp_caustic",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_temps",
+    "order": 1,
+    "width": "3",
+    "height": "1",
+    "name": "Caustic Temp",
+    "label": "Caustic",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 460,
+    "y": 700,
+    "wires": []
+  },
+  {
+    "id": "mqtt_temp_encl",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/temp/enclosure",
+    "topic": "kegwasher/temp/enclosure",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 760,
+    "wires": [
+      [
+        "fmt_temp_encl"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_temp_encl",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "temp format",
+    "func": "var v = parseFloat(msg.payload);\nmsg.payload = isNaN(v) ? '---' : v.toFixed(1) + ' \u00b0C';\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 760,
+    "wires": [
+      [
+        "ui_temp_encl"
+      ]
+    ]
+  },
+  {
+    "id": "ui_temp_encl",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_temps",
+    "order": 2,
+    "width": "3",
+    "height": "1",
+    "name": "Enclosure Temp",
+    "label": "Enclosure",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 460,
+    "y": 760,
+    "wires": []
+  },
+  {
+    "id": "btn_start",
+    "type": "ui_button",
+    "z": "tab_kw",
+    "group": "grp_commands",
+    "order": 1,
+    "width": "2",
+    "height": "1",
+    "passthru": false,
+    "label": "Start",
+    "tooltip": "Start wash cycle",
+    "color": "",
+    "bgcolor": "#007700",
+    "icon": "",
+    "payload": "1",
+    "payloadType": "str",
+    "topic": "kegwasher/cmd/start",
+    "x": 80,
+    "y": 880,
+    "wires": [
+      [
+        "pub_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "btn_silence",
+    "type": "ui_button",
+    "z": "tab_kw",
+    "group": "grp_commands",
+    "order": 2,
+    "width": "2",
+    "height": "1",
+    "passthru": false,
+    "label": "Silence",
+    "tooltip": "Silence alarm / manual drain",
+    "color": "",
+    "bgcolor": "#886600",
+    "icon": "",
+    "payload": "1",
+    "payloadType": "str",
+    "topic": "kegwasher/cmd/silence",
+    "x": 90,
+    "y": 940,
+    "wires": [
+      [
+        "pub_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "btn_reset",
+    "type": "ui_button",
+    "z": "tab_kw",
+    "group": "grp_commands",
+    "order": 3,
+    "width": "2",
+    "height": "1",
+    "passthru": false,
+    "label": "Reset",
+    "tooltip": "Reset from ERROR state",
+    "color": "",
+    "bgcolor": "#770000",
+    "icon": "",
+    "payload": "1",
+    "payloadType": "str",
+    "topic": "kegwasher/cmd/reset",
+    "x": 80,
+    "y": 1000,
+    "wires": [
+      [
+        "pub_cmd"
+      ]
+    ]
+  },
+  {
+    "id": "pub_cmd",
+    "type": "mqtt out",
+    "z": "tab_kw",
+    "name": "publish cmd",
+    "topic": "",
+    "qos": "1",
+    "retain": "false",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "broker_kw",
+    "x": 290,
+    "y": 940,
+    "wires": []
+  },
+  {
+    "id": "mqtt_uptime",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/heartbeat/uptime_s",
+    "topic": "kegwasher/heartbeat/uptime_s",
+    "qos": "0",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 1100,
+    "wires": [
+      [
+        "fmt_uptime"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_uptime",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "uptime format",
+    "func": "var s = parseInt(msg.payload) || 0;\nvar h = Math.floor(s/3600);\nvar m = Math.floor((s%3600)/60);\nvar ss = s%60;\nmsg.payload = h + 'h ' + m + 'm ' + ss + 's';\nreturn msg;",
+    "outputs": 1,
+    "x": 310,
+    "y": 1100,
+    "wires": [
+      [
+        "ui_uptime"
+      ]
+    ]
+  },
+  {
+    "id": "ui_uptime",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_heartbeat",
+    "order": 1,
+    "width": "6",
+    "height": "1",
+    "name": "Uptime",
+    "label": "Uptime",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 1100,
+    "wires": []
+  },
+  {
+    "id": "mqtt_free_ram",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/heartbeat/free_ram",
+    "topic": "kegwasher/heartbeat/free_ram",
+    "qos": "0",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 1160,
+    "wires": [
+      [
+        "fmt_ram"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_ram",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "bytes format",
+    "func": "var v = parseInt(msg.payload) || 0;\nmsg.payload = (v/1024).toFixed(1) + ' KB';\nreturn msg;",
+    "outputs": 1,
+    "x": 300,
+    "y": 1160,
+    "wires": [
+      [
+        "ui_ram"
+      ]
+    ]
+  },
+  {
+    "id": "ui_ram",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_heartbeat",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "name": "Free RAM",
+    "label": "Free RAM",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 1160,
+    "wires": []
+  },
+  {
+    "id": "mqtt_loop_max",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/heartbeat/loop_max_us",
+    "topic": "kegwasher/heartbeat/loop_max_us",
+    "qos": "0",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 1220,
+    "wires": [
+      [
+        "fmt_loop"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_loop",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "\u00b5s format",
+    "func": "var v = parseInt(msg.payload) || 0;\nmsg.payload = v + ' \u00b5s';\nreturn msg;",
+    "outputs": 1,
+    "x": 290,
+    "y": 1220,
+    "wires": [
+      [
+        "ui_loop"
+      ]
+    ]
+  },
+  {
+    "id": "ui_loop",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_heartbeat",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "name": "Loop max",
+    "label": "Loop max",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 490,
+    "y": 1220,
+    "wires": []
+  },
+  {
+    "id": "mqtt_error_alert",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/error/message (alert watch)",
+    "topic": "kegwasher/error/message",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 1340,
+    "wires": [
+      [
+        "filter_error_state"
+      ]
+    ]
+  },
+  {
+    "id": "filter_error_state",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "error latch + 5min timer",
+    "func": "if (msg.payload && msg.payload !== \"No error\") {\n  if (!context.get(\"alertSince\")) context.set(\"alertSince\", Date.now());\n  var age = (Date.now() - context.get(\"alertSince\")) / 1000;\n  if (age >= 300) return {payload: \"KegWasher error for \" + Math.floor(age/60) + \" min: \" + msg.payload};\n} else {\n  context.set(\"alertSince\", null);\n}\nreturn null;",
+    "outputs": 1,
+    "x": 340,
+    "y": 1340,
+    "wires": [
+      [
+        "ui_alert_text"
+      ]
+    ]
+  },
+  {
+    "id": "ui_alert_text",
+    "type": "ui_text",
+    "z": "tab_kw",
+    "group": "grp_heartbeat",
+    "order": 10,
+    "width": "6",
+    "height": "1",
+    "name": "Error alert",
+    "outputs": 0,
+    "x": 590,
+    "y": 1340,
+    "wires": [],
+    "label": "ALERT",
+    "format": "\u26a0 {{msg.payload}}",
+    "layout": "row-spread"
+  },
+  {
+    "id": "mqtt_vision_ok",
+    "type": "mqtt in",
+    "z": "tab_vision",
+    "name": "vision/ok",
+    "topic": "vision/ok",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 80,
+    "y": 80,
+    "wires": [
+      [
+        "fmt_vision_ok"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_vision_ok",
+    "type": "function",
+    "z": "tab_vision",
+    "name": "ok \u2192 led",
+    "func": "msg.payload = msg.payload === 'true' ? true : false;\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 80,
+    "wires": [
+      [
+        "ui_vision_ok"
+      ]
+    ]
+  },
+  {
+    "id": "ui_vision_ok",
+    "type": "ui_led",
+    "z": "tab_vision",
+    "group": "grp_vision_stats",
+    "order": 1,
+    "width": "2",
+    "height": "1",
+    "label": "Camera OK",
+    "colorForValue": [
+      {
+        "color": "#ff0000",
+        "value": "false",
+        "valueType": "bool"
+      },
+      {
+        "color": "#00bb00",
+        "value": "true",
+        "valueType": "bool"
+      }
+    ],
+    "allowColorForValueInMessage": false,
+    "x": 420,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "mqtt_vision_fps",
+    "type": "mqtt in",
+    "z": "tab_vision",
+    "name": "vision/fps",
+    "topic": "vision/fps",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 80,
+    "y": 140,
+    "wires": [
+      [
+        "fmt_vision_fps"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_vision_fps",
+    "type": "function",
+    "z": "tab_vision",
+    "name": "fps format",
+    "func": "var v = parseFloat(msg.payload);\nmsg.payload = isNaN(v) ? '---' : v.toFixed(1) + ' fps';\nreturn msg;",
+    "outputs": 1,
+    "x": 260,
+    "y": 140,
+    "wires": [
+      [
+        "ui_vision_fps"
+      ]
+    ]
+  },
+  {
+    "id": "ui_vision_fps",
+    "type": "ui_text",
+    "z": "tab_vision",
+    "group": "grp_vision_stats",
+    "order": 2,
+    "width": "3",
+    "height": "1",
+    "name": "FPS",
+    "label": "FPS",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 420,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "mqtt_vision_age",
+    "type": "mqtt in",
+    "z": "tab_vision",
+    "name": "vision/last_frame_age_s",
+    "topic": "vision/last_frame_age_s",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 200,
+    "wires": [
+      [
+        "fmt_vision_age"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_vision_age",
+    "type": "function",
+    "z": "tab_vision",
+    "name": "age format",
+    "func": "var v = parseFloat(msg.payload);\nmsg.payload = isNaN(v) ? '---' : v.toFixed(2) + ' s';\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 200,
+    "wires": [
+      [
+        "ui_vision_age"
+      ]
+    ]
+  },
+  {
+    "id": "ui_vision_age",
+    "type": "ui_text",
+    "z": "tab_vision",
+    "group": "grp_vision_stats",
+    "order": 3,
+    "width": "3",
+    "height": "1",
+    "name": "Frame age",
+    "label": "Frame age",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 440,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "mqtt_vision_uptime",
+    "type": "mqtt in",
+    "z": "tab_vision",
+    "name": "vision/uptime_s",
+    "topic": "vision/uptime_s",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 90,
+    "y": 260,
+    "wires": [
+      [
+        "fmt_vision_uptime"
+      ]
+    ]
+  },
+  {
+    "id": "fmt_vision_uptime",
+    "type": "function",
+    "z": "tab_vision",
+    "name": "uptime format",
+    "func": "var s = parseInt(msg.payload) || 0;\nvar h = Math.floor(s/3600);\nvar m = Math.floor((s%3600)/60);\nvar ss = s%60;\nmsg.payload = h + 'h ' + m + 'm ' + ss + 's';\nreturn msg;",
+    "outputs": 1,
+    "x": 280,
+    "y": 260,
+    "wires": [
+      [
+        "ui_vision_uptime"
+      ]
+    ]
+  },
+  {
+    "id": "ui_vision_uptime",
+    "type": "ui_text",
+    "z": "tab_vision",
+    "group": "grp_vision_stats",
+    "order": 4,
+    "width": "6",
+    "height": "1",
+    "name": "Vision uptime",
+    "label": "Uptime",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "x": 450,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "ui_camera_stream",
+    "type": "ui_template",
+    "z": "tab_vision",
+    "group": "grp_vision",
+    "name": "Camera stream",
+    "order": 1,
+    "width": "12",
+    "height": "9",
+    "format": "<div style='width:100%;text-align:center;background:#000;padding:4px'>\n  <img src='http://192.168.1.91:8080/stream.mjpg'\n       style='max-width:100%;height:auto;border:2px solid #097479'\n       onerror=\"this.src='';this.style.background='#330000';this.alt='Stream unavailable';\"\n       alt='Bench camera stream'>\n</div>",
+    "storeOutMessages": false,
+    "fwdInMessages": false,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "x": 460,
+    "y": 360,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "69ab4116.f8b659",
+    "type": "mqtt in",
+    "z": "tab_kw",
+    "name": "kegwasher/# (display)",
+    "topic": "kegwasher/#",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "broker_kw",
+    "x": 100,
+    "y": 1460,
+    "wires": [
+      [
+        "e986066f.189d75"
+      ]
+    ]
+  },
+  {
+    "id": "e986066f.189d75",
+    "type": "function",
+    "z": "tab_kw",
+    "name": "format display",
+    "func": "\nvar s = flow.get('kwDisp') || {};\nvar leaf = msg.topic.replace('kegwasher/', '').replace(/\\//g, '_');\ns[leaf] = msg.payload;\nflow.set('kwDisp', s);\n\nfunction fmtTime(sec) {\n    var n = parseInt(sec) || 0;\n    return Math.floor(n/60) + ':' + ('0'+(n%60)).slice(-2);\n}\n\nvar state = s['state'] || '?';\nvar sub   = s['state_sub'] || '';\nvar lines = [];\nvar timedStates = ['DRAINING','RINSING','WASHING','SANITIZE','PRESSURE'];\n\nif (state === 'STARTUP') {\n    if (sub === 'NOT_READY') {\n        lines.push('Robot Keg Washer');\n        lines.push('');\n        lines.push('NOT READY:');\n        if (s['sensors_water'] !== 'OK')     lines.push('  Water offline');\n        if (s['sensors_air']   !== 'OK')     lines.push('  Air offline');\n        if (s['sensors_co2']   !== 'OK')     lines.push('  CO2 offline');\n        if (s['sensors_estop'] === 'ACTIVE') lines.push('  ESTOP open');\n    } else if (sub === 'HEATING') {\n        var ct = parseInt(s['temp_caustic']) || 0;\n        var tt = 60;\n        lines.push('Robot Keg Washer');\n        lines.push('');\n        lines.push('Heating');\n        lines.push(ct + '/' + tt + 'C');\n        lines.push('Level: ' + (s['level_caustic'] || '0') + '%');\n    } else if (sub === 'READY') {\n        lines.push('Robot Keg Washer');\n        lines.push('');\n        lines.push('Check levels');\n        lines.push('Press START');\n    } else {\n        // INIT or unknown \u2014 transitional\n        lines.push('Robot Keg Washer');\n        lines.push('');\n        lines.push('Initializing...');\n    }\n} else if (state === 'FINISHED') {\n    lines.push('Cycle complete!');\n    lines.push('');\n    lines.push('DRAIN: ack alarm');\n    lines.push('START: next keg');\n} else if (state === 'ERROR') {\n    lines.push('ERROR:');\n    lines.push(s['error_message'] || '?');\n    lines.push('');\n    lines.push('DRAIN: silence');\n    lines.push('Hold START: reset');\n} else if (timedStates.indexOf(state) >= 0) {\n    lines.push('Robot Keg Washer');\n    lines.push('Mode: ' + state);\n    lines.push('Keg: ' + (s['keg'] || '?'));\n    lines.push('Time: ' + fmtTime(s['timer_remaining_s']));\n    lines.push('Temp: ' + (s['temp_caustic'] || '--') + 'C');\n    lines.push('Water: ' + (s['sensors_water'] || '?'));\n    lines.push('Air: '   + (s['sensors_air']   || '?'));\n    lines.push('CO2: '   + (s['sensors_co2']   || '?'));\n    if (s['sensors_estop'] === 'ACTIVE') {\n        lines.push('ESTOP ACTIVE!');\n    }\n} else {\n    lines.push('Robot Keg Washer');\n    lines.push('Mode: ' + state);\n}\n\n// Banner \u2014 mirrors the bottom-of-screen banner on the physical Goldelox display\nvar banner = null;\nvar errorBannerMap = {\n    '1':'SD FAIL','2':'CONFIG FAIL','3':'WATER FAULT','4':'AIR FAULT',\n    '5':'CO2 FAULT','6':'TEMP FAULT','7':'OVERHEAT','8':'ESTOP',\n    '10':'HEAT TIMEOUT','11':'HEAT SLOW','12':'CAUSTIC LOW',\n    '13':'HEAT OVERTEMP','14':'TIMEOUT','15':'SENSOR FAIL'\n};\nif (state === 'STARTUP') {\n    if      (sub === 'NOT_READY') banner = { text: 'NOT READY', color: '#cc2200' };\n    else if (sub === 'HEATING')   banner = { text: 'HEATING',   color: '#cc2200' };\n    else if (sub === 'READY')     banner = { text: 'READY',     color: '#22aa44' };\n} else if (state === 'FINISHED') {\n    banner = { text: 'COMPLETE', color: '#22aa44' };\n} else if (state === 'ERROR') {\n    var ec = String(s['error_code'] || '');\n    banner = { text: errorBannerMap[ec] || 'ERROR', color: '#cc2200' };\n}\n\nvar ip = s['ip'] || 'offline';\nvar hasMqtt = s['online'] === 'true';\nvar pad = Math.max(0, 14 - ip.length);\nvar footerIp = ip + Array(pad+1).join(' ');\n\nmsg.payload = { lines: lines, footerIp: footerIp, hasMqtt: hasMqtt, banner: banner };\nreturn msg;\n",
+    "outputs": 1,
+    "x": 310,
+    "y": 1460,
+    "wires": [
+      [
+        "2ee2545b.40c9bf"
+      ]
+    ]
+  },
+  {
+    "id": "f91f81b2.776a89",
+    "type": "ui_group",
+    "name": "Display",
+    "tab": "ui_tab_kw",
+    "order": 0,
+    "disp": true,
+    "width": "6",
+    "collapse": false
+  },
+  {
+    "id": "2ee2545b.40c9bf",
+    "type": "ui_template",
+    "z": "tab_kw",
+    "group": "f91f81b2.776a89",
+    "name": "Screen mirror",
+    "order": 1,
+    "width": "6",
+    "height": "8",
+    "format": "<div style=\"background:#111;border-radius:5px;padding:10px 13px;font-family:'Courier New',Courier,monospace;font-size:13px;line-height:1.65;border:1px solid #333\">\n  <div ng-if=\"!msg || !msg.payload\" style=\"color:#555\">Waiting...</div>\n  <div ng-if=\"msg && msg.payload\">\n    <div ng-repeat=\"line in msg.payload.lines track by $index\"\n         style=\"white-space:pre;color:#33cc55\">{{line}}</div>\n    <div style=\"white-space:pre\">\n      <span style=\"color:#33cc55\">{{msg.payload.footerIp}}</span\n      ><span style=\"color:#9966cc\" ng-if=\"msg.payload.hasMqtt\">M*</span>\n    </div>\n    <div ng-if=\"msg.payload.banner\"\n         style=\"margin-top:6px;padding:4px 8px;border-radius:3px;text-align:center;font-size:16px;font-weight:bold;letter-spacing:2px;color:#fff\"\n         ng-style=\"{'background': msg.payload.banner.color}\">\n      {{msg.payload.banner.text}}\n    </div>\n  </div>\n</div>",
+    "storeOutMessages": false,
+    "fwdInMessages": false,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "x": 510,
+    "y": 1460,
+    "wires": [
+      []
+    ]
+  }
+]

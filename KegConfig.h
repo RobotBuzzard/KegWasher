@@ -23,7 +23,8 @@
 //
 // SPECIFICALLY BYPASSED:
 //   - hardware_allSystemsGo() returns true unconditionally
-//   - STARTUP_HEATING substate is skipped (INIT → IO_CHECK direct)
+//   - In STARTUP_READY, the caustic-temp check is skipped so pressing
+//     START goes directly to STATE_DRAINING without STARTUP_HEATING
 //   - enterState(WASHING) skips the precondition caustic-temp check
 //   - state_washing skips the per-tick caustic-temp check
 //
@@ -97,8 +98,9 @@
 // Startup sub-states
 #define STARTUP_INIT           0
 #define STARTUP_HEATING        1
-#define STARTUP_IO_CHECK       2
+#define STARTUP_IO_CHECK       2   // unused in new flow; kept to avoid breaking any persisted values
 #define STARTUP_READY          3
+#define STARTUP_NOT_READY      4   // systems offline; shows which are failing
 
 // ---------- ADC ----------
 #define adcResolution          12

@@ -1,0 +1,3300 @@
+ViSi-Genie Reference
+Manual
+
+Manual
+Revision 3.0
+Copyright © 2026 4D Systems
+Content may change at any time. Please refer to the resource centre for latest documentation.
+
+Contents
+1. Introduction
+
+4
+
+2. ViSi-Genie Development
+
+5
+
+2.1. Launching Workshop4
+
+5
+
+2.2. Create a ViSi-Genie Project
+
+6
+
+2.2.1. Menus
+
+10
+
+2.2.2. Ribbon with Icons
+
+10
+
+2.2.3. List of Open Projects/Files
+
+10
+
+2.2.4. WYSIWYG Screen
+
+10
+
+2.2.5. Object Inspector
+
+11
+
+2.2.6. Message Window
+
+11
+
+2.3. Designing the User Interface
+
+12
+
+2.3.1. Adding Widgets
+
+12
+
+2.3.2. Linking Widgets
+
+14
+
+2.3.3. Controlling Multiple Objects
+
+14
+
+2.3.4. Chaining Objects
+
+16
+
+3. Workshop4 Objects
+
+18
+
+3.1. Object Summary
+
+20
+
+3.2. Graphics Build and Display Order
+
+23
+
+3.3. ViSi-Genie Properties and Events
+
+23
+
+4. Communication Protocol
+
+24
+
+4.1. Protocol Definitions
+
+25
+
+4.2. Command Responses
+
+25
+
+4.3. Command and Parameters
+
+26
+
+4.3.1. Read Object Status
+
+27
+
+4.3.2. Write Object Value
+
+28
+
+4.3.3. Write String (ASCII) Message
+
+29
+
+4.3.4. Write String (Unicode) Message
+
+30
+
+4.3.5. Write Contrast Value
+
+31
+
+4D Systems
+
+MANUAL
+
+Page 2 of 52
+
+4.3.6. Report Object Status
+
+32
+
+4.3.7. Report Event Message
+
+33
+
+4.3.8. Write Magic Bytes
+
+34
+
+4.3.9. Write Magic Double Bytes
+
+35
+
+4.3.10. Report Magic Bytes
+
+36
+
+4.3.11. Report Magic Double Bytes
+
+37
+
+4.3.12. Write Label Message
+
+38
+
+4.4. Integrated Debugger
+
+39
+
+4.5. Communication Terminal
+
+41
+
+5. Workshop4 PRO
+
+43
+
+5.1. Genie Magic
+
+44
+
+5.1.1. Genie Magic Callable Functions
+
+45
+
+5.1.2. Genie Magic Useful Variables
+
+46
+
+5.1.3. Genie Magic Useful Constants
+
+47
+
+5.1.4. Genie Magic Objects
+
+49
+
+6. Revision History
+
+51
+
+7. Legal Notice
+
+52
+
+7.1. Proprietary Information
+
+52
+
+7.2. Disclaimer of Warranties & Limitations of Liabilities
+
+52
+
+4D Systems
+
+MANUAL
+
+Page 3 of 52
+
+ViSi-Genie Reference Manual
+
+Introduction
+
+1. Introduction
+This manual introduces to ViSi-Genie, the codeless rapid development tool for designing and building graphic user
+interface on 4D Labs processor-based displays.
+ViSi-Genie is a breakthrough in the way 4D Labs’ graphic display modules are programmed, it provides an easy
+method for designing complex Graphics User Interface applications without any coding. It is an environment like
+no other, a code-less programming environment that provides the user with a rapid visual experience, enabling a
+simple GUI application to be ‘designed’ from scratch in literally seconds.
+ViSi-Genie does all the background coding, no 4DGL programming language to learn, it does it all for you.
+Pick and choose the relevant widgets to place on the display, much like the ViSi environment, yet without having
+to write a single line of code. The full animation of the widgets is done under-the-hood, such as pressing a button
+or moving the thumb of the slider. Each widget has parameters which can be set, and configurable events to
+animate and drive other widgets or communicate with an external host.
+Simply place an widget on the screen, position and size it to suit, set the parameters such as colour, range, text,
+and finally select the event you wish the widget to be associated with, it is that simple. Widgets are classified in
+three different groups:
+Input Widgets, as a button or a keyboard, Output Widgets, as a gauge or a meter, and Combined Widgets or
+Input/Output Widgets, as a slider which can act as both an input and an output.
+In seconds, you can transform a blank display into a fully animated GUI with moving meters, animated press and
+release buttons, and much more. All without writing a single line of code!
+Note
+Workshop4 PRO can be utilised to add code into ViSi-Genie to enable advanced functionality.
+
+ViSi-Genie provides the user with a feature rich rapid development environment, second to none.
+ViSi-Genie is included in the integrated development environment Workshop4. To install Workshop4, please refer
+to the Workshop4 IDE Installation Guide.
+Note
+ViSi-Genie is not available on the Goldelox platform.
+
+4D Systems
+
+MANUAL
+
+Page 4 of 52
+
+ViSi-Genie Reference Manual
+
+ViSi-Genie Development
+
+2. ViSi-Genie Development
+This section discusses the development workflow for creating and editing ViSi-Genie projects.
+
+2.1. Launching Workshop4
+By default, there is an shortcut for Workshop4 on the desktop.
+
+Launch 4D Workshop by double-clicking it or search for Workshop in the Windows Start Menu.
+Workshop4 opens and displays the Recent page:
+
+4D Systems
+
+MANUAL
+
+Page 5 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+On the Recent page, there are three options:
+
+1
+
+Create a new 4D Systems Project
+
+for creating projects using 4D Systems display modules
+
+2
+
+Create a new 4D Labs Project
+
+for creating projects using a 4D Labs processor with a custom LCD
+
+3
+
+Create a new Project
+
+for creating a project based on the last used settings
+
+Note
+As of writing, option 2 (Create a new 4D Labs Project) is not yet available and it will be released soon.
+
+2.2. Create a ViSi-Genie Project
+To create a new project using a 4D Systems display module, click on the 4D Systems icon, as shown below.
+
+4D Systems
+
+MANUAL
+
+Page 6 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+The Choose-your-Product window appears and the available 4D Systems display modules are shown.
+
+The dropdown menu at the top can be used to filter the products by categories.
+
+4D Systems
+
+MANUAL
+
+Page 7 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+The main window now asks for the environment to be used. Select ViSi-Genie.
+
+The development environment is now displayed:
+
+4D Systems
+
+MANUAL
+
+Page 8 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+Workshop4 displays an empty screen, called Form0.
+• A project consists of one or more forms.
+• A form is like a page on the screen.
+• The form includes widgets, like sliders, displays or keyboards.
+
+There are six different areas:
+
+4D Systems
+
+MANUAL
+
+Page 9 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+2.2.1. Menus
+The menus include standard Windows options. Each menu displays a specific ribbon.
+
+The debugger called Genie Test Executor is located under the Tool menu.
+
+2.2.2. Ribbon with Icons
+For the Home menu, the ribbon includes the file related buttons and the widgets grouped in panes:
+
+The icons related to the files include New project, Open project, Save project, Save as project, Print project, and
+Build project.
+The widgets are grouped in ten panes, with input widgets, output widgets and composite widgets. Just click on an
+widget to select it.
+
+2.2.3. List of Open Projects/Files
+On top of the What-You-See-Is-What-You-Get (WYSIWYG) screen, the open projects are displayed:
+
+Click on the tab to open it or on the cross to close it.
+
+2.2.4. WYSIWYG Screen
+The form represents a WYSIWYG screen.
+The active form is displayed there, with its widgets. Widgets are picked from the panes and can be resized and
+moved.
+To select an widgets, simply click on it.
+
+4D Systems
+
+MANUAL
+
+Page 10 of 52
+
+ViSi-Genie Reference Manual
+
+Create a ViSi-Genie Project
+
+2.2.5. Object Inspector
+The object inspector provides all the information on the selected widgets: - properties, as size and position; - and
+events, where actions are defined.
+
+2.2.6. Message Window
+The message window displays errors, warnings and notices after the project is built.
+Before starting using the Workshop4, we need to connect the screen and prepare a micro-SD card.
+
+The micro-SD card shall be FAT16-formatted. Partition can't exceed 4 GB.
+Note
+1. For more information about connecting the screen, please refer to the Workshop4 User Guide.
+2. For more information about formatting the micro-SD card, please check the details on MicroSD Card Format section
+of the Workshop4 User Manual.
+
+4D Systems
+
+MANUAL
+
+Page 11 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+2.3. Designing the User Interface
+A fresh ViSi-Genie project includes a single empty form called Form0.
+A form is like a page on the screen. The form includes widgets, like sliders, displays or keyboards. A project
+consists of one or more forms.
+
+We are going to build a single form project with two widgets: a track bar that updates a meter.
+
+2.3.1. Adding Widgets
+The track-bar is an input widget, and the meter is an output widget.
+Select the Inputs pane then the Trackbar widget.
+
+4D Systems
+
+MANUAL
+
+Page 12 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+and then click on the desired location on the form to place it:
+
+Now, the same applies for the meter. Select the Gauges pane then the Meter object.
+
+The final form looks like:
+
+Note
+For a step-by-step example of a project, please refer to the application notes:
+• ViSi-Genie: Getting Started with PICASO Displays
+• ViSi-Genie: Getting Started with DIABLO-16 Displays
+• ViSi-Genie: Getting Started with PIXXI Displays
+
+4D Systems
+
+MANUAL
+
+Page 13 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+2.3.2. Linking Widgets
+Now, the widgets need to be linked so that moving the track-bar updates the meter. Moving the track-bar raises an
+event, called OnChanging. When an OnChanging event arises, a message is sent to the meter with the value.
+
+For the end-user, each time he moves the trackbar, the meter is updated accordingly.
+Note
+For a detailed presentation of the onChanging and onChanged events, please refer to the application note ViSi-Genie:
+onChanging and onChanged Events.
+
+2.3.3. Controlling Multiple Objects
+As described in the previous section, an object sends a message to another single object. Select the Digits pane
+then the LedDigits object.
+
+and place it on the form. The final form looks like:
+
+4D Systems
+
+MANUAL
+
+Page 14 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+As previously, moving the track-bar raises the OnChanging event, which sends a message to Meter0 with the value
+
+Now, the meter has the event OnChanged raised when the meter receives a new value.
+
+An action can be associated to that event to send the value to the LedDigits0 object:
+
+Summarising:
+
+• Moving the track-bar raises the OnChanging event, which sends a message to Meter0 with the value;
+• The meter Meter0 displays the new value and raises the OnChanged event, which sends a message to
+LedDigits0 with the value.
+
+4D Systems
+
+MANUAL
+
+Page 15 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+That way, multiple objects can be controlled.
+
+2.3.4. Chaining Objects
+Combining the OnChanged and OnChanging events with sending messages from one object to another allows
+multiple configurations:
+
+Another configuration with the same result:
+
+4D Systems
+
+MANUAL
+
+Page 16 of 52
+
+ViSi-Genie Reference Manual
+
+Designing the User Interface
+
+A message is sent to the host controller once the track-bar has been released:
+
+Another configuration with the same result:
+
+Note
+For more information on the interfacing of ViSi-Genie with a host micro-controller, please refer to the 4D Systems
+application note ViSi-Genie: Connecting a 4D Display to an Arduino.
+
+4D Systems
+
+MANUAL
+
+Page 17 of 52
+
+ViSi-Genie Reference Manual
+
+Workshop4 Objects
+
+3. Workshop4 Objects
+ViSi-Genie features several types of objects that can be configured to users' needs. In the context of Workshop4
+development, objects refer to the items available in the Objects Pane.
+
+These objects can be classified as a static graphical widget, an input object, an output object or a system object.
+Input and output objects are mostly graphical objects or can be better referred to as Widgets.
+Static Widgets
+Refer to graphical objects that have only one state and can't be updated.
+Example: StaticText
+System Objects
+Includes Forms and Inherent Font. - Forms can contain multiple widgets. Form0 also houses the Genie Magic
+objects and Inherent Font - Inherent Font are font objects that lets Internal and Inherent widgets use custom
+fonts.
+Input Objects
+Produce stimuli data for OUTPUT type objects or directly to Serial output. For graphical objects, the animation
+is done under the hood, for example the slider thumb movements, etc. A button press can navigate between
+forms or can send out serial data or cause another event to occur.
+Example: WinButton, Pin Input
+Output Objects
+Only react to OUTPUT stimuli. The stimulus data can come from the Serial port or an INPUT object. They
+produce no input data or stimuli. The animation for these objects is performed under the hood, for example
+incoming serial data can move the needle of the meter, etc. Graphical OUTPUTs can be set regardless of
+whether they are displayed on the current form, when the form containing them is displayed, they are displayed
+with their current value.
+Example: AngularMeter, Pin Output
+
+4D Systems
+
+MANUAL
+
+Page 18 of 52
+
+ViSi-Genie Reference Manual
+
+Workshop4 Objects
+
+Combined Objects
+Most objects can behave as both an Input and Output since input objects can also function as outputs, with the
+notable exception of Keyboards. Certain objects need both an input stimulus as well as produce an output
+event. For example, a slider thumb position may need to be remotely controlled from incoming serial data. A
+button may need to be animated not only using the touch screen but via serial data.
+Example: Slider
+Note
+Some input and and output objects are not graphical such as Pin Input, Pin Output, Sound, Timer and_Magic Object_.
+
+Worskhop4 PRO has an extension called “Genie Magic”. Under Genie Magic there are additional objects that allow
+the user to add 4DGL code at various points in the program. These objects are called “Magic Objects”. These are
+found under the Magic pane.
+Note
+The ViSi-Genie Magic objects are available only in Workshop4 PRO.
+
+4D Systems
+
+MANUAL
+
+Page 19 of 52
+
+ViSi-Genie Reference Manual
+
+Object Summary
+
+3.1. Object Summary
+Pane
+
+Object
+
+ID
+
+Backgrounds
+
+Border
+
+-
+
+Gradient
+
+-
+
+Scale
+
+-
+
+Internal Panel
+
+-
+
+Internal Scale
+
+-
+
+Inherent Media Panel
+
+-
+
+Buttons
+
+Digits
+
+Win Button (Fancy Button)
+
+0x06
+
+User Button
+
+0x21
+
+Ani Button
+
+0x1F
+
+Internal Button D
+
+0x33
+
+Internal Switch
+
+0x3A
+
+Internal Button E
+
+0x34
+
+Internal Switch B
+
+0x3B
+
+Inherent Toggle Input
+
+0x36
+
+Inherent Media Button
+
+0x35
+
+4D Button
+
+0x1E
+
+Led Digits
+
+0x0F
+
+Custom Digits
+
+0x09
+
+Led
+
+0x0E
+
+User Led
+
+0x13
+
+Internal Led
+
+0x2D
+High Word
+Low Word
+
+Internal Led Digits
+
+Gauges
+
+4D Systems
+
+Output
+
+0x26
+0x2F
+
+Internal Led Digit
+
+0x32
+
+Internal Media Led
+
+0x2E
+
+Meter
+
+0x10
+
+Gauge
+
+0x0B
+
+Angular Meter
+
+0x07
+
+Cool Gauge
+
+0x08
+
+Thermometer
+
+0x12
+
+Spectrum
+
+0x18
+
+Scope
+
+0x19
+
+Tank
+
+0x1A
+
+MANUAL
+
+Input
+
+Page 20 of 52
+
+ViSi-Genie Reference Manual
+
+Pane
+
+I/O
+
+Inputs
+
+Int/Inh Inputs
+
+Labels
+
+Object Summary
+
+Object
+
+ID
+
+Smart Gauge
+
+0x23
+
+Internal Angular Meter
+
+0x27
+
+Internal Needle
+
+0x30
+
+Internal Gauge
+
+0x28
+
+Internal Ruler Gauge
+
+0x31
+
+Inherent User Gauge
+
+0x2A
+
+Inherent Media Gauge
+
+0x2B
+
+Inherent Media Thermometer
+
+0x2C
+
+Pin Input
+
+0x1D
+
+Pin Output
+
+0x1C
+
+Knob
+
+0x01
+
+Rotary Switch
+
+0x03
+
+Slider
+
+0x04
+
+Track Bar
+
+0x05
+
+Keyboard
+
+0x0D
+
+Dip Switch
+
+0x00
+
+Rocker Switch
+
+0x02
+
+Color Picker
+
+0x20
+
+Smart Slider
+
+0x24
+
+Smart Knob
+
+0x25
+
+Internal Knob / Dial
+
+0x37
+
+Internal Slider E
+
+0x3C
+
+Inherent Slider C
+
+0x42
+
+Inherent Slider D
+
+0x41
+
+Inherent Slider F
+
+0x40
+
+Inherent Slider G
+
+0x3F
+
+Inherent Slider H
+
+0x3E
+
+Inherent Linear Input
+
+0x43
+
+Inherent Rotary Input
+
+0x39
+
+Internal Media Slider
+
+0x3D
+
+Internal Media Rotary
+
+0x38
+
+Label
+
+Output
+
+-
+
+Static Text
+
+4D Systems
+
+Input
+
+0x15
+
+MANUAL
+
+Page 21 of 52
+
+ViSi-Genie Reference Manual
+
+Pane
+
+Genie-Magic
+
+Primitives
+
+System / Media
+
+Object Summary
+
+Object
+
+ID
+
+Strings
+
+0x11
+
+Inherent Label
+
+0x29
+
+Event
+
+-
+
+Touch
+
+-
+
+Move
+
+-
+
+Release
+
+-
+
+Keyboard + Color Picker
+
+-
+
+Code
+
+-
+
+Object
+
+0x22
+
+Circle
+
+-
+
+Rectangle
+
+-
+
+Triangle
+
+-
+
+Line
+
+-
+
+Ellipse
+
+-
+
+Panel
+
+-
+
+Image
+
+0x0C
+
+Video
+
+0x14
+
+Form
+
+0x0A
+
+User Images
+
+0x1B
+
+Sound
+
+0x16
+
+Timer
+
+0x17
+
+Inherent Font
+
+Input
+
+Output
+
+-
+
+Note
+1. Internal and Inherent widgets are only available in DIABLO16, PIXXI28 and PIXXI44 display modules.
+2. Smart Widgets and Genie Magic objects are only available in Workshop4 PRO version.
+3. Object IDs may change with future releases; it is not advisable to code their values as constants.
+
+Each object is presented with its button on the left and an example on the right when used on a form.
+There is no Z-order in ViSi-Genie. Objects are always drawn on the display ‘background’. The display background is
+the Form background (colour or image) with the ‘Backgrounds’ objects ‘added’.
+For objects that are transparent or have a transparent aspect (eg corners of WinButtons) this means what shows
+through the transparent region will be the Form background + ‘Backgrounds’, not what may appear underneath
+when viewing in Workshop. Any visual effects that need to be ‘underneath’ objects should be included in a form
+background image.
+For more information regarding the Workshop4 widgets, please refer to the Workshop4 Widgets Reference Manual
+
+4D Systems
+
+MANUAL
+
+Page 22 of 52
+
+ViSi-Genie Reference Manual
+
+Graphics Build and Display Order
+
+3.2. Graphics Build and Display Order
+When a form is built the background image (of just the colour if it doesn’t have an image) and any ‘backgrounds’ are
+‘built’ first. Then each other object is ‘turned on’, one at a time and built, this is so that transparent parts of these
+objects will have the background image appearing in their transparent parts. After each object is built it is turned
+off again.
+When a form is activated, the background is drawn, then any ‘primitives’ and finally the other graphical objects.
+The primitives and graphic objects are drawn in the order they are added to the form.
+Objects are drawn on the display in the order they are created in the Workshop project. If Image objects are to be
+used for the background and other objects on top, then the image objects must be created and added first. Also
+note this only applies to non-active Image objects, other active objects should not be added on top of each other.
+In general, it is not a good idea to overlap objects, however, this can be used to create various effects as
+overlapping objects are ‘brought to the front’ whenever they are written to by the host.
+Internal and Inherent widgets behave differently and is not pre-built by Workshop4 and instead rendered by the
+processor. These widgets are only supported by Pixxi28, Pixxi44 and Diablo16 processors.
+
+3.3. ViSi-Genie Properties and Events
+Object properties are discussed in the Widgets Reference Manual.
+
+4D Systems
+
+MANUAL
+
+Page 23 of 52
+
+ViSi-Genie Reference Manual
+
+Communication Protocol
+
+4. Communication Protocol
+The ViSi-Genie display platform offers a serial communications protocol called the Genie Standard Protocol. The
+protocol provides access to many of the display’s features and gives the host detailed information on the current
+state of all the objects used in the display application.
+The Genie Standard Protocol provides a simple yet effective interface between the display and the host controller
+and all communications are reported over this bidirectional link. The protocol utilises only a handful of commands
+and is simple and easy to implement.
+Serial data settings are: 8 Bits, No Parity, 1 Stop Bit
+The baud rate for the display is selected from the Workshop Genie project. The user should match the same baud
+rate on the host side.
+Note
+RS-232 handshaking signals (i.e., RTS, CTS, DTR, and DSR) are not supported by the ViSi-Genie protocols. Instead, only the
+RxD (received data), TxD (transmitted data), and signal ground are used.
+
+4D Systems
+
+MANUAL
+
+Page 24 of 52
+
+ViSi-Genie Reference Manual
+
+Protocol Definitions
+
+4.1. Protocol Definitions
+The commands and parameters are sent and received using a very simple messaging structure. The message
+consists of a command byte, command parameters, and a checksum byte. The checksum ensures some the
+integrity of the message. The following figure shows the organisation of the message.
+CMD
+
+PARAM (1 to N bytes)
+
+CHKSUM
+
+• CMD: This byte indicates the command code. Some commands will have more parameters than others. The
+table below outlines the available commands and their relevant parameters.
+• PARAM: Parameter bytes (variable); a variable number of parameter bytes (between 1 to N) that contains
+information pertaining to the command. Refer to the command table below.
+• CHKSUM: Checksum byte; this byte is calculated by taking each byte and XOR’ing all bytes in the message from
+(and including) the CMD byte to the last parameter byte. Then, the result is appended to the end to yield the
+checksum byte.
+Note
+If command is valid, check byte plus the sum of all the other bytes in the message will give a result of 0.
+
+4.2. Command Responses
+When sending a command to the display, the display will typically respond with either an ACK or a NAK byte:
+ACK
+Acknowledge byte (0x06); this byte is issued by the Display to the Host when the Display has correctly received
+the last message frame from the Host. The transmission message for this is a single byte: 0x06
+NAK
+Not Acknowledge byte (0x15); this byte is issued by the receiver (Display or Host) to the sender (Host or Display)
+when the receiver has not correctly received the last message frame from the sender. The transmission
+message for this is a single byte: 0x15
+
+4D Systems
+
+MANUAL
+
+Page 25 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3. Command and Parameters
+Command
+
+Code
+
+Parameter 1
+
+Parameter 2
+
+Parameter 3
+
+Parameter 4
+
+Parameter N
+
+Checksum
+
+READ_OBJ
+
+0x00
+
+Object ID
+
+Object Index
+
+-
+
+-
+
+-
+
+Checksum
+
+WRITE_OBJ
+
+0x01
+
+Object ID
+
+Object Index
+
+Value (msb)
+
+Value(lsb)
+
+-
+
+Checksum
+
+WRITE_STR
+
+0x02
+
+String Index
+
+String Length
+
+String (1 byte chars)
+
+Checksum
+
+WRITE_STRU
+
+0x03
+
+String Index
+
+String Length
+
+String (2 byte chars)
+
+Checksum
+
+WRITE_CONTRAST
+
+0x04
+
+Value
+
+-
+
+-
+
+-
+
+-
+
+Checksum
+
+REPORT_OBJ
+
+0x05
+
+Object ID
+
+Object Index
+
+Value (msb)
+
+Value(lsb)
+
+-
+
+Checksum
+
+REPORT_EVENT
+
+0x07
+
+Object ID
+
+Object Index
+
+Value (msb)
+
+Value(lsb)
+
+-
+
+Checksum
+
+WRITE_MAGIC_BYTES
+
+0X08
+
+Object Index
+
+Length
+
+Array (1 byte values)
+
+Checksum
+
+WRITE_MAGIC_DBYTES
+
+0x09
+
+Object Index
+
+Length
+
+Array (2 byte values)
+
+Checksum
+
+REPORT_MAGIC_EVENT_BYTES
+
+0x0A
+
+Object Index
+
+Length
+
+Array (1 byte values)
+
+Checksum
+
+REPORT_MAGIC_EVENT_DBYTES
+
+0x0B
+
+Object Index
+
+Length
+
+Array (2 byte values)
+
+Checksum
+
+WRITE_INH_LABEL
+
+0x0C
+
+Inh Label Index
+
+Label Length
+
+String (1 byte chars)
+
+Checksum
+
+Note
+Inherent Label and Genie Magic commands are only available when using Genie PRO.
+
+4D Systems
+
+MANUAL
+
+Page 26 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.1. Read Object Status
+The host can issue the Read Object message when it wants to determine the current value of a specific object
+instance.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x00: READ_OBJ Command Byte
+
+Object ID
+
+byte
+
+Indicates the type of object. Please refer to object summary table
+
+Object Index
+
+byte
+
+Index specifying the number of the object
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+REPORT_OBJ
+
+If the Display understood the message, it would respond back with the Report Object Status message.
+
+4D Systems
+
+MANUAL
+
+Page 27 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.2. Write Object Value
+The host can issue the Write Object command when it wants to change the status/value of an individual object
+item.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x01: WRITE_OBJ Command Byte
+
+Object ID
+
+byte
+
+Indicates the type of object. Please refer to object summary table
+
+Object Index
+
+byte
+
+Index specifying the number of the object
+
+Value
+
+word
+
+16-bit value to set the object to. (MSB first)
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 28 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.3. Write String (ASCII) Message
+Pre-defined strings for ASCII String objects can be defined in the Genie project. These can be displayed by using
+the Write Object command.
+To display a dynamic string, the host can send WRITE_STR command packet. The maximum string length is 255
+characters.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x02: WRITE_STR Command Byte
+
+String Index
+
+byte
+
+Index specifying the number of the String object
+
+String Length
+
+byte
+
+Number of ASCII characters (max = 255)
+
+String
+
+byte[]
+
+Array of ASCII characters where one character is one byte. The array size must match
+String Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 29 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.4. Write String (Unicode) Message
+Pre-defined strings for Unicode String objects can be defined in the Genie project. These can be displayed by
+using the Write Object command.
+To display a dynamic string, the host can send WRITE_STRU command packet. The maximum string length is 255
+characters.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x03: WRITE_STRU Command Byte
+
+String Index
+
+byte
+
+Index specifying the number of the String object
+
+String Length
+
+byte
+
+Number of Unicode characters (max = 255)
+
+String
+
+word[]
+
+Array of Unicode characters where one character is one word (2 bytes). The array size
+must match String Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 30 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.5. Write Contrast Value
+The host can issue the Write Contrast command message when it wants to change the contrast or brightness of
+the display. Certain power saving modes and applications may require the host to dim or completely turn off the
+backlight.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x04: WRITE_CONTRAST Command Byte
+
+Value
+
+byte
+
+Contrast value from 0 to 15 where 0 turns OFF backlight and any non-zero turns it ON
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 31 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.6. Report Object Status
+This is the response message from the Display after the Host issues the Read Object Status command. The
+Display will respond back with the 2-byte value for the specific item of that object type.
+Direction: From Display to Host
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x05: REPORT_OBJ Command Byte
+
+Object ID
+
+byte
+
+Indicates the type of object. Please refer to object summary table
+
+Object Index
+
+byte
+
+Index specifying the number of the object
+
+Value
+
+word
+
+Current 16-bit value of the object item (MSB first)
+
+Checksum
+
+byte
+
+Checksum
+
+Response: No response required from Host
+
+4D Systems
+
+MANUAL
+
+Page 32 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.7. Report Event Message
+When designing the Genie display application in Workshop4, each Object can be configured to report its status
+change without the host having to poll it using a Read Object command. If the object’s ‘Event Handler’ is set to
+‘Report Event’ in the ‘Event’ tab, the display will transmit the object's status upon any change.
+Note
+The events are triggered by user touch.
+
+Direction: From Display to Host
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x07: REPORT_EVENT Command Byte
+
+Object ID
+
+byte
+
+Indicates the type of object. Please refer to object summary table
+
+Object Index
+
+byte
+
+Index specifying the number of the object
+
+Value
+
+word
+
+Current 16-bit value of the object item (MSB first)
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Host to Display
+Response
+Type
+
+Value / Description
+
+NAK
+
+If the Host did not understand the message, it may respond with the NAK byte. In this case, the Display
+would retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 33 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.8. Write Magic Bytes
+This command can be used to send an array of bytes to a magic object. The magic object can process the bytes in
+any way you want it to as there is no restrictions on the format of the information sent.
+The maximum number of bytes that can be sent at once is set by the ‘Maximum String Length’ setting in
+Workshop4 under File, Options, Genie.
+Note
+A Workshop4 PRO license is required to use this capability.
+
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x08: WRITE_MAGIC_BYTES Command Byte
+
+Object Index
+
+byte
+
+Index specifying the number of the Genie Magic object
+
+Array Length
+
+byte
+
+Number of bytes (max = 255)
+
+Byte Array
+
+byte[]
+
+A byte array that matches size indicated by Array Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 34 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.9. Write Magic Double Bytes
+This command can be used to send an array of Double bytes to a magic object. The magic object can process the
+double bytes in any way you want it to as there is no restrictions on the format of the information sent.
+The maximum number of double bytes that can be sent at once is set by the ‘Maximum String Length’ setting in
+Workshop4 under File, Options, Genie. The number is set in line with the guidelines for Unicode Strings.
+Note
+A Workshop4 PRO license is required to use this capability.
+
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x09: WRITE_MAGIC_DBYTES Command Byte
+
+Object Index
+
+byte
+
+Index specifying the number of the Genie Magic object
+
+Array Length
+
+byte
+
+Number of words (16-bit values) (max = 255)
+
+Word Array
+
+word[]
+
+A word (16-bit) array that matches size indicated by Array Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 35 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.10. Report Magic Bytes
+This command can be used to send an array of bytes to the host from a magic object. The magic object can send
+the bytes in any desired format. The Magic object is responsible for the complete building of this message.
+Note
+A Workshop4 PRO license is required to use this capability.
+
+Direction: From Display to Host
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x0A: REPORT_MAGIC_BYTES Command Byte
+
+Object Index
+
+byte
+
+Index specifying the number of the Genie Magic object
+
+Array Length
+
+byte
+
+Number of bytes (max = 255)
+
+Byte Array
+
+byte[]
+
+A byte array that matches size indicated by Array Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: No response required from Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+Example
+
+seroutCS(REPORT_MAGIC_EVENT_BYTES);
+seroutCS(object);
+seroutCS(2);
+seroutCS(x);
+seroutCS(y);
+seroutOcs();
+
+4D Systems
+
+// we report in bytes
+// report object ID
+// two bytes following
+// write x as a byte
+// write y as a byte
+// write out checksum
+
+MANUAL
+
+Page 36 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.11. Report Magic Double Bytes
+This command can be used to send an array of double bytes to the host from a magic object. The magic object can
+send the bytes in any desired format. The Magic object is responsible for the complete building of this message.
+Note
+A Workshop4 PRO license is required to use this capability.
+
+Direction: From Display to Host
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x0B: REPORT_MAGIC_DBYTES Command Byte
+
+Object Index
+
+byte
+
+Index specifying the number of the Genie Magic object
+
+Array Length
+
+byte
+
+Number of words (16-bit values) (max = 255)
+
+Word Array
+
+word[]
+
+A word (16-bit) array that matches size indicated by Array Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: No response required from Host
+Example
+seroutCS(REPORT_MAGIC_EVENT_DBYTES);
+seroutCS(object);
+seroutCS(2);
+seroutCS(x >> 8);
+seroutCS(x);
+seroutCS(y >> 8);
+seroutCS(y);
+seroutOcs();
+
+// we report in double bytes
+// report object ID
+// two double bytes following
+// write x high byte
+// write x low byte
+// write y high byte
+// write y low byte
+// write out checksum
+
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 37 of 52
+
+ViSi-Genie Reference Manual
+
+Command and Parameters
+
+4.3.12. Write Label Message
+Pre-defined text for ASCII Inherent Label objects can be defined in the Genie project.
+To display a dynamic string, the host can send WRITE_LABEL command packet. The maximum string length is 255
+characters.
+Direction: From Host to Display
+Command Packet
+Type
+
+Value / Description
+
+Command
+
+byte
+
+0x0C: WRITE_LABEL Command Byte
+
+String Index
+
+byte
+
+Index specifying the number of the Label object
+
+String Length
+
+byte
+
+Number of ASCII characters (max = 255)
+
+String
+
+byte[]
+
+Array of ASCII characters where one character is one byte. The array size must match
+String Length value
+
+Checksum
+
+byte
+
+Checksum
+
+Response: From Display to Host
+Response
+Type
+
+Value / Description
+
+ACK
+
+If the Display understood the message, it would respond back to the host with an ACK after completing
+the requested action
+
+NAK
+
+If the Display did not understand the message, it would respond with the NAK byte. In this case, the
+Host should retransmit the message.
+
+4D Systems
+
+MANUAL
+
+Page 38 of 52
+
+ViSi-Genie Reference Manual
+
+Integrated Debugger
+
+4.4. Integrated Debugger
+The integrated debugger of Workshop4 is called Genie Test Executor or GTX. To launch the debugger, click on the
+GTX button available on the menu Tools.
+
+Just try to move the track-bar and press Set: the value is sent to the screen. Pressing Query Values reads the
+value from the screen's track-bar.
+
+4D Systems
+
+MANUAL
+
+Page 39 of 52
+
+ViSi-Genie Reference Manual
+
+Integrated Debugger
+
+The white area on the right displays:
+• In green the messages sent to the screen.
+• And in red the messages received from the screen:
+
+All values are in hexadecimal.
+
+4D Systems
+
+MANUAL
+
+Page 40 of 52
+
+ViSi-Genie Reference Manual
+
+Communication Terminal
+
+4.5. Communication Terminal
+An alternative to the debugger is the Terminal. To launch the Terminal, select the Tools menu and click either
+Terminal 9600 or Terminal 115200 to open the project COM port at the indicated baudrate.
+
+A new screen appears:
+
+To send the commands on hexadecimal format, press
+The commands sent by the host and the messages sent by the screen are the same as with the Genie Test
+Executor debugger.
+
+4D Systems
+
+MANUAL
+
+Page 41 of 52
+
+ViSi-Genie Reference Manual
+
+Communication Terminal
+
+The white area on the right displays
+• In green the messages sent to the screen.
+• And in red the messages received from the screen:
+Here, the command Set Slider0 to value 0x17 is sent, or 04 00 17 displayed in green on the terminal window.
+
+And the screen answers with the 0x06 successful acknowledgement, displayed on red on the terminal window.
+
+4D Systems
+
+MANUAL
+
+Page 42 of 52
+
+ViSi-Genie Reference Manual
+
+Workshop4 PRO
+
+5. Workshop4 PRO
+Workshop4 PRO is a licensed extension to Workshop4 to enable the usage of additional and specialised
+functionality.
+Genie Magic - the ability to add standard 4DGL code at various points within the Genie environment - is the first
+addition to Workshop4 that requires a PRO license.
+Another feature of Workshop4 PRO is the Smart Widgets Editor tool and the Smart Widgets. Smart Widgets Editor
+is a powerful utility that can be used to create complex widgets with up to six layers, including the layer for the
+base image. The layers can be arranged in any desired order. Each layer can contain one or more images arranged
+in sequence that can be manipulated in a variety of ways.
+Image manipulation options include horizontal motion, vertical motion, and angular motion. Two or more layers
+can be linked to produce synchronized movements of images. This enables the generation of complex widgets
+with multiple moving parts.
+Smart Widgets are custom widgets designed using the Smart Widgets Editor. There are three types available –
+Smart Gauges, Smart Knobs, and Smart Sliders.
+When used in combination with Genie Magic, it is possible to use the Smart Widgets Editor tool and Smart
+Widgets to create other graphical user interface elements such as:
+• dropdown menu
+• side menu
+• carousel slider
+• list box
+• quarter-rotary menu
+• dock menu
+• fading slide-to-unlock button
+• spectrum with transparency
+and many others.
+A seven-day trial of Workshop4 PRO is available by clicking on the ‘Start PRO trial’ button under File > Options >
+License. This will enable use of PRO features for seven different, not necessarily consecutive, days.
+A PRO license can be purchased from the 4D shopping cart, please include your Workshop4 serial number in the
+comments section when purchasing as this is required to generate your password to permanently unlock the
+functionality of Workshop4 PRO.
+The email address used for the shopping cart becomes your registration email address. To have another address
+used as your registration email address, please also specify this email address in the comments section.
+
+4D Systems
+
+MANUAL
+
+Page 43 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+Your password will be emailed to the registration email address, this process is not fully automated yet, so please
+allow at least one business day for the sending of your password.
+The password and email registration should then be entered into the License screen and the ‘License PRO’ button
+should be pressed. Workshop4 will need to be restarted for the change to take effect.
+
+5.1. Genie Magic
+Genie Magic is an extension to Genie that requires Workshop4 PRO to function. It allows for the adding of any
+standard 4DGL code at various points in the Genie environment.
+Extra functionality could include almost anything the user can imagine. For example:
+• Support R/W access to uSD from a host. (Example supplied)
+• Produce sounds when objects are touched. (Example Supplied)
+• Manipulate multiple objects in different ways by a single write command. (Example Supplied)
+• Read data from I/O ports and write this data to Genie Objects. (Example Supplied)
+• Collect and edit keyboard input sending result to host. (Example Supplied)
+• Perform multiple updates with a single write command. (Example Supplied)
+• ‘Join’ multiple objects together to get them to behave as a single object. (Example Supplied)
+• Allow Genie to perform many more functions in a ‘hostless’ environment.
+Code can be added at the following points:
+• Event Handlers
+• Touch Press, move, release action ‘points’.
+• Specific code positions
+• Constant / Global / Data definition
+• Main Loop
+• Pre/Post Activate Form
+• Pre/Post Genie Initialization
+• An object to interface to the host
+The host interface object can interface in the traditional Genie way using the normal Read/Write Object
+commands. It can also interface using 4 new commands which allow the sending and receiving of byte and double
+byte ‘strings’. The format of these strings is very similar to the traditional ‘write string’ and ‘write string Unicode’
+commands.
+
+4D Systems
+
+MANUAL
+
+Page 44 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+5.1.1. Genie Magic Callable Functions
+This is a list of functions available within Genie that may be of use to the Genie Magic user. This list does not
+include all functions. This list includes functions ‘generated’ by Genie Magic.
+
+Functions
+
+Description
+
+Parameters
+
+seroutCS
+
+Writes parameter to Genie Serial port
+and updates output Checksum
+
+Char
+
+seroutOcs
+
+Writes Checksum to Genie Serial port
+and zeros output Checksum
+
+None
+
+WriteObject
+
+Sets the value of a Genie Object
+
+Object Type, eg tKnob
+
+ObjectIdx
+
+Object number, eg 0, 1
+
+NewVal
+
+New value, eg 123
+The new form to be shown, eg 1
+
+Activates the for specified by the
+parameter
+
+newform
+
+Timern
+
+Name format used by internally
+generated timer routines
+
+None
+
+Sends a standard 6 byte report Object
+or Event packet to the Genie Serial Port
+
+Id
+
+Object Type, eg tKnob
+
+ObjectIdx
+
+Object number, eg 0, 1
+
+Value
+
+Value, eg 123
+Char to write to port
+
+Defines serout for Genie Serial port
+
+Char
+
+serinX
+
+Defines serin for Genie Serial port
+
+None
+
+rMagicObjectn
+
+rMagicKbClrEventn Keyboard and Color Picker event
+
+4D Systems
+
+MANUAL
+
+Report ID, eg REPORT_EVENT
+
+ObjectType
+
+seroutX
+
+MagicObject, used to receive data from
+a master
+
+Char to write to port
+
+ObjectType
+
+ActivateForm
+
+SendReport
+
+Description
+
+Action
+
+The command that was received from
+the host, one of READ_OBJ,
+WRITE_OBJ, WRITE_MAGIC_BYTES or
+WRITE_MAGIC_DBYTES
+
+Object
+
+Normal the object received from the
+host will be the same as the n in the
+function name, but since you could call
+this function internally it might be
+something else.
+
+newVal
+
+N/A for Action of READ_OBJ, New value
+for Action of WRITE_OBJ, Otherwise
+number of parameters in the ptr array.
+
+ptr
+
+N/A for Action of READ_OBJ and
+WRITE_OBJ, otherwise Pointer to array
+of parameters passed. Array is always a
+standard Picaso/Diablo integer array.
+For WRITE_MAGIC_BYTES each
+element contains a byte.
+
+reportID
+
+Report ID, always REPORT_EVENT
+
+objType
+
+Object Type, eg tKeyboard
+
+objHash
+
+Object number, eg 0, 1
+
+value
+
+Value, eg 0x12
+
+Page 45 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+Functions
+
+Description
+
+Parameters
+
+MagicEventn
+
+Magic Event
+
+newval
+
+PrintStrings
+
+Writes string objects
+
+ID
+
+Description
+The new value that is passed on to each
+event handler.
+String ID to write
+
+msgid
+
+Message number for static strings, or
+pointer to word array being a Unicode
+string for dynamic strings.
+
+StringType
+
+0 for static string, else dynamic string
+
+5.1.2. Genie Magic Useful Variables
+This is a list of global variables available within Genie that may be of use to the Genie Magic user. This list does not
+include all variables.
+Variables
+
+Description
+
+ImageTouched
+
+index of currently touched item
+
+TouchXpos
+
+X position of current touch
+
+TouchYpos
+
+Y position of current touch
+
+CurrentForm
+
+The number of the current form
+
+hFonts
+
+Array of handles for fonts, each element corresponds to the number of the relevant strings object
+
+iSounds
+
+Array of offsets into 'Sounds' Data of the filename associated with a given element
+
+hndl
+
+Handle for system image control
+
+To access String object information, other than ‘hFonts’, access is required to the oStringss array variable. This
+variable is read only. oStrings[0] is the number of strings, ostringss[1] is a pointer to the strings0 information, if
+any of the pointers are 0xFFFF then this string is undefined (use the renumber tool to ‘recover’ this string number).
+oStringss Offsets
+
+Description
+
+Ofs_String_x1
+
+Left extent of strings object
+
+Ofs_String_y1
+
+Top extent of strings object
+
+Ofs_String_x2
+
+Right extent of strings object
+
+Ofs_String_y2
+
+Bottom extent of strings object
+
+Ofs_String_FGColor
+
+String Foreground Colour
+
+Ofs_String_BGColor
+
+String Background colour
+
+Ofs_String_FontAttribs
+
+Attributes for this strings object (Bold, Italic, Inverse, underlined). Formatted for passing to
+txt_Attributes() function.
+
+Ofs_String_Transparent
+
+1 Text will be drawn on solid rectangle of Ofs_String_BGColor.
+Test will be drawn on form’s background
+
+Ofs_String_Form
+
+Form on which this ‘strings’ object normally appears
+
+Ofs_String_StartH
+
+High Offset into .txf file to start of this strings object’s constant strings
+
+Ofs_String_StartL
+
+Low Offset into .txf file to start of this strings object’s constant strings
+
+Ofs_String_Size
+
+Maximum length of constant string in .txf file
+
+Ofs_String_Ansi
+
+0 if constant strings in .txf file are Unicode, else ANSI
+
+4D Systems
+
+MANUAL
+
+Page 46 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+5.1.3. Genie Magic Useful Constants
+This is a list of constants available within Genie that may be of use to the Genie Magic user. This list does not
+include all of constants.
+Name
+
+Value
+
+Description
+
+iObjectn
+
+Varies
+
+Index of object in Image Control. Eg iWinbutton0, iKnob6, etc.
+
+ACK
+
+0x06
+
+Standard ASCII ACK code
+
+NAK
+
+0x15
+
+Standard ASCII NAK code
+
+tDipSwitch
+
+0
+
+Object index of the DipSwitch Object
+
+tKnob
+
+1
+
+Object index of the tKnob Object
+
+tRockerSwitch
+
+2
+
+Object index of the tRockerSwitch Object
+
+tRotarySwitch
+
+3
+
+Object index of the tRotarySwitch Object
+
+tGSlider
+
+4
+
+Object index of the tGSlider Object
+
+tTrackbar
+
+5
+
+Object index of the tTrackbar Object
+
+tWinButton
+
+6
+
+Object index of the tWinButton Object
+
+tAngularmeter
+
+7
+
+Object index of the tAngularmeter Object
+
+tCoolgauge
+
+8
+
+Object index of the tCoolgauge Object
+
+tCustomdigits
+
+9
+
+Object index of the tCustomdigits Object
+
+tForm
+
+10
+
+Object index of the tForm Object
+
+tGauge
+
+11
+
+Object index of the tGauge Object
+
+tImage
+
+12
+
+Object index of the tImage Object
+
+tKeyboard
+
+13
+
+Object index of the tKeyboard Object
+
+tLed
+
+14
+
+Object index of the tLed Object
+
+tLeddigits
+
+15
+
+Object index of the tLeddigits Object
+
+tMeter
+
+16
+
+Object index of the tMeter Object
+
+tStrings
+
+17
+
+Object index of the tStrings Object
+
+tThermometer
+
+18
+
+Object index of the tThermometer Object
+
+tUserled
+
+19
+
+Object index of the tUserled Object
+
+tVideo
+
+20
+
+Object index of the tVideo Object
+
+tStaticText
+
+21
+
+Object index of the tStaticText Object
+
+tSounds
+
+22
+
+Object index of the tSounds Object
+
+tTimer
+
+23
+
+Object index of the tTimer Object
+
+tSpectrum
+
+24
+
+Object index of the tSpectrum Object
+
+tScope
+
+25
+
+Object index of the tScope Object
+
+tTank
+
+26
+
+Object index of the tTank Object
+
+tUserImages
+
+27
+
+Object index of the tUserImages Object
+
+tPinOutput
+
+28
+
+Object index of the tPinOutput Object
+
+tPinInput
+
+29
+
+Object index of the tPinInput Object
+
+t4Dbutton
+
+30
+
+Object index of the t4Dbutton Object
+
+tAniButton
+
+31
+
+Object index of the tAniButton Object
+
+tColorPicker
+
+32
+
+Object index of the tColorPicker Object
+
+4D Systems
+
+MANUAL
+
+Page 47 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+Name
+
+Value
+
+Description
+
+tUserButton
+
+33
+
+Object index of the tUserButton Object
+
+tMagicObject
+
+34
+
+Object index of the tMagicObject Object
+
+tSmartGauge
+
+35
+
+Object index of the tSmartGauge Object
+
+tSmartSlider
+
+36
+
+Object index of the tSmartSlider Object
+
+tSmartKnob
+
+37
+
+Object index of the tSmartKnob Object
+
+tiLedDigitsH
+
+38
+
+Object index of the tiLedDigits Object (High Word)
+
+tiAngularMeter
+
+39
+
+Object index of the tiAngularMeter Object
+
+tiGauge
+
+40
+
+Object index of the tiGauge Object
+
+tiLabelB
+
+41
+
+Object index of the tiLabelB Object
+
+tiUserGauge
+
+42
+
+Object index of the tiUserGauge Object
+
+tiMediaGauge
+
+43
+
+Object index of the tiMediaGauge Object
+
+tiMediaThermometer
+
+44
+
+Object index of the tiMediaThermometer Object
+
+tiLed
+
+45
+
+Object index of the tiLed Object
+
+tiMediaLed
+
+46
+
+Object index of the tiMediaLed Object
+
+tiLedDigits
+
+47
+
+Object index of the tiLedDigits Object (Low Word)
+
+tiNeedle
+
+48
+
+Object index of the tiNeedle Object
+
+tiRuler
+
+49
+
+Object index of the tiRuler Object
+
+tiLedDigit
+
+50
+
+Object index of the tiLedDigit Object
+
+tiButtonD
+
+51
+
+Object index of the tiButtonD Object
+
+tiButtonE
+
+52
+
+Object index of the tiButtonE Object
+
+tiMediaButton
+
+53
+
+Object index of the tiMediaButton Object
+
+tiToggleInput
+
+54
+
+Object index of the tiToggleInput Object
+
+tiDial
+
+55
+
+Object index of the tiDial Object
+
+tiMediaRotary
+
+56
+
+Object index of the tiMediaRotary Object
+
+tiRotaryInput
+
+57
+
+Object index of the tiRotaryInput Object
+
+tiSwitch
+
+58
+
+Object index of the tiSwitch Object
+
+tiSwitchB
+
+59
+
+Object index of the tiSwitchB Object
+
+tiSliderE
+
+60
+
+Object index of the tiSliderE Object
+
+tiMediaSlider
+
+61
+
+Object index of the tiMediaSlider Object
+
+tiSliderH
+
+62
+
+Object index of the tiSliderH Object
+
+tiSliderG
+
+63
+
+Object index of the tiSliderG Object
+
+tiSliderF
+
+64
+
+Object index of the tiSliderF Object
+
+tiSliderD
+
+65
+
+Object index of the tiSliderD Object
+
+tiSliderC
+
+66
+
+Object index of the tiSliderC Object
+
+tiLinearInput
+
+67
+
+Object index of the tiLinearInput Object
+
+4D Systems
+
+MANUAL
+
+Page 48 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+5.1.4. Genie Magic Objects
+
+Event
+
+(Touch) Press
+
+(Touch) Move
+
+‘Location’
+
+Useful Variables
+
+Called by the event handler
+of another object
+
+newval
+
+After img_Touched
+determination
+
+After (Touch) Press
+
+ImageTouched
+TouchXpos
+TouchYpos
+
+Set ImageTouched to -1 to
+stop Genie processing the
+object ‘later on’. For
+example, this way you can
+turn a userbutton object into
+a multi position rocker, or a
+knob, etc.
+
+ImageTouched
+TouchXpos
+TouchYpos
+
+Set ImageTouched to -1 to
+stop Genie processing the
+object ‘later on’. For
+example, this way you can
+turn a userbutton object into
+a multi position rocker, or a
+knob, etc.
+Set ImageTouched to -1 to
+stop Genie processing the
+object ‘later on’. For
+example, this way you can
+turn a userbutton object into
+a multi position rocker, or a
+knob, etc.
+
+(Touch) Release
+
+After (Touch) Move
+
+ImageTouched
+TouchXpos
+TouchYpos
+
+KBClr
+
+Called when a Key is pressed
+on the keyboard or when a
+colour is ‘changed’ in the
+event it is attached to.
+
+value
+
+Code, Const/Global/Data
+
+Outside of any function
+
+Code, MainLoop
+
+Start of mainloop
+
+Code, PreActivateForm
+
+Before old forms
+deactivation
+
+Code, PreGenieInit
+
+At the very start.
+
+Code, PostActivateForm
+
+After new form is activated
+
+Code, PostGenieInit
+
+After activation of the first
+form
+
+Obj
+
+4D Systems
+
+Notes
+
+newform
+CurrentForm
+
+‘CurrentForm’ is the form
+that is ‘currently‘ active.
+‘newform’ is the form that is
+being activated. You could
+perform validation edits
+here and ‘Return’ to prevent
+the ‘CurrentForm’ being
+changed.
+
+CurrentForm
+
+action
+
+READ_OBJ, WRITE_OBJ,
+WRITE_MAGIC_BYTES or
+WRITE_MAGIC_DBYTES
+
+object
+
+Usually the object number,
+but since you can call this
+routine inside your code you
+could change this.
+
+MANUAL
+
+Page 49 of 52
+
+ViSi-Genie Reference Manual
+
+Genie Magic
+
+‘Location’
+
+Useful Variables
+
+Notes
+
+newVal
+
+New value for WRITE_OBJ.
+Length for
+WRITE_MAGIC_BYTES and
+WRITE_MAGIC_DBYTES
+
+ptr
+
+Pointer to data for
+WRITE_MAGIC_BYTES and
+WRITE_MAGIC_DBYTES,
+otherwise N/A
+
+The Code insertion points can also be represented this way in a skeletal program:
+// (Constants)
+// Constants/Global/Data
+// (Functions)
+func ActivateForm()
+// Pre Activate Form
+// (Deactivate Old Form)
+// (Display New Form)
+// (Enable Inputs)
+// Post Activate Form
+endfunc
+func main()
+// Pre Genie Init
+// (Mount SD)
+// (Open Image Control)
+// (Init 'constants')
+// (Init Comms)
+// (tag real objects)
+// (Display Initial Form)
+// Post Genie Init
+repeat
+// Main Loop
+forever
+endfunc
+
+4D Systems
+
+MANUAL
+
+Page 50 of 52
+
+ViSi-Genie Reference Manual
+
+Revision History
+
+6. Revision History
+Document Revision
+Revision Number
+
+Date
+
+3.0
+
+06/06/2024
+
+4D Systems
+
+Content
+Converted to resource centre document and combined ViSi Genie User Guide
+into ViSi Genie Reference Manual
+
+MANUAL
+
+Page 51 of 52
+
+ViSi-Genie Reference Manual
+
+Legal Notice
+
+7. Legal Notice
+7.1. Proprietary Information
+The information contained in this document is the property of 4D Systems Pty. Ltd. and may be the subject of patents
+pending or granted, and must not be copied or disclosed without prior written permission. 4D Systems endeavours to ensure
+that the information in this document is correct and fairly stated but does not accept liability for any error or omission. The
+development of 4D Systems products and services is continuous and published information may not be up to date. It is
+important to check the current position with 4D Systems. 4D Systems reserves the right to modify, update or makes changes
+to Specifications or written material without prior notice at any time.
+All trademarks belong to their respective owners and are recognised and acknowledged.
+
+7.2. Disclaimer of Warranties & Limitations of Liabilities
+4D Systems makes no warranty, either expressed or implied with respect to any product, and specifically disclaims all other
+warranties, including, without limitation, warranties for merchantability, non-infringement and fitness for any particular
+purpose.
+Information contained in this publication regarding device applications and the like is provided only for your convenience and
+may be superseded by updates. It is your responsibility to ensure that your application meets with your specifications.
+Images and graphics used throughout this document are for illustrative purposes only. All images and graphics used are
+possible to be displayed on the 4D Systems range of products, however the quality may vary.
+In no event shall 4D Systems be liable to the buyer or to any third party for any indirect, incidental, special, consequential,
+punitive or exemplary damages (including without limitation lost profits, lost savings, or loss of business opportunity) arising
+out of or relating to any product or service provided or to be provided by 4D Systems, or the use or inability to use the same,
+even if 4D Systems has been advised of the possibility of such damages.
+4D Systems products are not fault tolerant nor designed, manufactured or intended for use or resale as on line control
+equipment in hazardous environments requiring fail - safe performance, such as in the operation of nuclear facilities, aircraft
+navigation or communication systems, air traffic control, direct life support machines or weapons systems in which the
+failure of the product could lead directly to death, personal injury or severe physical or environmental damage ('High Risk
+Activities'). 4D Systems and its suppliers specifically disclaim any expressed or implied warranty of fitness for High Risk
+Activities.
+Use of 4D Systems' products and devices in 'High Risk Activities' and in any other application is entirely at the buyer's risk, and
+the buyer agrees to defend, indemnify and hold harmless 4D Systems from any and all damages, claims, suits, or expenses
+resulting from such use. No licenses are conveyed, implicitly or otherwise, under any 4D Systems intellectual property rights.
+
+4D Systems
+
+MANUAL
+
+Page 52 of 52
+
+

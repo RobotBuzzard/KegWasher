@@ -90,10 +90,15 @@ static bool mqtt_try_connect() {
 
   // Announce ourselves on connect.
   kwMqtt.publish(kwTopicOnline, "true", true);
-  char buf[24];
+  char buf[64];
   snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
            kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
   kwMqtt.publish(kwTopicIp, buf, true);
+
+  // Firmware build identifier — retained so we can verify which version
+  // is actually running on the ClearCore even when offline.
+  snprintf(buf, sizeof(buf), "%s %s", __DATE__, __TIME__);
+  kwMqtt.publish(kwTopic("firmware"), buf, true);
 
   // Subscribe to the command surface. Single-level wildcard '+' matches
   // any leaf under cmd/ (start, silence, reset, future additions).
@@ -350,11 +355,12 @@ static int freeRam() {
 
 static const char* startupSubName(byte s) {
   switch (s) {
-    case STARTUP_INIT:     return "INIT";
-    case STARTUP_HEATING:  return "HEATING";
-    case STARTUP_IO_CHECK: return "IO_CHECK";
-    case STARTUP_READY:    return "READY";
-    default:               return "?";
+    case STARTUP_INIT:      return "INIT";
+    case STARTUP_HEATING:   return "HEATING";
+    case STARTUP_IO_CHECK:  return "IO_CHECK";
+    case STARTUP_READY:     return "READY";
+    case STARTUP_NOT_READY: return "NOT_READY";
+    default:                return "?";
   }
 }
 
@@ -574,18 +580,12 @@ static void setupEthernet() {
   }
 }
 
-// ----- Display refresh -----
-// State handlers do their own display calls during transient phases
-// (heating progress, air-burst messages). The standard status panel
-// (state name / timer / temps) is refreshed here.
-//
-// 1000 ms cadence: a full display_update() at 9600 baud takes ~300-500 ms
-// (clear + ~7 lines of text, plus Goldelox processing). At the previous
-// 250 ms interval we were queuing redraws faster than they could finish,
-// catching the screen mid-write — visible as a partial-frame "slow
-// repeating refresh" of the status panel.
-static const unsigned long DISPLAY_INTERVAL_MS = 1000;
-static unsigned long lastDisplayMs = 0;
+// ----- Display (ViSi-Genie) -----
+// State handlers call display_show*() on form transitions.
+// The operating state draws once on entry; partial updates follow.
+static byte   lastDisplayedState = 0xFF;  // sentinel — forces draw on first operating state entry
+static unsigned long lastTimerUpdateMs  = 0;
+static unsigned long lastStatusUpdateMs = 0;
 
 void setup() {
   // Diagnostics first so any later init failure can be logged.
@@ -651,6 +651,7 @@ void loop() {
   unsigned long loopStartUs = micros();
 
   timers_update();
+  genie.DoEvents();  // drain Genie event queue every loop
   hardware_readInputs();
 
   // Inject any pending MQTT command flags into the button-pressed
@@ -676,23 +677,30 @@ void loop() {
 
   stateMachine_process();
 
-  // Only refresh the standard status panel during operating states.
-  // STARTUP/FINISHED/ERROR each render their own bespoke screens via
-  // display_showMessage / display_showProgress / display_showError, and
-  // overlaying display_update on top would cause flicker.
-  if (millis() - lastDisplayMs >= DISPLAY_INTERVAL_MS) {
-    switch (currentState) {
-      case STATE_DRAINING:
-      case STATE_RINSING:
-      case STATE_WASHING:
-      case STATE_SANITIZE:
-      case STATE_PRESSURE:
-        display_update();
-        break;
-      default:
-        break;
+  // Operating-state display: draw full screen once on state entry then
+  // overwrite only dynamic fields. STARTUP/FINISHED/ERROR manage their
+  // own form transitions from within their state handlers.
+  {
+    bool isOperating = (currentState >= STATE_DRAINING && currentState <= STATE_PRESSURE);
+
+    if (isOperating) {
+      if (currentState != lastDisplayedState) {
+        lastDisplayedState = currentState;
+        display_showOperatingScreen();
+        lastTimerUpdateMs  = millis();
+        lastStatusUpdateMs = millis();
+      }
+      if (millis() - lastTimerUpdateMs >= 1000UL) {
+        lastTimerUpdateMs = millis();
+        display_updateTimer(timers_getStateElapsed());
+      }
+      if (millis() - lastStatusUpdateMs >= 5000UL) {
+        lastStatusUpdateMs = millis();
+        display_updateStatus();
+      }
+    } else {
+      lastDisplayedState = 0xFF;  // force fresh draw on next operating-state entry
     }
-    lastDisplayMs = millis();
   }
 
   diagnostics_process();

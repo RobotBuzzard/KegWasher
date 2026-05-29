@@ -31,8 +31,7 @@ void diagnostics_process() {
   if (!diagnosticMode && safeToEnter
       && isManualDrainPressed && isCycleStartPressed) {
     diagnosticMode = true;
-    display_clear();
-    display_println("DIAGNOSTIC MODE");
+    display_showMessage("DIAGNOSTIC MODE");
 
     // diagnostics_runTest() does ~10 s of delay()-driven output
     // exercises, plus the button-release wait below can hold for
@@ -58,63 +57,67 @@ void diagnostics_process() {
 
     if (isCycleStartPressed) {
       diagnosticMode = false;
-      display_clear();
-      display_println("Exiting diagnostics");
+      display_showMessage("Exiting diagnostics");
       delay(1000);
     }
   }
 }
 
 void diagnostics_runTest() {
-  display_clear();
-  display_println("Testing outputs...");
+  // Each display_showMessage() call updates the FORM_MESSAGE STRINGS object.
+  // Detailed per-output progress is also logged via diagnostics_logEvent()
+  // (USB Serial) for any connected monitor.
 
-  display_println("Testing CO2...");
+  display_showMessage("Testing outputs...");
+
+  display_showMessage("Testing CO2...");
   hardware_setCo2(true);  delay(1000); hardware_setCo2(false);
 
-  display_println("Testing fan...");
+  display_showMessage("Testing fan...");
   hardware_setCabinFan(255); delay(1000); hardware_setCabinFan(0);
 
-  display_println("Testing alarm...");
+  display_showMessage("Testing alarm...");
   hardware_setAlarm(true); delay(1000); hardware_setAlarm(false);
 
-  display_println("Testing drain...");
+  display_showMessage("Testing drain...");
   hardware_setDrain(true); delay(1000); hardware_setDrain(false);
 
-  display_println("Testing water...");
+  display_showMessage("Testing water...");
   hardware_setWater(true); delay(1000); hardware_setWater(false);
 
-  display_println("Testing air...");
+  display_showMessage("Testing air...");
   hardware_setAir(true); delay(1000); hardware_setAir(false);
 
-  display_println("Testing caustic...");
+  display_showMessage("Testing caustic...");
   hardware_setCaustic(true); delay(1000); hardware_setCaustic(false);
 
-  display_println("Testing pump...");
+  display_showMessage("Testing pump...");
   hardware_setPump(true); delay(1000); hardware_setPump(false);
 
-  display_println("Testing sanitizer...");
+  display_showMessage("Testing sanitizer...");
   hardware_setSanitizer(true); delay(1000); hardware_setSanitizer(false);
 
   // Heater is intentionally not exercised here — running it dry or cold-test
   // is unsafe. Use the regular STARTUP heating cycle to validate the heater.
 
-  display_println("Reading inputs...");
+  display_showMessage("Reading inputs...");
   hardware_readInputs();
 
-  display_clear();
-  display_println("Input status:");
-  Display.print("Water: ");        display_println(isWaterOk ? "OK" : "FAIL");
-  Display.print("Air: ");          display_println(isAirOk ? "OK" : "FAIL");
-  Display.print("CO2: ");          display_println(isCo2Ok ? "OK" : "FAIL");
-  Display.print("ESTOP: ");        display_println(isEstopActive ? "ACTIVE" : "INACTIVE");
-  Display.print("Keg size: ");     display_println(isLargeKeg ? "LARGE" : "SMALL");
-  Display.print("Caustic temp: "); Display.println(hardware_getCausticTemp());
-  Display.print("Caustic lvl: ");  Display.println(hardware_getCausticLevel());
-  Display.print("Enclosure temp: ");Display.println(hardware_getEnclosureTemp());
+  // Compact sensor summary — all key readings in one STRINGS object.
+  char status[64];
+  snprintf(status, sizeof(status),
+    "W:%s A:%s C:%s ES:%s L:%d%% T:%d",
+    isWaterOk     ? "OK" : "NO",
+    isAirOk       ? "OK" : "NO",
+    isCo2Ok       ? "OK" : "NO",
+    isEstopActive ? "ACT" : "OK",
+    hardware_getCausticLevel(),
+    hardware_getCausticTemp()
+  );
+  display_showMessage(status);
 
-  display_println("\nTest complete");
-  display_println("Press START to exit");
+  delay(3000);
+  display_showMessage("Complete. START exits");
 }
 
 // Defined in KegWasher.ino. Sends one UDP packet to the LAN broadcast

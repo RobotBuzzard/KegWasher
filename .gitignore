@@ -27,3 +27,18 @@ config/washer.config
 
 # Secrets — broker credentials, etc. Use KegSecrets.h.example as the template.
 KegSecrets.h
+
+# 4D Systems vendor reference PDFs — ~51 MB, keep the .txt extracts for grep.
+docs/*.pdf
+docs/--help
+
+# Workshop4 build artifacts intermediate folder (the compiled GCI/DAT/TXF/4XE
+# at the project root are the canonical outputs that get committed).
+KegWasher.4DWork/
+
+# Captured serial protocol traces — large one-shot artifacts, regenerate as needed.
+tools/*.strace
+
+# Python cache
+__pycache__/
+*.pyc

@@ -6,7 +6,7 @@
 |------|-----|-------------|------|-------------|-----------|----------|-------|
 | `airOk` | DI6 | Air pressure switch | Digital Input | HIGH | Yes | Yes | Monitors compressed air availability |
 | `co2Ok` | DI7 | CO2 pressure switch | Digital Input | HIGH | Yes | Yes | Monitors CO2 gas availability |
-| `ESTOP` | DI8 | Emergency stop button | Digital Input | LOW | No | Yes | Immediate hardware interrupt, not debounced to ensure fastest response |
+| `ESTOP` | DI8 | Emergency stop button | Digital Input | HIGH | No | Yes | NC wiring: closed=LOW=safe, open=HIGH=active. Not debounced to ensure fastest response |
 | `waterOk` | A11 | Water pressure switch | Digital Input | HIGH | Yes | Yes | Monitors water supply availability |
 | `largeKeg` | IO0 | Keg size selector switch | Digital Input | HIGH | Yes | No | Selects between small (20L) and large (50L) keg modes |
 | `cycleStart` | IO1 | Start cycle button | Digital Input | HIGH | Yes | No | Used to initiate washing cycle and acknowledge completion |
@@ -85,8 +85,8 @@ The following table shows which outputs are active in each state:
 
 ## Wiring Notes
 
-- All digital inputs use internal pull-up/pull-down resistors
 - Solenoid valves include flyback diodes for inductive spike protection
 - Temperature sensors use voltage dividers with 10kΩ precision resistors
-- Emergency stop wired as normally-closed circuit for fail-safe operation
+- ESTOP wired NC between 24 V rail and DI8: circuit closed → DI8 LOW (safe); ESTOP pressed or wire break → DI8 HIGH (active/fault). Fail-safe by design.
+- IO0 (largeKeg), IO1 (cycleStart), IO2 (manualDrain): ClearCore IO pins have no internal pull-up/pull-down. Wire as SPDT so the pin is actively driven in both positions, never floating.
 - All low-voltage control signals optically isolated from main power

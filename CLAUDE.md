@@ -1,0 +1,105 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build & flash
+
+This is an Arduino sketch for the Teknic ClearCore (SAME53N19A). The canonical compile + upload path is **not** the Arduino IDE — use the `flash.sh` wrapper from the sibling repo:
+
+```bash
+~/dev/teknic-clearcore-cli/scripts/flash.sh ~/dev/KegWasher /dev/ttyACM0
+```
+
+FQBN is `ClearCore:sam:clearcore`. Direct `arduino-cli compile -b ClearCore:sam:clearcore .` from the sketch root also works for syntax checks. The script handles the 1200-baud touch reset → bossac upload → app-mode verification dance; bypassing it leaves the board stuck in bootloader on transient failures. See `~/dev/teknic-clearcore-cli/README.md` for the Linux gotchas (ModemManager, dialout, udev).
+
+Watching logs: USB serial at 115200 carries `diagnostics_logEvent`. Every log line is **also** mirrored to MQTT `kegwasher/log` once Ethernet + broker come up — tail with:
+
+```bash
+mosquitto_sub -h 192.168.1.111 -u rr1 -P <pass> -t 'kegwasher/#' -v
+```
+
+Tests live under `tests/DisplayTest/` as a separate sketch — only run when working the display path; there is no unit test framework.
+
+## Required secret file
+
+`KegSecrets.h` is gitignored and must exist for the firmware to compile. Copy `KegSecrets.h.example` → `KegSecrets.h` and fill in MQTT broker IP / user / pass / client id / topic root. Broker credentials for this dev environment live in `~/mosquitto-credentials.txt`.
+
+## BENCH_MODE — read before changing safety code
+
+`KegConfig.h` defines `#define BENCH_MODE` (currently active). When defined the firmware:
+
+- skips `STARTUP_HEATING` (INIT → READY directly)
+- `hardware_allSystemsGo()` returns true unconditionally
+- skips per-tick + entry caustic-temp checks in `STATE_WASHING`
+- compresses every stage timer to 5 s so a full cycle runs in ~25 s
+
+What is **not** bypassed even in bench mode: heater level/overtemp interlocks, per-state hard timeouts, ESTOP (ISR + main-loop paths), and the hardware watchdog. Don't gate new safety checks behind `BENCH_MODE` — interlocks should be unconditional. Before any production build, comment the `#define` out and `grep BENCH_MODE *.h *.cpp` should show only `#ifdef` references.
+
+## Architecture
+
+Single Arduino sketch, all sources at the project root (Arduino requires `.ino` filename = folder name). Every module is `#include`'d transitively from `KegWasher.ino`.
+
+```
+KegWasher.ino       setup() + loop() — Ethernet/MQTT lives here, NOT in a module
+KegConfig.{h,cpp}   Pin map, state IDs, error codes, thresholds, SD config loader
+KegHardware.{h,cpp} Debounced inputs, filtered analog reads, output drivers, heater FSM
+KegStateMachine.*   The 8-state cycle FSM (STARTUP → DRAINING → ... → FINISHED, + ERROR)
+KegDisplay.{h,cpp}  4D Systems display wrapper (currently transitioning Goldelox → Diablo16/Genie)
+KegTimers.*         State-elapsed timing + keg-size duration scaling (`largeKegMod`)
+KegDiagnostics.*    Event logging, output-exercise diag mode (DRAIN + START to enter), error strings
+KegUtils.*          Small helpers
+KegSecrets.h        gitignored — MQTT broker IP/user/pass/client_id/topic root
+```
+
+### loop() ordering (KegWasher.ino)
+
+Order in `loop()` is load-bearing — don't reshuffle without understanding why:
+
+1. `timers_update()`, `genie.DoEvents()`, `hardware_readInputs()` — read state.
+2. `mqtt_applyCmdFlags()` — **must** run after `hardware_readInputs()` (which overwrites button flags) and before state processing. MQTT commands set `isCycleStartPressed` / `isManualDrainPressed` as one-tick pulses so they flow through the existing button paths.
+3. `hardware_consumeEstopFlag()` → log + transition to ERROR. ISR has already killed outputs; this is the non-ISR-safe follow-up.
+4. `stateMachine_process()`.
+5. Display: operating-state screens draw once on entry, then partial updates at 1 Hz (timer) / 5 Hz (status). STARTUP/FINISHED/ERROR manage their own form transitions from within state handlers.
+6. `Ethernet.maintain()`, `mqtt_loop()`, `mqtt_publishStatus()`, `mqtt_publishHeartbeat()`.
+7. `Watchdog.kick()` — **last**, so any hang above triggers an 8 s reset.
+8. `delay(10)` paces the loop for debounce stability.
+
+### State machine
+
+States are numeric `#define`s in `KegConfig.h` (not an enum, for backward-compat with persisted values). `currentState` is `volatile byte` because the ESTOP path touches it. The "operating" states are the contiguous range `STATE_DRAINING..STATE_PRESSURE` — checked by range in `loop()` to decide whether to draw the operating screen. `STATE_STARTUP` has its own sub-states (`STARTUP_INIT`/`HEATING`/`IO_CHECK`/`READY`/`NOT_READY`) exposed via `startupSubState`. Keg size is **latched** on cycle-start press (`kegSizeLatched`); flipping the selector mid-cycle does not affect timers, but `isLargeKeg` still reflects the live pin state for display/MQTT.
+
+### MQTT layer
+
+All of the MQTT plumbing lives in `KegWasher.ino` itself (not a separate module). Three things to know:
+
+1. **Never publish from inside `mqtt_callback`.** PubSubClient shares one buffer between send/recv; publishing mid-receive corrupts the parser. Callback only sets pending flags; `mqtt_applyCmdFlags()` (called from `loop()`) does the actual work + logging. This includes anything transitively calling `diagnostics_logEvent` (which calls `net_log_send` → `kwMqtt.publish`).
+2. Status publishes are **change-detected** against `MqttStatusCache` sentinels initialized to impossible values so the first call flushes everything. Throttled to 250 ms.
+3. LWT publishes `kegwasher/online=false` on disconnect; on connect we publish `online=true`, `ip`, and `firmware` (all retained) so a fresh subscriber lands hot.
+
+### Display
+
+The display is mid-migration from a Goldelox 128×128 (raw serial, 9600→115200 negotiated) to a gen4-uLCD-43DT Diablo16 driven via ViSi-Genie. Current code already uses the `genieArduinoDEV` library and form/object IDs in `KegDisplay.h`. **Read `docs/display-guide.md` before touching display code** — particularly the "baud-bump pitfall" (`Serial.end()`/`begin()` floats RTS, which is wired to the Goldelox reset line; use `ConnectorCOMx.Speed()` instead). The sacrificial-leading-space workaround for the Goldelox first-char-drop is also documented there.
+
+### Hardware specifics
+
+- Inputs: `airOk`, `co2Ok`, `waterOk` are software-debounced. `ESTOP` is **not** debounced (NC wiring, fastest response wins). The ESTOP ISR is bare-metal — no Serial, no CCIO writes, no display calls; it sets `estopFlag` + kills outputs and that's it. Main loop drains the flag via `hardware_consumeEstopFlag()`.
+- CCIO-8 expansion module is on COM0; the display is on COM1. USB Serial is diagnostics only.
+- SD card holds `washer.config` (timer overrides). Schema is the `KEY=VALUE` format under `config/washer.config.example`. If the SD is missing/corrupt, compiled defaults from `KegConfig.cpp` are used and a banner is shown.
+- Watchdog: armed in `setup()` after `setupEthernet()` because DHCP can legitimately take longer than the 8 s WDT timeout. `diagnostics_runTest()` disables WDT around its ~10 s of output exercises and re-enables on exit.
+
+### Reference docs (in `docs/`)
+
+- `io-table.md` — pin assignments, active states, error code → I/O mapping
+- `state-table.md` — per-state inputs/outputs/preconditions/error conditions
+- `display-guide.md` — display hardware path, render-once pattern, gotchas
+- `reliability-todo.md` — prioritized hardening roadmap (referenced from TODO.md)
+
+`TODO.md` at the root is the live roadmap (phases 0-5); `reliability-todo.md` has deeper per-item rationale.
+
+### External dependencies
+
+- `ClearCore:sam` board package (Teknic) — adds `https://www.teknic.com/files/downloads/package_clearcore_index.json` to `arduino-cli` board manager URLs
+- `ClearCoreWatchdog` library — sibling repo at `github.com/RobotBuzzard/ClearCoreWatchdog`, also available via Arduino Library Manager
+- `genieArduinoDEV` — 4D Systems ViSi-Genie library
+- `PubSubClient` — MQTT
+- `Ethernet`, `SPI`, `SD` — Arduino core libraries
