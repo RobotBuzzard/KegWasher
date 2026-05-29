@@ -18,6 +18,8 @@ void timers_resetStateTimer();
 unsigned long timers_getStateElapsed();
 unsigned long timers_getCycleElapsed();
 bool timers_isStateDone(unsigned long duration);
-unsigned long timers_adjustForKegSize(unsigned long baseTime);
+// Pass the LATCHED keg size (kegSizeLatched), not the live pin (isLargeKeg) —
+// see the contract note in KegTimers.cpp / KegStateMachine.h.
+unsigned long timers_adjustForKegSize(unsigned long baseTime, bool isLarge);
 
 #endif // KEG_TIMERS_H

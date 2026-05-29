@@ -459,17 +459,20 @@ static void mqtt_publishStatus() {
   // ----- Timers (operating states only) -----
   unsigned long elapsedMs = timers_getStateElapsed();
   unsigned long durationMs = 0;
+  // Use the LATCHED keg size, not the live pin — the remaining-time the
+  // dashboard shows must match the durations the state machine actually runs
+  // (which latch at cycle start). Bug fixed 2026-05-29: was reading isLargeKeg.
   switch (currentState) {
     case STATE_DRAINING:
-      durationMs = isLargeKeg ? timers_adjustForKegSize(dirtyDrainTimer) : dirtyDrainTimer; break;
+      durationMs = timers_adjustForKegSize(dirtyDrainTimer, kegSizeLatched); break;
     case STATE_RINSING:
-      durationMs = isLargeKeg ? timers_adjustForKegSize(rinseTimer)      : rinseTimer; break;
+      durationMs = timers_adjustForKegSize(rinseTimer,      kegSizeLatched); break;
     case STATE_WASHING:
-      durationMs = isLargeKeg ? timers_adjustForKegSize(washTimer)       : washTimer; break;
+      durationMs = timers_adjustForKegSize(washTimer,       kegSizeLatched); break;
     case STATE_SANITIZE:
-      durationMs = isLargeKeg ? timers_adjustForKegSize(saniTimer)       : saniTimer; break;
+      durationMs = timers_adjustForKegSize(saniTimer,       kegSizeLatched); break;
     case STATE_PRESSURE:
-      durationMs = isLargeKeg ? timers_adjustForKegSize(purgeTimer)      : purgeTimer; break;
+      durationMs = timers_adjustForKegSize(purgeTimer,      kegSizeLatched); break;
     default:
       durationMs = 0;
   }

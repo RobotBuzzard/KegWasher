@@ -156,11 +156,11 @@ void display_showMessage(const char* message) {
 void display_updateTimer(unsigned long elapsedMs) {
   unsigned long duration = 0;
   switch (currentState) {
-    case STATE_DRAINING: duration = kegSizeLatched ? timers_adjustForKegSize(dirtyDrainTimer) : dirtyDrainTimer; break;
-    case STATE_RINSING:  duration = kegSizeLatched ? timers_adjustForKegSize(rinseTimer)      : rinseTimer;      break;
-    case STATE_WASHING:  duration = kegSizeLatched ? timers_adjustForKegSize(washTimer)       : washTimer;       break;
-    case STATE_SANITIZE: duration = kegSizeLatched ? timers_adjustForKegSize(saniTimer)       : saniTimer;       break;
-    case STATE_PRESSURE: duration = kegSizeLatched ? timers_adjustForKegSize(purgeTimer)      : purgeTimer;      break;
+    case STATE_DRAINING: duration = timers_adjustForKegSize(dirtyDrainTimer, kegSizeLatched); break;
+    case STATE_RINSING:  duration = timers_adjustForKegSize(rinseTimer,      kegSizeLatched); break;
+    case STATE_WASHING:  duration = timers_adjustForKegSize(washTimer,       kegSizeLatched); break;
+    case STATE_SANITIZE: duration = timers_adjustForKegSize(saniTimer,       kegSizeLatched); break;
+    case STATE_PRESSURE: duration = timers_adjustForKegSize(purgeTimer,      kegSizeLatched); break;
     default: return;
   }
   unsigned long remaining = (elapsedMs < duration) ? (duration - elapsedMs) : 0UL;

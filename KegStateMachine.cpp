@@ -358,9 +358,7 @@ void state_startup() {
 
 // ---------- Operating states ----------
 void state_draining() {
-  unsigned long drainTime = kegSizeLatched
-                          ? timers_adjustForKegSize(dirtyDrainTimer)
-                          : dirtyDrainTimer;
+  unsigned long drainTime = timers_adjustForKegSize(dirtyDrainTimer, kegSizeLatched);
 
   if (timers_getStateElapsed() < AIR_BURST_DURATION) {
     hardware_setAir(true);
@@ -375,9 +373,7 @@ void state_draining() {
 }
 
 void state_rinsing() {
-  unsigned long rinseTime = kegSizeLatched
-                          ? timers_adjustForKegSize(rinseTimer)
-                          : rinseTimer;
+  unsigned long rinseTime = timers_adjustForKegSize(rinseTimer, kegSizeLatched);
 
   unsigned long elapsed    = timers_getStateElapsed();
   unsigned long burstStart = (rinseTime > AIR_BURST_DURATION)
@@ -415,27 +411,21 @@ void state_washing() {
   }
 #endif
 
-  unsigned long washTime = kegSizeLatched
-                         ? timers_adjustForKegSize(washTimer)
-                         : washTimer;
+  unsigned long washTime = timers_adjustForKegSize(washTimer, kegSizeLatched);
   if (timers_isStateDone(washTime)) {
     stateMachine_changeState(STATE_SANITIZE);
   }
 }
 
 void state_sanitize() {
-  unsigned long saniTime = kegSizeLatched
-                         ? timers_adjustForKegSize(saniTimer)
-                         : saniTimer;
+  unsigned long saniTime = timers_adjustForKegSize(saniTimer, kegSizeLatched);
   if (timers_isStateDone(saniTime)) {
     stateMachine_changeState(STATE_PRESSURE);
   }
 }
 
 void state_pressure() {
-  unsigned long purgeTime = kegSizeLatched
-                          ? timers_adjustForKegSize(purgeTimer)
-                          : purgeTimer;
+  unsigned long purgeTime = timers_adjustForKegSize(purgeTimer, kegSizeLatched);
   if (timers_isStateDone(purgeTime)) {
     stateMachine_changeState(STATE_FINISHED);
   }
