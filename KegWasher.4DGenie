@@ -16,7 +16,7 @@ Options
     ButtonDisable                No
     SignedDigits                 No
     MaxString                    75
-    ComPort                      1
+    ComPort                      0
     ComTX1pinIdx                 0
     ComRX1pinIdx                 0
     FileSystem                   FATfs
