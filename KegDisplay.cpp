@@ -1,9 +1,9 @@
 // ======================================================================
-// KegDisplay.cpp - Goldelox driver wrapper (ViSi-Genie protocol)
+// KegDisplay.cpp - gen4-uLCD-43DT (Diablo16) wrapper, ViSi-Genie protocol
 // ======================================================================
 // Init dependency: KegWasher.ino calls display_init() before config_init()
 // and stateMachine_init() so error messages from those have a screen to
-// land on. The Goldelox boot sequence after RTS reset takes ~4 s before
+// land on. The Diablo16 takes ~4 s to boot after RESET is released before
 // the Genie handshake can succeed.
 // ======================================================================
 #include "KegDisplay.h"
@@ -16,9 +16,10 @@ Genie genie;
 void display_init() {
   Serial1.begin(9600);  // display is in SPE2 mode at 9600 — match it
 
-  // Hardware reset via COM1 RTS (wired to display RESET pin on the adapter).
-  // LINE_ON asserts reset; LINE_OFF releases. Goldelox Genie app needs ~4 s
-  // to boot after release before it begins the handshake.
+  // Hardware reset via COM1 RTS (wired to display RESET pin on the adapter
+  // when the RESET-EN switch is ON — see 4D ClearCore Adaptor datasheet §3.6).
+  // LINE_ON asserts reset; LINE_OFF releases. The Diablo16 needs ~4 s to boot
+  // after release before it begins the Genie handshake.
   ConnectorCOM1.RtsMode(SerialBase::LINE_ON);
   delay(1000);
   ConnectorCOM1.RtsMode(SerialBase::LINE_OFF);
@@ -47,9 +48,24 @@ void display_updateFooter() {
     snprintf(buf, sizeof(buf), "offline");
   }
 
-  // Each form uses a STRINGS object at OBJ_*_IP_STR for the address line.
-  // Index 1 is the planned layout for all forms; Workshop4 must match.
-  genie.WriteStr(1, buf);
+  // ViSi-Genie STRINGS are global per-type, so the footer string differs by
+  // form. Pick the right one for the active form; skip forms with no footer
+  // STRINGS (STARTUP/NOT_READY). Only FORM_READY's index is layout-confirmed;
+  // the others target each form's spare STRINGS and need on-screen position
+  // confirmation in Workshop4 (see OBJ_*_IP_STR notes in KegDisplay.h).
+  uint8_t idx;
+  switch (genie.GetForm()) {
+    case FORM_READY:     idx = OBJ_RD_IP_STR;  break;
+    case FORM_HEATING:   idx = OBJ_HT_IP_STR;  break;
+    case FORM_OPERATING: idx = OBJ_OP_IP_STR;  break;
+    case FORM_FINISHED:  idx = OBJ_FN_IP_STR;  break;
+    case FORM_ERROR:     idx = OBJ_ER_IP_STR;  break;
+    case FORM_MESSAGE:   idx = OBJ_MSG_IP_STR; break;
+    default:             idx = OBJ_NO_FOOTER;  break;  // STARTUP, NOT_READY
+  }
+  if (idx != OBJ_NO_FOOTER) {
+    genie.WriteStr(idx, buf);
+  }
 }
 
 // ── banner flash ──────────────────────────────────────────────────────
