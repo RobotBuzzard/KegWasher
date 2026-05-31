@@ -2,17 +2,25 @@
 # Diablo16 bootloader probe — manual-reset edition v3.
 #
 # Detects silence gaps (>200ms no bytes) — those mark the moment the chip is
-# in reset / bootloader window. Reports any non-NAK byte instantly.
+# in reset / bootloader window. Reports any reply byte instantly.
+#
+# VERIFIED PROTOCOL (from the successful PMMCLOADER flash strace,
+# tools/pmmc-successful-flash.strace, 2026-05-29): the real bootloader knock
+# is the uppercase 4-byte ASCII string "4DGL" sent at 115200 baud; a chip in
+# the bootloader window replies with the 4 bytes "db16" (Diablo16 id). The
+# earlier "4dgl"+"U" @ 9600 -> 0x44 'D' assumption was WRONG — the strace
+# shows no lowercase token, no standalone 'U'/0x55, and no UART BREAK.
 #
 # Usage:
-#   python3 -u diablo_probe.py [baud]   # 9600 default
+#   python3 -u diablo_probe.py [baud]   # 115200 default
 import sys
 import time
 import serial
 
 PORT = "/dev/ttyUSB0"
-DEFAULT_BAUD = 9600
-HANDSHAKE = b"4dglU"
+DEFAULT_BAUD = 115200
+HANDSHAKE = b"4DGL"           # verified knock (uppercase), reply "db16"
+REPLY = b"db16"
 SEND_INTERVAL_S = 0.050
 SILENCE_THRESHOLD_S = 0.200   # gap > this = chip in reset / bootloader
 
@@ -38,7 +46,8 @@ def main():
     next_send = 0.0
     last_byte_t = time.monotonic()
     in_silence = False
-    nak_total = 0
+    rx = bytearray()           # rolling tail of received bytes, to spot "db16"
+    byte_total = 0
     start = time.monotonic()
 
     try:
@@ -57,23 +66,27 @@ def main():
                     in_silence = False
                 data = ser.read(n)
                 last_byte_t = now
-                for b in data:
-                    if b == 0x15:
-                        nak_total += 1
-                    elif b == 0x06:
-                        print(f"*** [t={elapsed:6.3f}s] ACK 0x06 — BOOTLOADER REACHED ***")
-                    else:
-                        print(f"  [t={elapsed:6.3f}s] non-NAK byte: 0x{b:02x} ({chr(b) if 32<=b<127 else '.'!r})")
+                byte_total += len(data)
+                rx.extend(data)
+                if REPLY in rx:
+                    print(f"*** [t={elapsed:6.3f}s] {REPLY!r} — BOOTLOADER REACHED ***")
+                    rx.clear()
+                else:
+                    # show the bytes (helps see NAK 0x15, partial replies, noise)
+                    shown = " ".join(f"{b:02x}" for b in data[:16])
+                    print(f"  [t={elapsed:6.3f}s] rx {len(data)}B: {shown}")
+                if len(rx) > 64:
+                    del rx[:-8]    # keep only the tail
             else:
                 # No bytes — check if we've crossed silence threshold
                 if not in_silence and (now - last_byte_t) > SILENCE_THRESHOLD_S:
-                    print(f">>> [t={elapsed:6.3f}s] SILENCE began (NAK total so far: {nak_total})")
+                    print(f">>> [t={elapsed:6.3f}s] SILENCE began (rx bytes so far: {byte_total})")
                     in_silence = True
             time.sleep(0.002)
     except KeyboardInterrupt:
         print()
         print("=" * 70)
-        print(f"Stopped after {time.monotonic()-start:.1f}s, total NAKs: {nak_total}")
+        print(f"Stopped after {time.monotonic()-start:.1f}s, total rx bytes: {byte_total}")
     finally:
         ser.close()
 

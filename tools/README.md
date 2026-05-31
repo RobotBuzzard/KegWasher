@@ -60,10 +60,22 @@ timing (see memory `cc_adapter_diablo16_pmmc_blocked`):
   swap-SD steady state only holds if it's uSD.
 - Whether Bank 0 + Bank 5 have actually been flashed yet.
 
-## diablo_probe.py / diablo_flasher.py / spe_smoke.py
+## diablo_probe.py / diablo_flasher.py / spe_smoke.py / reset_test.py
 
-PmmC-bootstrap-era tools. `diablo_probe.py` confirms the Diablo16 bootloader
-handshake (`4dgl`+`U` → `0x44 'D'` at 115200). `spe_smoke.py` sends SPE GFX
-commands to verify the panel renders. `diablo_flasher.py` is a skeleton (the
-byte-level PmmC flash protocol was never needed — the standalone PMMCLOADER.EXE
-recipe worked; see memory).
+PmmC-bootstrap-era tools.
+
+`diablo_probe.py` confirms the Diablo16 bootloader knock. **Verified protocol
+(2026-05-29, from `pmmc-successful-flash.strace`): send uppercase `4DGL` at
+115200; a chip in the bootloader window replies `db16`.** (An earlier note here
+claimed `4dgl`+`U`@9600 → `0x44 'D'` — that was wrong; the strace shows no
+lowercase token, no `U`, no UART BREAK.)
+
+`reset_test.py` sweeps DTR/RTS lines/polarities/widths (no serial writes) to
+find which native Linux line manipulation actually resets the panel — the key
+experiment for the Wine-reset problem (Wine's ~1.5 ms DTR pulse is too short for
+the AC-coupled reset circuit's ~2 ms RC, so the auto-reset fails under Wine on
+both programmers though it works on Windows).
+
+`spe_smoke.py` sends SPE GFX commands to verify the panel renders.
+`diablo_flasher.py` is a skeleton (the byte-level PmmC flash protocol was never
+needed — the standalone PMMCLOADER.EXE recipe worked; see memory).
