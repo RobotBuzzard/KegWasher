@@ -1,5 +1,8 @@
 // ======================================================================
-// KegStateMachine.h - State IDs already in KegConfig.h; this is the API.
+// KegStateMachine.h - Two-axis state machine API.
+// State/phase IDs live in KegConfig.h. The machine runs on two orthogonal
+// axes (PackML machine state × ISA-88 recipe phase) — see
+// docs/state-taxonomy.md and docs/packml-rearchitecture-plan.md.
 // ======================================================================
 #ifndef KEG_STATE_MACHINE_H
 #define KEG_STATE_MACHINE_H
@@ -7,65 +10,57 @@
 #include <Arduino.h>
 #include "KegConfig.h"
 
-extern volatile byte currentState;
-extern const char* stateNames[];
-// True while an operating cycle is paused (outputs safely held per-stage, the
-// stage countdown frozen). Read by the display + MQTT status; set via
-// stateMachine_setPause(). Always false outside the operating states.
-extern bool cyclePaused;
-// Startup sub-state — promoted from file-static so MQTT status publish
-// (and any other observer) can surface it. Only meaningful when
-// currentState == STATE_STARTUP.
-extern byte startupSubState;
-// Keg size latched at cycle-start (START button press). All timer
-// calculations use this so flipping the selector mid-cycle has no effect.
-// isLargeKeg (KegHardware.h) still reflects the live pin state and is
-// used for display and MQTT so the operator can see the current switch position.
+// ── Axis A: PackML machine state (MACH_*). volatile — the ESTOP path reads it.
+extern volatile byte machineState;
+extern const char* machStateNames[];   // indexed 0..NUM_MACH_STATES-1
+
+// ── Axis B: ISA-88 recipe phase (PHASE_*). Only meaningful while EXECUTE.
+extern byte recipePhase;
+extern const char* phaseNames[];        // indexed 0..NUM_PHASES-1
+
+// IDLE sub-state (IDLE_*). Only meaningful while machineState == MACH_IDLE.
+extern byte idleSub;
+
+// Keg size latched at cycle-start (START press). All timer calculations use
+// this so flipping the selector mid-cycle has no effect. isLargeKeg
+// (KegHardware.h) still reflects the live pin state for display/MQTT.
 extern bool kegSizeLatched;
 
+// ── Lifecycle ──────────────────────────────────────────────────────────
 void stateMachine_init();
 void stateMachine_process();
-void stateMachine_changeState(byte newState);
-bool canTransitionTo(byte targetState);
 
-// Pause/resume an in-progress cycle. Only meaningful in the operating states;
-// a no-op elsewhere. Pausing runs the current stage's safe-shutdown
-// (exitState) so nothing runs dry / overpressurizes; resuming re-asserts the
-// stage outputs (enterState) and continues the frozen countdown.
+// ── Operator control commands (edges) ──────────────────────────────────
+// Hold/Unhold an in-progress recipe. Only meaningful in MACH_EXECUTE/MACH_HELD;
+// a no-op elsewhere. Holding runs the current phase's safe-shutdown (exitPhase)
+// so nothing runs dry / overpressurizes; unholding re-asserts the phase outputs
+// (enterPhase) and continues the frozen countdown.
 void stateMachine_setPause(bool wantPaused);
 void stateMachine_togglePause();
 
 // Operator STOP/DRAIN (graceful — distinct from the ESTOP fault path): evacuate
-// the keg's current contents to the correct destination (caustic->caustic
-// reservoir, sanitizer->sani reservoir, water->drain) using the normal drain
-// timers, then de-energize and halt (HALTED). No-op outside operating states.
+// the keg's current contents to the correct destination (caustic→caustic
+// reservoir, sanitizer→sani reservoir, water→drain) using the normal drain
+// timers, then de-energize and halt (MACH_STOPPED). No-op outside EXECUTE/HELD.
 void stateMachine_stop();
 
-// RESTART: re-run the CURRENT stage from the start of its timer (same stage,
-// same keg contents — no evacuation). Resumes first if paused. No-op outside
-// operating states.
+// RESTART: re-run the CURRENT recipe phase from the start of its timer (same
+// phase, same keg contents — no evacuation). Unholds first if held. No-op
+// outside EXECUTE/HELD.
 void stateMachine_restart();
 
-// Adjusted (keg-size-scaled) duration for an operating state. Single source of
-// truth for "how long is this stage" — used by the state handlers, the display
-// countdown, and the MQTT remaining-time publish. Returns 0 for non-operating
-// states. Uses the LATCHED keg size (kegSizeLatched).
-unsigned long stageTimerFor(byte state);
+// Abort to MACH_ABORTED using the current global errorCode (ESTOP / external
+// fault / startup systems-not-go). Callable from any machine state.
+void stateMachine_abort();
 
-void state_startup();
-void state_dirtyDrain();
-void state_dirtyRinse();
-void state_dirtyPurge();
-void state_washing();
-void state_causticReturn();
-void state_rinsing();
-void state_rinsePurge();
-void state_sanitize();
-void state_saniReturn();
-void state_pressure();
-void state_finished();
-void state_error();
-void state_stopping();
-void state_halted();
+// Recovery (operator Clear/Reset surface): MACH_ABORTED → MACH_CLEARING (begin
+// PackML path B), MACH_STOPPED/MACH_COMPLETE → MACH_IDLE. No-op elsewhere.
+void stateMachine_reset();
+
+// Adjusted (keg-size-scaled) duration for a recipe phase. Single source of
+// truth for "how long is this phase" — used by the phase handlers, the display
+// countdown, and the MQTT remaining-time publish. Returns 0 for PHASE_NONE /
+// non-recipe phases. Uses the LATCHED keg size (kegSizeLatched).
+unsigned long stageTimerFor(byte phase);
 
 #endif // KEG_STATE_MACHINE_H

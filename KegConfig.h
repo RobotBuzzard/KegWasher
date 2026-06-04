@@ -17,16 +17,16 @@
 // ======================================================================
 // When defined, the firmware bypasses the sensor-driven gates that
 // otherwise refuse to run a cycle without real plumbing connected.
-// The state machine actually progresses through DRAINING → RINSING →
-// WASHING → SANITIZE → PRESSURE → FINISHED, with output relays
-// toggling visibly.
+// The recipe actually progresses through DIRTY_DRAIN → ... → PRESSURE →
+// COMPLETE (machineState EXECUTE throughout), with output relays toggling
+// visibly.
 //
 // SPECIFICALLY BYPASSED:
 //   - hardware_allSystemsGo() returns true unconditionally
-//   - In STARTUP_READY, the caustic-temp check is skipped so pressing
-//     START goes directly to STATE_DIRTY_DRAIN without STARTUP_HEATING
-//   - enterState(WASHING) skips the precondition caustic-temp check
-//   - state_washing skips the per-tick caustic-temp check
+//   - In IDLE_READY, the caustic-temp check is skipped so pressing START
+//     goes directly to EXECUTE@DIRTY_DRAIN without MACH_STARTING (heating)
+//   - enterPhase(WASHING) skips the precondition caustic-temp check
+//   - the WASHING phase skips the per-tick caustic-temp check
 //
 // NOT BYPASSED (these are hardware-safety, not operating-policy):
 //   - hardware_setCausticHeater() interlocks (level, overtemp) — but
@@ -84,43 +84,48 @@
 #define KEY_MAX_LENGTH         30
 #define VALUE_MAX_LENGTH       30
 
-// ---------- State IDs ----------
-// Linear 10-stage wash cycle. Caustic and sanitizer are reused, so each chem
-// stage is followed by a RETURN stage that blows the chem back to its reservoir
-// (caustic by air, sanitizer by CO2); intermediate water is purged to drain.
-// Chem never goes to drain. See docs/state-table.md for the full valve table.
-#define STATE_STARTUP          0
-#define STATE_DIRTY_DRAIN      1   // drain old product + 5s air burst        → drain
-#define STATE_DIRTY_RINSE      2   // pre-rinse water + drain                  → drain
-#define STATE_DIRTY_PURGE      3   // air-blow pre-rinse water + drain         → drain
-#define STATE_WASHING          4   // recirculate hot caustic (caustic + pump)
-#define STATE_CAUSTIC_RETURN   5   // air-blow caustic, drain+pump OFF         → caustic reservoir
-#define STATE_RINSING          6   // post-caustic rinse water + drain         → drain
-#define STATE_RINSE_PURGE      7   // air-blow rinse water + drain             → drain
-#define STATE_SANITIZE         8   // recirculate sanitizer (sanitizer + pump)
-#define STATE_SANI_RETURN      9   // CO2-blow sanitizer, drain+pump OFF       → sani reservoir
-#define STATE_PRESSURE         10  // CO2 charge, valves closed (seal keg)
-#define STATE_FINISHED         11
-#define STATE_ERROR            12
-// STOPPING/HALTED are appended AFTER ERROR so the operating range + every
-// existing ID is unchanged. STOPPING runs an operator-STOP evacuation (route
-// keg contents to the right place), then HALTED de-energizes and waits.
-#define STATE_STOPPING         13
-#define STATE_HALTED           14
-#define NUM_STATES             15
+// ---------- State model: PackML machine state × ISA-88 recipe phase ----------
+// Two orthogonal axes (canonical model: docs/state-taxonomy.md):
+//   machineState — PackML (ISA-TR88.00.02): the control / lifecycle state.
+//   recipePhase  — ISA-88: which wash phase; valid ONLY while MACH_EXECUTE.
+// The 10 wash phases run *inside* MACH_EXECUTE; they are NOT machine states.
+// Caustic and sanitizer are reused, so each chem phase is followed by a RETURN
+// phase that blows the chem back to its reservoir (caustic by air, sanitizer by
+// CO2); intermediate water is purged to drain. Chem never goes to drain.
 
-// Contiguous "operating" range — checked by loop() to decide whether to draw
-// the operating screen, and by the state machine for whole-cycle behaviour.
-// (STOPPING/HALTED are intentionally NOT in this range — they own their screens.)
-#define STATE_OP_FIRST         STATE_DIRTY_DRAIN
-#define STATE_OP_LAST          STATE_PRESSURE
+// ----- Axis A: PackML machine state -----
+#define MACH_IDLE        0   // ready / not-ready; waiting for Start (see idleSub)
+#define MACH_STARTING    1   // warm-up: heating caustic to temp before Execute
+#define MACH_EXECUTE     2   // running the recipe (recipePhase advances within)
+#define MACH_HELD        3   // paused mid-recipe; outputs safely held, timer frozen
+#define MACH_COMPLETE    4   // cycle done; alarm; Start=next keg / Reset=park
+#define MACH_STOPPING    5   // operator STOP/DRAIN: evacuating keg contents
+#define MACH_STOPPED     6   // de-energized halt; Reset (Start) recovers
+#define MACH_CLEARING    7   // fault acknowledged, verifying cleared → Stopped
+#define MACH_ABORTED     8   // fault/ESTOP landing; alarm; Clear begins recovery
+#define NUM_MACH_STATES  9
 
-// Startup sub-states
-#define STARTUP_INIT           0
-#define STARTUP_HEATING        1
-#define STARTUP_SETTINGS       2   // on-screen settings editor (repurposed unused IO_CHECK slot)
-#define STARTUP_READY          3
-#define STARTUP_NOT_READY      4   // systems offline; shows which are failing
+// ----- Axis B: ISA-88 recipe phase (valid only while MACH_EXECUTE) -----
+#define PHASE_NONE             0
+#define PHASE_DIRTY_DRAIN      1   // drain old product + 5s air burst        → drain
+#define PHASE_DIRTY_RINSE      2   // pre-rinse water + drain                  → drain
+#define PHASE_DIRTY_PURGE      3   // air-blow pre-rinse water + drain         → drain
+#define PHASE_WASHING          4   // recirculate hot caustic (caustic + pump)
+#define PHASE_CAUSTIC_RETURN   5   // air-blow caustic, drain+pump OFF         → caustic reservoir
+#define PHASE_RINSING          6   // post-caustic rinse water + drain         → drain
+#define PHASE_RINSE_PURGE      7   // air-blow rinse water + drain             → drain
+#define PHASE_SANITIZE         8   // recirculate sanitizer (sanitizer + pump)
+#define PHASE_SANI_RETURN      9   // CO2-blow sanitizer, drain+pump OFF       → sani reservoir
+#define PHASE_PRESSURE         10  // CO2 charge, valves closed (seal keg)
+#define NUM_PHASES             11
+#define PHASE_FIRST            PHASE_DIRTY_DRAIN
+#define PHASE_LAST             PHASE_PRESSURE
+
+// IDLE sub-state (only meaningful while machineState == MACH_IDLE)
+#define IDLE_INIT              0   // one-shot init ceremony on entering IDLE
+#define IDLE_NOT_READY         1   // systems offline; shows which are failing
+#define IDLE_READY             2   // ready; START begins a cycle
+#define IDLE_SETTINGS          3   // on-screen settings editor (Phase 5 — not yet wired)
 
 // ---------- ADC ----------
 #define adcResolution          12

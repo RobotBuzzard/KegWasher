@@ -26,7 +26,7 @@ void diagnostics_init() {
 void diagnostics_process() {
   // Diagnostic-mode entry is gated to safe states. Don't let an operator
   // accidentally jump into output-toggling mode mid-wash.
-  bool safeToEnter = (currentState == STATE_STARTUP) || (currentState == STATE_FINISHED);
+  bool safeToEnter = (machineState == MACH_IDLE) || (machineState == MACH_COMPLETE);
 
   if (!diagnosticMode && safeToEnter
       && isManualDrainPressed && isCycleStartPressed) {
@@ -129,8 +129,9 @@ void diagnostics_logEvent(const char* eventMsg) {
   // Format once into a stack buffer so both sinks see identical bytes
   // and the network packet doesn't have a partial timestamp.
   char buf[160];
-  int n = snprintf(buf, sizeof(buf), "%lu [%u] %s\n",
-                   millis(), (unsigned)currentState, eventMsg);
+  // Stamp both axes: [machineState/recipePhase]
+  int n = snprintf(buf, sizeof(buf), "%lu [%u/%u] %s\n",
+                   millis(), (unsigned)machineState, (unsigned)recipePhase, eventMsg);
   if (n < 0) return;
   if ((size_t)n >= sizeof(buf)) n = sizeof(buf) - 1;
 

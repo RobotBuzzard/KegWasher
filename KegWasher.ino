@@ -304,12 +304,8 @@ static void mqtt_applyCmdFlags() {
   if (kwMqttCmdReset) {
     kwMqttCmdReset = false;
     diagnostics_logEvent("Remote cmd: reset");
-    if (currentState == STATE_ERROR) {
-      errorCode = ERR_NONE;
-      stateMachine_changeState(STATE_STARTUP);
-    } else {
-      diagnostics_logEvent("Reset cmd ignored (not in ERROR)");
-    }
+    // PackML Clear/Reset surface: ABORTED→Clearing (path B), STOPPED/COMPLETE→Idle.
+    stateMachine_reset();
   }
 }
 
@@ -351,8 +347,9 @@ static void mqtt_applyCmdFlags() {
 // (state=255, errorCode=255, temps=-999) so the first call to
 // mqtt_publishStatus() flushes everything to the broker.
 struct MqttStatusCache {
-  byte          state         = 255;
-  byte          subState      = 255;
+  byte          state         = 255;   // PackML machineState
+  byte          phase         = 255;   // ISA-88 recipePhase
+  byte          subState      = 255;   // IDLE sub-state
   bool          paused        = false;
   bool          pausedInit    = false;
   bool          isLargeKeg    = false;
@@ -412,14 +409,13 @@ static int freeRam() {
   return (int)((char*)&stackTop - (char*)sbrk(0));
 }
 
-static const char* startupSubName(byte s) {
+static const char* idleSubName(byte s) {
   switch (s) {
-    case STARTUP_INIT:      return "INIT";
-    case STARTUP_HEATING:   return "HEATING";
-    case STARTUP_SETTINGS:  return "SETTINGS";
-    case STARTUP_READY:     return "READY";
-    case STARTUP_NOT_READY: return "NOT_READY";
-    default:                return "?";
+    case IDLE_INIT:      return "INIT";
+    case IDLE_NOT_READY: return "NOT_READY";
+    case IDLE_READY:     return "READY";
+    case IDLE_SETTINGS:  return "SETTINGS";
+    default:             return "?";
   }
 }
 
@@ -431,36 +427,46 @@ static void mqtt_publishStatus() {
 
   char buf[24];
 
-  // ----- State -----
-  if (currentState != kwMqttCache.state) {
-    kwMqttCache.state = currentState;
-    if (currentState < NUM_STATES) {
-      kwMqtt.publish(kwTopic("state"), stateNames[currentState], true);
+  // ----- Machine state (PackML, Axis A) -----
+  if (machineState != kwMqttCache.state) {
+    kwMqttCache.state = machineState;
+    if (machineState < NUM_MACH_STATES) {
+      kwMqtt.publish(kwTopic("state"), machStateNames[machineState], true);
     }
-    // Force the substate publish below to re-evaluate so a STARTUP→
-    // DRAINING transition can clear the lingering substate value.
+    // Force the substate publish below to re-evaluate so leaving IDLE clears
+    // the lingering substate value.
     kwMqttCache.subState = 254;
   }
 
-  // ----- Sub-state (only meaningful in STARTUP) -----
-  if (currentState == STATE_STARTUP) {
-    if (startupSubState != kwMqttCache.subState) {
-      kwMqttCache.subState = startupSubState;
-      kwMqtt.publish(kwTopic("state/sub"),
-                     startupSubName(startupSubState), true);
+  // ----- Recipe phase (ISA-88, Axis B) — only meaningful while EXECUTE -----
+  if (recipePhase != kwMqttCache.phase) {
+    kwMqttCache.phase = recipePhase;
+    if (machineState == MACH_EXECUTE && recipePhase < NUM_PHASES) {
+      kwMqtt.publish(kwTopic("phase"), phaseNames[recipePhase], true);
+    } else {
+      kwMqtt.publish(kwTopic("phase"), "", true);  // clear when not executing
+    }
+  }
+
+  // ----- IDLE sub-state (only meaningful while IDLE) -----
+  if (machineState == MACH_IDLE) {
+    if (idleSub != kwMqttCache.subState) {
+      kwMqttCache.subState = idleSub;
+      kwMqtt.publish(kwTopic("state/sub"), idleSubName(idleSub), true);
     }
   } else if (kwMqttCache.subState != 255) {
-    // Just left STARTUP — clear the topic so the dashboard doesn't show
-    // a stale "READY" alongside e.g. "WASHING".
+    // Just left IDLE — clear the topic so the dashboard doesn't show a stale
+    // "READY" alongside e.g. "EXECUTE".
     kwMqttCache.subState = 255;
     kwMqtt.publish(kwTopic("state/sub"), "", true);
   }
 
-  // ----- Paused -----
-  if (!kwMqttCache.pausedInit || cyclePaused != kwMqttCache.paused) {
-    kwMqttCache.paused = cyclePaused;
+  // ----- Held (PackML; the PAUSE overlay) -----
+  bool held = (machineState == MACH_HELD);
+  if (!kwMqttCache.pausedInit || held != kwMqttCache.paused) {
+    kwMqttCache.paused = held;
     kwMqttCache.pausedInit = true;
-    kwMqtt.publish(kwTopic("paused"), cyclePaused ? "YES" : "NO", true);
+    kwMqtt.publish(kwTopic("paused"), held ? "YES" : "NO", true);
   }
 
   // ----- Keg size -----
@@ -528,7 +534,7 @@ static void mqtt_publishStatus() {
   // states, so remaining-time the dashboard shows always matches the durations
   // the state machine actually runs. (Bug fixed 2026-05-29: was reading the
   // live isLargeKeg; now centralized in stageTimerFor.)
-  unsigned long durationMs = stageTimerFor(currentState);
+  unsigned long durationMs = stageTimerFor(recipePhase);
   unsigned long elapsedSec   = elapsedMs / 1000;
   unsigned long remainingMs  = (durationMs > elapsedMs) ? (durationMs - elapsedMs) : 0;
   // Ceiling to match the on-panel countdown (floor skips a value at 1 Hz).
@@ -641,8 +647,8 @@ static void setupEthernet() {
 // ----- Display (ViSi-Genie) -----
 // State handlers call display_show*() on form transitions.
 // The operating state draws once on entry; partial updates follow.
-static byte   lastDisplayedState = 0xFF;  // sentinel — forces draw on first operating state entry
-static bool   lastPausedShown    = false; // tracks the paused overlay state
+static byte   lastDisplayedPhase = 0xFF;  // sentinel — forces redraw on phase change / first entry
+static bool   lastHeldShown      = false; // tracks the HELD (paused) overlay state
 static unsigned long lastTimerUpdateMs  = 0;
 static unsigned long lastStatusUpdateMs = 0;
 
@@ -671,11 +677,10 @@ void setup() {
   diagnostics_init();
   stateMachine_init();
 
-  // First-pass system check. Any failure pushes us straight into the
-  // ERROR state with the appropriate errorCode set by hardware_allSystemsGo.
-  if (!hardware_allSystemsGo()) {
-    stateMachine_changeState(STATE_ERROR);
-  }
+  // Boot readiness is handled gracefully by MACH_IDLE → IDLE_NOT_READY (it shows
+  // which systems are offline and waits, no boot alarm). The one-time pre-check
+  // latch (washerInitialized) is only set once all systems are go. No hard abort
+  // at boot — that was a pre-precheck-redesign artifact.
 
   // Bring up Ethernet before the watchdog is armed — DHCP can legitimately
   // take many seconds, well over an 8 s WDT timeout. Degrades gracefully
@@ -729,34 +734,38 @@ void loop() {
     hardware_allStop();
     errorCode = ERR_ESTOP;
     diagnostics_logEvent("E-STOP triggered");
-    if (currentState != STATE_ERROR) {
-      stateMachine_changeState(STATE_ERROR);
+    if (machineState != MACH_ABORTED) {
+      stateMachine_abort();   // PackML Abort → MACH_ABORTED
     }
   }
 
   stateMachine_process();
 
-  // Operating-state display: draw full screen once on state entry then
-  // overwrite only dynamic fields. STARTUP/FINISHED/ERROR manage their
-  // own form transitions from within their state handlers.
+  // Operating display: the operating screen is shown while EXECUTE (running) or
+  // HELD (paused). Full redraw on recipe-phase change (the title) or first entry;
+  // then overwrite only dynamic fields. IDLE/COMPLETE/STOPPED/ABORTED manage
+  // their own screens from within their state handlers.
   {
-    bool isOperating = (currentState >= STATE_OP_FIRST && currentState <= STATE_OP_LAST);
+    bool isOperating = (machineState == MACH_EXECUTE || machineState == MACH_HELD);
+    bool held        = (machineState == MACH_HELD);
 
     if (isOperating) {
-      if (currentState != lastDisplayedState) {
-        lastDisplayedState = currentState;
-        display_showOperatingScreen();   // draws PAUSE/RESUME + paused banner per live state
-        lastPausedShown    = cyclePaused;
+      // recipePhase is preserved across a HELD pause, so this fires on each
+      // phase advance and on first entry — exactly when the title must redraw.
+      if (recipePhase != lastDisplayedPhase) {
+        lastDisplayedPhase = recipePhase;
+        display_showOperatingScreen();   // title = phaseNames[recipePhase] + controls
+        lastHeldShown      = held;
         lastTimerUpdateMs  = millis();
         lastStatusUpdateMs = millis();
       }
-      // Reflect a pause-state change (banner + button); skip the countdown
-      // while paused so the displayed time freezes.
-      if (cyclePaused != lastPausedShown) {
-        lastPausedShown = cyclePaused;
-        display_setPaused(cyclePaused);
+      // Reflect a hold-state change (banner + buttons); skip the countdown while
+      // held so the displayed time freezes.
+      if (held != lastHeldShown) {
+        lastHeldShown = held;
+        display_setPaused(held);
       }
-      if (!cyclePaused) {
+      if (!held) {
         if (millis() - lastTimerUpdateMs >= 1000UL) {
           lastTimerUpdateMs = millis();
           display_updateTimer(timers_getStateElapsed());
@@ -767,7 +776,7 @@ void loop() {
         }
       }
     } else {
-      lastDisplayedState = 0xFF;  // force fresh draw on next operating-state entry
+      lastDisplayedPhase = 0xFF;  // force fresh redraw on next operating entry
     }
   }
 

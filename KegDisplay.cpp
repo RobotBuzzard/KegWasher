@@ -90,8 +90,8 @@ void display_showProgress(const char* /*label*/, int percentage,
 }
 
 void display_updateTimer(unsigned long elapsedMs) {
-  unsigned long duration = stageTimerFor(currentState);
-  if (duration == 0) return;  // not an operating state — nothing to count down
+  unsigned long duration = stageTimerFor(recipePhase);
+  if (duration == 0) return;  // not a recipe phase — nothing to count down
   unsigned long remaining = (elapsedMs < duration) ? (duration - elapsedMs) : 0UL;
   // Ceiling, not floor: with a 1 Hz redraw, floor division makes the countdown
   // skip a value (e.g. 5,3,2,1,0). Rounding up makes it tick every second.
@@ -108,7 +108,7 @@ void display_updateStatus() {
 //  - Running: one PAUSE button.
 //  - Paused : RESUME / RESTART / STOP-DRAIN, with a PAUSED banner.
 static void drawCycleControls() {
-  if (cyclePaused) {
+  if (machineState == MACH_HELD) {
     display_flashBanner("PAUSED", RED, true);
     KDS::button(BTN_RESUME_X, BTN_RESUME_Y,  BTN_BAND_W, BTN_BAND_H, "RESUME",     GREEN);
     KDS::button(BTN_RESUME_X, BTN_RESTART_Y, BTN_BAND_W, BTN_BAND_H, "RESTART",    COL_PAUSE);
@@ -119,7 +119,7 @@ static void drawCycleControls() {
 }
 
 void display_showOperatingScreen() {
-  KDS::operatingFrame(stateNames[currentState], ipStr());
+  KDS::operatingFrame(phaseNames[recipePhase], ipStr());
   display_updateTimer(timers_getStateElapsed());
   display_updateStatus();
   drawCycleControls();
@@ -155,20 +155,21 @@ void display_doEvents() {
   int x, y;
   if (!KDS::touch(&x, &y)) return;
 
-  bool startScreen = (currentState == STATE_FINISHED) ||
-                     (currentState == STATE_HALTED) ||
-                     (currentState == STATE_STARTUP && startupSubState == STARTUP_READY);
-  bool operating = (currentState >= STATE_OP_FIRST && currentState <= STATE_OP_LAST);
+  bool startScreen = (machineState == MACH_COMPLETE) ||
+                     (machineState == MACH_STOPPED) ||
+                     (machineState == MACH_IDLE && idleSub == IDLE_READY);
+  bool operating = (machineState == MACH_EXECUTE || machineState == MACH_HELD);
+  bool held      = (machineState == MACH_HELD);
 
   if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchStart = true;
     KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
-  } else if (operating && !cyclePaused) {
+  } else if (operating && !held) {
     if (inRect(x, y, BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H)) {
       g_touchPause = true;
       KDS::button(BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H, "...", WHITE);
     }
-  } else if (operating && cyclePaused) {
+  } else if (operating && held) {
     if (inRect(x, y, BTN_RESUME_X, BTN_RESUME_Y, BTN_BAND_W, BTN_BAND_H)) {
       g_touchPause = true;  // RESUME = toggle pause off
       KDS::button(BTN_RESUME_X, BTN_RESUME_Y, BTN_BAND_W, BTN_BAND_H, "...", WHITE);
