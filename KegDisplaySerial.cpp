@@ -117,27 +117,57 @@ namespace {
     bool v[5] = { w, a, c, e, m };
     for (int i = 0; i < 5; i++) disc(dotX[i], DOT_Y, 8, v[i] ? C_OK : C_BAD);
   }
+
+  // RTS-reset the display to SPE@9600, set the host to 9600, handshake (the
+  // first few commands after boot are dropped), and set portrait orientation.
+  void resetSync() {
+    ConnectorCOM1.RtsMode(SerialBase::LINE_ON);  delay(200);
+    ConnectorCOM1.RtsMode(SerialBase::LINE_OFF); delay(4500);   // Diablo16 boot
+    ConnectorCOM1.Speed(9600);
+    for (int i = 0; i < 12; i++) {
+      drain(); uint32_t e = g_err; D->gfx_Cls();
+      if (g_err == e) break;
+      delay(200);
+    }
+    drain(); D->gfx_Set(SCREEN_MODE, PORTRAIT);
+  }
+
+  // Bump the SPE link from 9600 to rawBaud (~12x faster redraws at 115200).
+  // The lib's setbaudWait CANNOT do this on the ClearCore: its host-side
+  // begin() is commented out (host never switches), and begin() would float
+  // RTS=RESET. So: send the setbaud command, flush it FULLY at the old baud,
+  // switch the host with the RTS-safe ConnectorCOM1.Speed(), wait for the
+  // display to switch (~100ms), then verify with a gfx_Cls. On failure, RTS-
+  // reset back to a known-good 9600 state.
+  bool changeBaud(word rateIdx, uint32_t rawBaud) {
+    drainQuiet(3);
+    uint16_t op = (uint16_t)F_setbaudWait;                 // 38 = 0x0026
+    Serial1.write((uint8_t)(op >> 8)); Serial1.write((uint8_t)op);
+    Serial1.write((uint8_t)(rateIdx >> 8)); Serial1.write((uint8_t)rateIdx);
+    Serial1.flush();                                       // fully transmit at the OLD baud first
+    ConnectorCOM1.Speed(rawBaud);                          // RTS-safe host switch
+    delay(130);                                            // display sleeps ~100ms then switches+ACKs
+    drainQuiet(5);                                         // absorb the setbaud ACK / transition noise
+    for (int i = 0; i < 4; i++) {                          // verify the link at the new baud
+      drain(); uint32_t e = g_err; D->gfx_Cls();
+      if (g_err == e) return true;
+      delay(40);
+    }
+    resetSync();                                           // verify failed -> force known 9600 state
+    return false;
+  }
 }
 
 namespace KDS {
 
 void begin() {
-  Serial1.begin(9600);
-  Serial1.ttl(true);
-  // hardware-reset the display via COM1 RTS (adapter RESET-EN must be ON):
-  // assert reset, release, wait for the Diablo16 to boot. Clears any runtime
-  // "Touch to continue" error halt and starts fresh.
-  ConnectorCOM1.RtsMode(SerialBase::LINE_ON);  delay(200);
-  ConnectorCOM1.RtsMode(SerialBase::LINE_OFF); delay(4500);
+  Serial1.begin(9600);             // SPE boots at 9600; the lib object + handshake below
+  Serial1.ttl(true);               // need it open before resetSync()'s handshake
   D = new Diablo_Serial_4DLib(&Serial1);
   D->Callback4D = onTO;
   D->TimeLimit4D = 1000;
-  for (int i = 0; i < 12; i++) {                 // first cmds after boot drop; sync first
-    drain(); uint32_t t = g_err; D->gfx_Cls();
-    if (g_err == t) break;
-    delay(200);
-  }
-  drain(); D->gfx_Set(SCREEN_MODE, PORTRAIT);    // 272W x 480H
+  resetSync();                     // RTS-reset display -> SPE@9600, handshake, portrait
+  changeBaud(BAUD_115200, 115200); // bump link to 115200 (~12x faster redraws; 9600 fallback)
 }
 
 uint32_t ackErrors() { return g_err; }

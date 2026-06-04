@@ -47,9 +47,12 @@ void setup() {
 void loop() {
   static int s = 0;
   uint32_t before = KDS::ackErrors();
+  uint32_t t0 = millis();
   showState(s);
+  uint32_t dt = millis() - t0;       // full redraw time (state screens; not operating's countdown)
   uint32_t afterDraw = KDS::ackErrors();
   Serial.print(F("screen ")); Serial.print(s);
+  Serial.print(F("  ms=")); Serial.print(dt);
   Serial.print(F("  draw=")); Serial.print(afterDraw - before);
   s = (s + 1) % 7;
   // poll touch during the dwell
