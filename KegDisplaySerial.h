@@ -25,6 +25,8 @@ void operatingFrame(const char* stateName, const char* ip);   // static chrome
 void finished(const char* ip);
 void error(const char* msg, const char* ip);
 void message(const char* msg, const char* ip);
+void stopping(const char* ip);    // STOP/DRAIN evacuation in progress
+void halted(const char* ip);      // de-energized after a STOP/DRAIN; START recovers
 
 // ---- partial updates for the operating screen (no full redraw → no flicker) ----
 void operatingTimer(int minutes, int seconds);

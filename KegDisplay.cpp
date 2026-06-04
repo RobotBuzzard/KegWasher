@@ -31,6 +31,19 @@ static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
 static const int BTN_START_X = 46, BTN_START_Y = 300, BTN_START_W = 180, BTN_START_H = 90;
 static volatile bool g_touchStart = false;
 
+// Operating-screen cycle controls.
+//  - Running: a single PAUSE button.
+//  - Paused : three stacked buttons RESUME / RESTART / STOP-DRAIN.
+// Touches arm the matching one-shot flags, drained in KegWasher.ino.
+static const int BTN_PAUSE_X = 46, BTN_PAUSE_Y = 330, BTN_PAUSE_W = 180, BTN_PAUSE_H = 55;
+static const int BTN_RESUME_X  = 8, BTN_RESUME_Y  = 262, BTN_BAND_W = 256, BTN_BAND_H = 42;
+static const int BTN_RESTART_Y = 310;
+static const int BTN_STOPDRN_Y = 358;
+static const word COL_PAUSE = 0xFD20;  // orange
+static volatile bool g_touchPause   = false;
+static volatile bool g_touchRestart = false;
+static volatile bool g_touchStop    = false;
+
 void display_init() {
   KDS::begin();
   KDS::touchEnable();
@@ -61,6 +74,12 @@ void display_showFinishedScreen() {
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
+void display_showStopping() { KDS::stopping(ipStr()); reapplyMqtt(); }
+void display_showHaltedScreen() {
+  KDS::halted(ipStr());
+  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  reapplyMqtt();
+}
 void display_showError(const char* m)   { KDS::error(m, ipStr());   reapplyMqtt(); }
 void display_showMessage(const char* m) { KDS::message(m, ipStr()); reapplyMqtt(); }
 
@@ -71,17 +90,13 @@ void display_showProgress(const char* /*label*/, int percentage,
 }
 
 void display_updateTimer(unsigned long elapsedMs) {
-  unsigned long duration = 0;
-  switch (currentState) {
-    case STATE_DRAINING: duration = timers_adjustForKegSize(dirtyDrainTimer, kegSizeLatched); break;
-    case STATE_RINSING:  duration = timers_adjustForKegSize(rinseTimer,      kegSizeLatched); break;
-    case STATE_WASHING:  duration = timers_adjustForKegSize(washTimer,       kegSizeLatched); break;
-    case STATE_SANITIZE: duration = timers_adjustForKegSize(saniTimer,       kegSizeLatched); break;
-    case STATE_PRESSURE: duration = timers_adjustForKegSize(purgeTimer,      kegSizeLatched); break;
-    default: return;
-  }
+  unsigned long duration = stageTimerFor(currentState);
+  if (duration == 0) return;  // not an operating state — nothing to count down
   unsigned long remaining = (elapsedMs < duration) ? (duration - elapsedMs) : 0UL;
-  KDS::operatingTimer((int)(remaining / 60000UL), (int)((remaining / 1000UL) % 60UL));
+  // Ceiling, not floor: with a 1 Hz redraw, floor division makes the countdown
+  // skip a value (e.g. 5,3,2,1,0). Rounding up makes it tick every second.
+  unsigned long remainingSec = (remaining + 999UL) / 1000UL;
+  KDS::operatingTimer((int)(remainingSec / 60UL), (int)(remainingSec % 60UL));
 }
 
 void display_updateStatus() {
@@ -89,13 +104,32 @@ void display_updateStatus() {
                        isWaterOk, isAirOk, isCo2Ok, isEstopActive, kwMqttReady);
 }
 
+// Draw the cycle-control buttons for the current pause state.
+//  - Running: one PAUSE button.
+//  - Paused : RESUME / RESTART / STOP-DRAIN, with a PAUSED banner.
+static void drawCycleControls() {
+  if (cyclePaused) {
+    display_flashBanner("PAUSED", RED, true);
+    KDS::button(BTN_RESUME_X, BTN_RESUME_Y,  BTN_BAND_W, BTN_BAND_H, "RESUME",     GREEN);
+    KDS::button(BTN_RESUME_X, BTN_RESTART_Y, BTN_BAND_W, BTN_BAND_H, "RESTART",    COL_PAUSE);
+    KDS::button(BTN_RESUME_X, BTN_STOPDRN_Y, BTN_BAND_W, BTN_BAND_H, "STOP/DRAIN", RED);
+  } else {
+    KDS::button(BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H, "PAUSE", COL_PAUSE);
+  }
+}
+
 void display_showOperatingScreen() {
   KDS::operatingFrame(stateNames[currentState], ipStr());
   display_updateTimer(timers_getStateElapsed());
   display_updateStatus();
+  drawCycleControls();
   reapplyMqtt();
 }
 void display_update() { display_showOperatingScreen(); }
+
+// Called on a pause-state change: full redraw so the control buttons + banner
+// (and, on resume, the status block the paused buttons overwrote) are correct.
+void display_setPaused(bool /*paused*/) { display_showOperatingScreen(); }
 
 void display_flashBanner(const char* text, word /*bgColor*/, bool visible) {
   KDS::banner(text, RED, visible);
@@ -108,18 +142,42 @@ void display_setMqttIndicators(bool connected, bool pubActive, bool subActive) {
   KDS::mqttIndicators(connected, pubActive, subActive);
 }
 
+// Hit-test: is (x,y) inside rect (rx,ry,rw,rh)?
+static inline bool inRect(int x, int y, int rx, int ry, int rw, int rh) {
+  return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+}
+
 void display_doEvents() {
-  // Pump touch every loop (replaces genie.DoEvents). On the READY/FINISHED
-  // screens, a tap inside the START button arms a cycle start.
+  // Pump touch every loop (replaces genie.DoEvents).
+  //  - READY / FINISHED / HALTED: a tap in START arms a cycle start / recover.
+  //  - Operating, running: PAUSE toggles pause.
+  //  - Operating, paused: RESUME / RESTART / STOP-DRAIN.
   int x, y;
-  if (KDS::touch(&x, &y)) {
-    bool startScreen = (currentState == STATE_FINISHED) ||
-                       (currentState == STATE_STARTUP && startupSubState == STARTUP_READY);
-    if (startScreen &&
-        x >= BTN_START_X && x <= BTN_START_X + BTN_START_W &&
-        y >= BTN_START_Y && y <= BTN_START_Y + BTN_START_H) {
-      g_touchStart = true;
-      KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+  if (!KDS::touch(&x, &y)) return;
+
+  bool startScreen = (currentState == STATE_FINISHED) ||
+                     (currentState == STATE_HALTED) ||
+                     (currentState == STATE_STARTUP && startupSubState == STARTUP_READY);
+  bool operating = (currentState >= STATE_OP_FIRST && currentState <= STATE_OP_LAST);
+
+  if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
+    g_touchStart = true;
+    KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+  } else if (operating && !cyclePaused) {
+    if (inRect(x, y, BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H)) {
+      g_touchPause = true;
+      KDS::button(BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H, "...", WHITE);
+    }
+  } else if (operating && cyclePaused) {
+    if (inRect(x, y, BTN_RESUME_X, BTN_RESUME_Y, BTN_BAND_W, BTN_BAND_H)) {
+      g_touchPause = true;  // RESUME = toggle pause off
+      KDS::button(BTN_RESUME_X, BTN_RESUME_Y, BTN_BAND_W, BTN_BAND_H, "...", WHITE);
+    } else if (inRect(x, y, BTN_RESUME_X, BTN_RESTART_Y, BTN_BAND_W, BTN_BAND_H)) {
+      g_touchRestart = true;
+      KDS::button(BTN_RESUME_X, BTN_RESTART_Y, BTN_BAND_W, BTN_BAND_H, "...", WHITE);
+    } else if (inRect(x, y, BTN_RESUME_X, BTN_STOPDRN_Y, BTN_BAND_W, BTN_BAND_H)) {
+      g_touchStop = true;
+      KDS::button(BTN_RESUME_X, BTN_STOPDRN_Y, BTN_BAND_W, BTN_BAND_H, "...", WHITE);
     }
   }
 }
@@ -128,5 +186,23 @@ void display_doEvents() {
 // mqtt_applyCmdFlags() and injected into isCycleStartPressed.
 bool display_takeTouchStart() {
   if (g_touchStart) { g_touchStart = false; return true; }
+  return false;
+}
+
+// Drain a pending PAUSE/RESUME-button touch (one-shot).
+bool display_takeTouchPause() {
+  if (g_touchPause) { g_touchPause = false; return true; }
+  return false;
+}
+
+// Drain a pending RESTART-button touch (one-shot).
+bool display_takeTouchRestart() {
+  if (g_touchRestart) { g_touchRestart = false; return true; }
+  return false;
+}
+
+// Drain a pending STOP/DRAIN-button touch (one-shot).
+bool display_takeTouchStop() {
+  if (g_touchStop) { g_touchStop = false; return true; }
   return false;
 }

@@ -159,6 +159,7 @@ const char* diagnostics_getErrorMessage(byte code) {
     case ERR_HEATER_OVERTEMP: return "Heater overtemp";
     case ERR_STATE_TIMEOUT:   return "State timeout";
     case ERR_SENSOR_FAULT:    return "Sensor fault";
+    case ERR_PAUSE_TIMEOUT:   return "Paused too long";
     default:                  return "Unknown error";
   }
 }

@@ -24,7 +24,7 @@
 // SPECIFICALLY BYPASSED:
 //   - hardware_allSystemsGo() returns true unconditionally
 //   - In STARTUP_READY, the caustic-temp check is skipped so pressing
-//     START goes directly to STATE_DRAINING without STARTUP_HEATING
+//     START goes directly to STATE_DIRTY_DRAIN without STARTUP_HEATING
 //   - enterState(WASHING) skips the precondition caustic-temp check
 //   - state_washing skips the per-tick caustic-temp check
 //
@@ -85,20 +85,40 @@
 #define VALUE_MAX_LENGTH       30
 
 // ---------- State IDs ----------
+// Linear 10-stage wash cycle. Caustic and sanitizer are reused, so each chem
+// stage is followed by a RETURN stage that blows the chem back to its reservoir
+// (caustic by air, sanitizer by CO2); intermediate water is purged to drain.
+// Chem never goes to drain. See docs/state-table.md for the full valve table.
 #define STATE_STARTUP          0
-#define STATE_DRAINING         1
-#define STATE_RINSING          2
-#define STATE_WASHING          3
-#define STATE_SANITIZE         4
-#define STATE_PRESSURE         5
-#define STATE_FINISHED         6
-#define STATE_ERROR            7
-#define NUM_STATES             8
+#define STATE_DIRTY_DRAIN      1   // drain old product + 5s air burst        → drain
+#define STATE_DIRTY_RINSE      2   // pre-rinse water + drain                  → drain
+#define STATE_DIRTY_PURGE      3   // air-blow pre-rinse water + drain         → drain
+#define STATE_WASHING          4   // recirculate hot caustic (caustic + pump)
+#define STATE_CAUSTIC_RETURN   5   // air-blow caustic, drain+pump OFF         → caustic reservoir
+#define STATE_RINSING          6   // post-caustic rinse water + drain         → drain
+#define STATE_RINSE_PURGE      7   // air-blow rinse water + drain             → drain
+#define STATE_SANITIZE         8   // recirculate sanitizer (sanitizer + pump)
+#define STATE_SANI_RETURN      9   // CO2-blow sanitizer, drain+pump OFF       → sani reservoir
+#define STATE_PRESSURE         10  // CO2 charge, valves closed (seal keg)
+#define STATE_FINISHED         11
+#define STATE_ERROR            12
+// STOPPING/HALTED are appended AFTER ERROR so the operating range + every
+// existing ID is unchanged. STOPPING runs an operator-STOP evacuation (route
+// keg contents to the right place), then HALTED de-energizes and waits.
+#define STATE_STOPPING         13
+#define STATE_HALTED           14
+#define NUM_STATES             15
+
+// Contiguous "operating" range — checked by loop() to decide whether to draw
+// the operating screen, and by the state machine for whole-cycle behaviour.
+// (STOPPING/HALTED are intentionally NOT in this range — they own their screens.)
+#define STATE_OP_FIRST         STATE_DIRTY_DRAIN
+#define STATE_OP_LAST          STATE_PRESSURE
 
 // Startup sub-states
 #define STARTUP_INIT           0
 #define STARTUP_HEATING        1
-#define STARTUP_IO_CHECK       2   // unused in new flow; kept to avoid breaking any persisted values
+#define STARTUP_SETTINGS       2   // on-screen settings editor (repurposed unused IO_CHECK slot)
 #define STARTUP_READY          3
 #define STARTUP_NOT_READY      4   // systems offline; shows which are failing
 
@@ -136,15 +156,27 @@
 #define ERR_HEATER_OVERTEMP   13
 #define ERR_STATE_TIMEOUT     14
 #define ERR_SENSOR_FAULT      15
+#define ERR_PAUSE_TIMEOUT     16
+
+// Max time a cycle may sit PAUSED before the firmware sounds the alarm and
+// aborts to ERROR — caustic/sanitizer can be sitting in the keg. The operator
+// can RESUME any time before this expires.
+#define PAUSE_MAX_MS          (10UL * 60 * 1000)
 
 // ---------- Runtime config (loaded from SD or defaults) ----------
-extern unsigned long dirtyDrainTimer;
-extern unsigned long dirtyRinseTimer;   // reserved for planned dirty-rinse path
-extern unsigned long dirtyPurgeTimer;   // reserved for planned dirty-purge path
-extern unsigned long rinseTimer;
-extern unsigned long purgeTimer;
-extern unsigned long washTimer;
-extern unsigned long saniTimer;
+// Stage durations (ms), one per operating state. dirtyRinse/dirtyPurge were
+// previously loaded-but-unused; they (and the three *Rtn/Purge timers) now
+// drive the full 10-stage cycle.
+extern unsigned long dirtyDrainTimer;   // DIRTY_DRAIN
+extern unsigned long dirtyRinseTimer;   // DIRTY_RINSE
+extern unsigned long dirtyPurgeTimer;   // DIRTY_PURGE
+extern unsigned long washTimer;         // WASHING
+extern unsigned long causticRtnTimer;   // CAUSTIC_RETURN (air-blow caustic → reservoir)
+extern unsigned long rinseTimer;        // RINSING
+extern unsigned long rinsePurgeTimer;   // RINSE_PURGE (air-blow rinse water → drain)
+extern unsigned long saniTimer;         // SANITIZE
+extern unsigned long saniRtnTimer;      // SANI_RETURN (CO2-blow sanitizer → reservoir)
+extern unsigned long purgeTimer;        // PRESSURE (CO2 charge / seal)
 extern double largeKegMod;
 extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f)
 extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F

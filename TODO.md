@@ -4,6 +4,15 @@ Live roadmap from current bench-only build to a production-ready keg cleaner con
 
 ## Status (2026-06-04)
 
+**Update 2026-06-04 (cycle + controls rework — bench-verified on hardware):** The cycle is now the
+full **10-stage** sequence with chemical recovery: `DIRTY_DRAIN → DIRTY_RINSE → DIRTY_PURGE → WASHING
+→ CAUSTIC_RETURN → RINSING → RINSE_PURGE → SANITIZE → SANI_RETURN → PRESSURE` (caustic/sani blown back
+to their reservoirs, never to drain). Added: per-state safety monitoring + entry preconditions
+(bench-gated), one-press-per-keg flow with a one-time power-up pre-check, on-screen + MQTT cycle
+controls (PAUSE/RESUME, RESTART = re-run current stage, STOP/DRAIN = evacuate → HALTED), and a
+countdown-skip fix. SD card formatted + `washer.config` written. The paragraph below + the docs in
+`docs/` are now **stale** (they describe the old 5-stage cycle) — doc sync is the next doc task.
+
 Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed via `#define BENCH_MODE` in `KegConfig.h`.
 
 **Display (2026-06-03):** dropped the planned ViSi-Genie path for **raw SPE serial** drawing on the gen4-uLCD-43DT (Diablo16, portrait 272×480, link bumped to 115200 for ~12× faster redraws). Per-state screens, flicker-free partial updates, footer (IP + MQTT pub/sub dots), host-side-calibrated resistive touch, and an on-screen START button — all verified on hardware. `genieArduinoDEV` removed. See CLAUDE.md "Display" + the `kegwasher_display_serial` memory. (A web/HTTP HMI was re-assessed as feasible 2026-06-04 — an option that revisits the Phase 0 "no HTTP" note below.)
@@ -94,6 +103,21 @@ Cross-cutting items for the weeks/months-between-resets goal. Most can land any 
 - [ ] **Acceptance test procedure** — checklist for verifying a built unit before customer handoff.
 - [ ] **Submit ClearCoreWatchdog to the Arduino Library Manager** — *done* (PR #8286 merged 2026-05-08). Listed here for the record.
 - [ ] **README "Status" section** — drop the bench-only warnings once a unit has actually been through Phase 2; bump version to `v1.0.0`.
+
+## Phase 6 — End-user documentation
+
+Operator-facing materials. Distinct from the developer docs in `docs/`; these ship with the unit.
+
+- [ ] **State-machine taxonomy / lexicon** — a single canonical vocabulary for the cycle: each state's
+  operator-facing name + one-line meaning + what the operator should expect/do. The firmware's
+  `stateNames[]` (KegStateMachine.cpp) is the source of truth; the lexicon must match the on-screen
+  labels exactly so the manual and the panel never disagree. (A taxonomy draft is being prepared in a
+  separate conversation — reconcile it against the firmware labels when it lands.)
+- [ ] **Operator's manual** — startup, the one-press-per-keg workflow, PAUSE/RESTART/STOP-DRAIN and
+  what each does, error recovery (error code → meaning → action, from the lexicon), routine
+  maintenance, chemical handling. Incorporates the state lexicon above.
+- [ ] **Quick-reference card** — at-a-glance state meanings + button cheat-sheet for the wall by the
+  machine.
 
 ---
 

@@ -15,6 +15,9 @@ extern unsigned long cycleStartTime;
 void timers_init();
 void timers_update();
 void timers_resetStateTimer();
+// Push the state-timer start forward by deltaMs so paused time doesn't count
+// toward the stage duration. Called on RESUME with the time spent paused.
+void timers_shiftStateStart(unsigned long deltaMs);
 unsigned long timers_getStateElapsed();
 unsigned long timers_getCycleElapsed();
 bool timers_isStateDone(unsigned long duration);

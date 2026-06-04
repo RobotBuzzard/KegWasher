@@ -187,6 +187,10 @@ void net_log_send(const char* msg) {
 static volatile bool kwMqttCmdStart   = false;
 static volatile bool kwMqttCmdSilence = false;
 static volatile bool kwMqttCmdReset   = false;
+static volatile bool kwMqttCmdPause   = false;
+static volatile bool kwMqttCmdResume  = false;
+static volatile bool kwMqttCmdStop    = false;
+static volatile bool kwMqttCmdRestart = false;
 
 // PubSubClient invokes this synchronously from kwMqtt.loop() when a
 // message arrives on a subscribed topic. Topic and payload are valid
@@ -220,6 +224,14 @@ static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
     kwMqttCmdSilence = true;
   } else if (strcmp(leaf, "reset") == 0) {
     kwMqttCmdReset = true;
+  } else if (strcmp(leaf, "pause") == 0) {
+    kwMqttCmdPause = true;
+  } else if (strcmp(leaf, "resume") == 0) {
+    kwMqttCmdResume = true;
+  } else if (strcmp(leaf, "stop") == 0) {
+    kwMqttCmdStop = true;
+  } else if (strcmp(leaf, "restart") == 0) {
+    kwMqttCmdRestart = true;
   }
   // Unknown leaves are silently dropped. We can't safely log from here
   // for the same reason — see header comment. A dashboard publishing to
@@ -255,6 +267,39 @@ static void mqtt_applyCmdFlags() {
     kwMqttCmdSilence = false;
     diagnostics_logEvent("Remote cmd: silence");
     isManualDrainPressed = true;
+  }
+  // On-screen cycle controls (touch).
+  if (display_takeTouchPause()) {
+    diagnostics_logEvent("Touch: pause toggle");
+    stateMachine_togglePause();
+  }
+  if (display_takeTouchRestart()) {
+    diagnostics_logEvent("Touch: restart");
+    stateMachine_restart();    // re-run the current stage
+  }
+  if (display_takeTouchStop()) {
+    diagnostics_logEvent("Touch: stop/drain");
+    stateMachine_stop();       // evacuate, then halt
+  }
+  if (kwMqttCmdPause) {
+    kwMqttCmdPause = false;
+    diagnostics_logEvent("Remote cmd: pause");
+    stateMachine_setPause(true);
+  }
+  if (kwMqttCmdResume) {
+    kwMqttCmdResume = false;
+    diagnostics_logEvent("Remote cmd: resume");
+    stateMachine_setPause(false);
+  }
+  if (kwMqttCmdStop) {
+    kwMqttCmdStop = false;
+    diagnostics_logEvent("Remote cmd: stop");
+    stateMachine_stop();
+  }
+  if (kwMqttCmdRestart) {
+    kwMqttCmdRestart = false;
+    diagnostics_logEvent("Remote cmd: restart");
+    stateMachine_restart();
   }
   if (kwMqttCmdReset) {
     kwMqttCmdReset = false;
@@ -308,6 +353,8 @@ static void mqtt_applyCmdFlags() {
 struct MqttStatusCache {
   byte          state         = 255;
   byte          subState      = 255;
+  bool          paused        = false;
+  bool          pausedInit    = false;
   bool          isLargeKeg    = false;
   bool          kegInit       = false;
   byte          errorCode     = 255;
@@ -369,7 +416,7 @@ static const char* startupSubName(byte s) {
   switch (s) {
     case STARTUP_INIT:      return "INIT";
     case STARTUP_HEATING:   return "HEATING";
-    case STARTUP_IO_CHECK:  return "IO_CHECK";
+    case STARTUP_SETTINGS:  return "SETTINGS";
     case STARTUP_READY:     return "READY";
     case STARTUP_NOT_READY: return "NOT_READY";
     default:                return "?";
@@ -407,6 +454,13 @@ static void mqtt_publishStatus() {
     // a stale "READY" alongside e.g. "WASHING".
     kwMqttCache.subState = 255;
     kwMqtt.publish(kwTopic("state/sub"), "", true);
+  }
+
+  // ----- Paused -----
+  if (!kwMqttCache.pausedInit || cyclePaused != kwMqttCache.paused) {
+    kwMqttCache.paused = cyclePaused;
+    kwMqttCache.pausedInit = true;
+    kwMqtt.publish(kwTopic("paused"), cyclePaused ? "YES" : "NO", true);
   }
 
   // ----- Keg size -----
@@ -470,27 +524,15 @@ static void mqtt_publishStatus() {
 
   // ----- Timers (operating states only) -----
   unsigned long elapsedMs = timers_getStateElapsed();
-  unsigned long durationMs = 0;
-  // Use the LATCHED keg size, not the live pin — the remaining-time the
-  // dashboard shows must match the durations the state machine actually runs
-  // (which latch at cycle start). Bug fixed 2026-05-29: was reading isLargeKeg.
-  switch (currentState) {
-    case STATE_DRAINING:
-      durationMs = timers_adjustForKegSize(dirtyDrainTimer, kegSizeLatched); break;
-    case STATE_RINSING:
-      durationMs = timers_adjustForKegSize(rinseTimer,      kegSizeLatched); break;
-    case STATE_WASHING:
-      durationMs = timers_adjustForKegSize(washTimer,       kegSizeLatched); break;
-    case STATE_SANITIZE:
-      durationMs = timers_adjustForKegSize(saniTimer,       kegSizeLatched); break;
-    case STATE_PRESSURE:
-      durationMs = timers_adjustForKegSize(purgeTimer,      kegSizeLatched); break;
-    default:
-      durationMs = 0;
-  }
+  // stageTimerFor() uses the LATCHED keg size and returns 0 for non-operating
+  // states, so remaining-time the dashboard shows always matches the durations
+  // the state machine actually runs. (Bug fixed 2026-05-29: was reading the
+  // live isLargeKeg; now centralized in stageTimerFor.)
+  unsigned long durationMs = stageTimerFor(currentState);
   unsigned long elapsedSec   = elapsedMs / 1000;
   unsigned long remainingMs  = (durationMs > elapsedMs) ? (durationMs - elapsedMs) : 0;
-  unsigned long remainingSec = remainingMs / 1000;
+  // Ceiling to match the on-panel countdown (floor skips a value at 1 Hz).
+  unsigned long remainingSec = (remainingMs + 999UL) / 1000UL;
 
   if (elapsedSec != kwMqttCache.elapsedSec) {
     kwMqttCache.elapsedSec = elapsedSec;
@@ -600,6 +642,7 @@ static void setupEthernet() {
 // State handlers call display_show*() on form transitions.
 // The operating state draws once on entry; partial updates follow.
 static byte   lastDisplayedState = 0xFF;  // sentinel — forces draw on first operating state entry
+static bool   lastPausedShown    = false; // tracks the paused overlay state
 static unsigned long lastTimerUpdateMs  = 0;
 static unsigned long lastStatusUpdateMs = 0;
 
@@ -697,22 +740,31 @@ void loop() {
   // overwrite only dynamic fields. STARTUP/FINISHED/ERROR manage their
   // own form transitions from within their state handlers.
   {
-    bool isOperating = (currentState >= STATE_DRAINING && currentState <= STATE_PRESSURE);
+    bool isOperating = (currentState >= STATE_OP_FIRST && currentState <= STATE_OP_LAST);
 
     if (isOperating) {
       if (currentState != lastDisplayedState) {
         lastDisplayedState = currentState;
-        display_showOperatingScreen();
+        display_showOperatingScreen();   // draws PAUSE/RESUME + paused banner per live state
+        lastPausedShown    = cyclePaused;
         lastTimerUpdateMs  = millis();
         lastStatusUpdateMs = millis();
       }
-      if (millis() - lastTimerUpdateMs >= 1000UL) {
-        lastTimerUpdateMs = millis();
-        display_updateTimer(timers_getStateElapsed());
+      // Reflect a pause-state change (banner + button); skip the countdown
+      // while paused so the displayed time freezes.
+      if (cyclePaused != lastPausedShown) {
+        lastPausedShown = cyclePaused;
+        display_setPaused(cyclePaused);
       }
-      if (millis() - lastStatusUpdateMs >= 5000UL) {
-        lastStatusUpdateMs = millis();
-        display_updateStatus();
+      if (!cyclePaused) {
+        if (millis() - lastTimerUpdateMs >= 1000UL) {
+          lastTimerUpdateMs = millis();
+          display_updateTimer(timers_getStateElapsed());
+        }
+        if (millis() - lastStatusUpdateMs >= 5000UL) {
+          lastStatusUpdateMs = millis();
+          display_updateStatus();
+        }
       }
     } else {
       lastDisplayedState = 0xFF;  // force fresh draw on next operating-state entry

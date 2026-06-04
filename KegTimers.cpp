@@ -30,6 +30,13 @@ void timers_resetStateTimer() {
   stateElapsedTime = 0;
 }
 
+// Shift the stage start later by deltaMs (used on RESUME so the time spent
+// paused isn't counted against the stage duration). stateElapsedTime is
+// recomputed on the next timers_update().
+void timers_shiftStateStart(unsigned long deltaMs) {
+  previousStateMillis += deltaMs;
+}
+
 unsigned long timers_getStateElapsed() {
   return stateElapsedTime;
 }

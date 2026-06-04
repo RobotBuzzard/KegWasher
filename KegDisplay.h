@@ -33,6 +33,8 @@ void display_update();  // alias for display_showOperatingScreen()
 
 void display_showReadyScreen();    // "Check levels / Press START"
 void display_showFinishedScreen(); // "Cycle complete / DRAIN+START = new"
+void display_showStopping();       // "DRAINING" — STOP/DRAIN evacuation in progress
+void display_showHaltedScreen();   // "STOPPED" + START to recover (after STOP/DRAIN)
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk);
 
 void display_showProgress(const char* label, int percentage,
@@ -55,6 +57,13 @@ void display_setMqttIndicators(bool connected, bool pubActive, bool subActive);
 // ── Touch event pump — call every loop (replaces genie.DoEvents) ───────
 void display_doEvents();
 bool display_takeTouchStart();   // one-shot: a START button touch is pending
+bool display_takeTouchPause();   // one-shot: a PAUSE/RESUME button touch is pending
+bool display_takeTouchRestart(); // one-shot: a RESTART button touch is pending (paused)
+bool display_takeTouchStop();    // one-shot: a STOP/DRAIN button touch is pending (paused)
+
+// Update the operating screen's paused overlay: a "PAUSED" banner + the
+// PAUSE/RESUME button label. Call when the pause state changes.
+void display_setPaused(bool paused);
 
 // ── Network state (defined in KegWasher.ino) ───────────────────────────
 extern uint8_t kwLocalIP[4];

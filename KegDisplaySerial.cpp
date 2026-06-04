@@ -234,14 +234,28 @@ void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool
 void finished(const char* ip) {
   chrome("COMPLETE", C_OK);
   textPx(40, 130, 3, C_TXT, C_BG, "DONE!");
-  textPx(16, 210, 2, C_CYAN, C_BG, "Cycle complete");
-  textPx(16, 250, 2, C_CYAN, C_BG, "DRAIN+START=new");
+  textPx(16, 210, 2, C_CYAN, C_BG, "START=next keg");
+  textPx(16, 250, 2, C_CYAN, C_BG, "DRAIN=stop");
   footerIP(ip);
 }
 
 void error(const char* msg, const char* ip) {
   chrome("ERROR", C_BAD);
   textPx(16, 100, 2, C_BAD, C_BG, msg);
+  footerIP(ip);
+}
+
+void stopping(const char* ip) {
+  chrome("DRAINING", C_BAR);
+  textPx(16, 130, 2, C_TXT,  C_BG, "Clearing keg");
+  textPx(16, 190, 2, C_CYAN, C_BG, "please wait");
+  footerIP(ip);
+}
+
+void halted(const char* ip) {
+  chrome("STOPPED", C_WARN);
+  textPx(16, 130, 2, C_TXT,  C_BG, "Machine halted");
+  textPx(16, 190, 2, C_CYAN, C_BG, "START = ready");
   footerIP(ip);
 }
 
