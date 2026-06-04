@@ -528,6 +528,13 @@ static void mqtt_publishStatus() {
     kwMqtt.publish(kwTopic("level/caustic"), buf, true);
   }
 
+  // --- TEMP DEBUG (temporary): raw filtered ADC counts for thermistor
+  // characterization. Remove once the A9/A10 conversions are calibrated. ---
+  snprintf(buf, sizeof(buf), "%d", enclosureTempValue);
+  kwMqtt.publish(kwTopic("debug/enc_adc"), buf, true);
+  snprintf(buf, sizeof(buf), "%d", causticTempValue);
+  kwMqtt.publish(kwTopic("debug/cau_adc"), buf, true);
+
   // ----- Timers (operating states only) -----
   unsigned long elapsedMs = timers_getStateElapsed();
   // stageTimerFor() uses the LATCHED keg size and returns 0 for non-operating

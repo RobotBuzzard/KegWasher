@@ -48,6 +48,11 @@ static unsigned long pauseStartMs = 0;  // when MACH_HELD was entered
 enum { EVAC_NONE = 0, EVAC_CAUSTIC, EVAC_SANI, EVAC_WATER };
 static byte evacKind = EVAC_NONE;
 
+// Recipe phase captured at an E-stop trip so releasing the E-stop returns to
+// PAUSE (HELD) and lets the operator resume the interrupted cycle, instead of
+// discarding it. PHASE_NONE = no cycle was running → release goes to READY.
+static byte estopResumePhase = PHASE_NONE;
+
 static const unsigned long AIR_BURST_DURATION = 5000UL;
 
 // ── Forward declarations (statics) ─────────────────────────────────────
@@ -539,6 +544,13 @@ void stateMachine_restart() {
 
 // ---------- Abort / recovery ----------
 void stateMachine_abort() {
+  // If an E-stop interrupts a running/paused cycle, remember the phase so the
+  // release can return to PAUSE (HELD) and let the operator resume.
+  if (errorCode == ERR_ESTOP &&
+      (machineState == MACH_EXECUTE || machineState == MACH_HELD) &&
+      recipePhase != PHASE_NONE) {
+    estopResumePhase = recipePhase;
+  }
   changeMachineState(MACH_ABORTED);  // errorCode already set by the caller
 }
 
@@ -830,8 +842,21 @@ static void state_aborted() {
         errorCode = ERR_NONE;
         lastShown = 255;
         estopHealthySince = 0;
-        diagnostics_logEvent("E-stop released -> ready");
-        changeMachineState(MACH_IDLE);                // IDLE → pre-check → READY
+        hardware_setAlarm(false);
+        if (estopResumePhase != PHASE_NONE) {
+          // A cycle was interrupted — return to PAUSE (HELD) so the operator can
+          // RESUME (or STOP/DRAIN). Per ISO 13850 this only PERMITS restart; the
+          // cycle does NOT auto-resume. The interrupted phase re-runs from its top.
+          recipePhase = estopResumePhase;
+          estopResumePhase = PHASE_NONE;
+          machineState = MACH_HELD;                   // direct set preserves recipePhase
+          timers_resetStateTimer();
+          pauseStartMs = millis();
+          diagnostics_logEvent("E-stop released -> PAUSE");
+        } else {
+          diagnostics_logEvent("E-stop released -> ready");
+          changeMachineState(MACH_IDLE);              // no cycle — IDLE → pre-check → READY
+        }
         return;
       }
     }
