@@ -2,9 +2,11 @@
 
 Live roadmap from current bench-only build to a production-ready keg cleaner controller. Reorganised when the project's state changes meaningfully — not just a backlog dump. Deeper per-item rationale lives in [`docs/reliability-todo.md`](docs/reliability-todo.md).
 
-## Status (2026-05-14)
+## Status (2026-06-04)
 
 Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed via `#define BENCH_MODE` in `KegConfig.h`.
+
+**Display (2026-06-03):** dropped the planned ViSi-Genie path for **raw SPE serial** drawing on the gen4-uLCD-43DT (Diablo16, portrait 272×480, link bumped to 115200 for ~12× faster redraws). Per-state screens, flicker-free partial updates, footer (IP + MQTT pub/sub dots), host-side-calibrated resistive touch, and an on-screen START button — all verified on hardware. `genieArduinoDEV` removed. See CLAUDE.md "Display" + the `kegwasher_display_serial` memory. (A web/HTTP HMI was re-assessed as feasible 2026-06-04 — an option that revisits the Phase 0 "no HTTP" note below.)
 
 Ethernet up, DHCP working, MQTT log mirror live to Mosquitto on CheapBourbon (`192.168.1.111:1883`). Footer of every running-cycle screen shows the device IP plus a purple `M*` indicator when the broker is connected.
 

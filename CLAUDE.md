@@ -44,7 +44,8 @@ KegWasher.ino       setup() + loop() — Ethernet/MQTT lives here, NOT in a modu
 KegConfig.{h,cpp}   Pin map, state IDs, error codes, thresholds, SD config loader
 KegHardware.{h,cpp} Debounced inputs, filtered analog reads, output drivers, heater FSM
 KegStateMachine.*   The 8-state cycle FSM (STARTUP → DRAINING → ... → FINISHED, + ERROR)
-KegDisplay.{h,cpp}  4D Systems display wrapper (currently transitioning Goldelox → Diablo16/Genie)
+KegDisplay.{h,cpp}  gen4-uLCD-43DT (Diablo16) wrapper — raw SPE serial via KegDisplaySerial (KDS::*), NOT genie
+KegDisplaySerial.{h,cpp} Firmware-independent serial draw module (screens, partial updates, touch+cal, footer)
 KegTimers.*         State-elapsed timing + keg-size duration scaling (`largeKegMod`)
 KegDiagnostics.*    Event logging, output-exercise diag mode (DRAIN + START to enter), error strings
 KegUtils.*          Small helpers
@@ -55,7 +56,7 @@ KegSecrets.h        gitignored — MQTT broker IP/user/pass/client_id/topic root
 
 Order in `loop()` is load-bearing — don't reshuffle without understanding why:
 
-1. `timers_update()`, `genie.DoEvents()`, `hardware_readInputs()` — read state.
+1. `timers_update()`, `display_doEvents()` (touch pump), `hardware_readInputs()` — read state.
 2. `mqtt_applyCmdFlags()` — **must** run after `hardware_readInputs()` (which overwrites button flags) and before state processing. MQTT commands set `isCycleStartPressed` / `isManualDrainPressed` as one-tick pulses so they flow through the existing button paths.
 3. `hardware_consumeEstopFlag()` → log + transition to ERROR. ISR has already killed outputs; this is the non-ISR-safe follow-up.
 4. `stateMachine_process()`.
@@ -78,7 +79,13 @@ All of the MQTT plumbing lives in `KegWasher.ino` itself (not a separate module)
 
 ### Display
 
-The display is mid-migration from a Goldelox 128×128 (raw serial, 9600→115200 negotiated) to a gen4-uLCD-43DT Diablo16 driven via ViSi-Genie. Current code already uses the `genieArduinoDEV` library and form/object IDs in `KegDisplay.h`. **Read `docs/display-guide.md` before touching display code** — particularly the "baud-bump pitfall" (`Serial.end()`/`begin()` floats RTS, which is wired to the Goldelox reset line; use `ConnectorCOMx.Speed()` instead). The sacrificial-leading-space workaround for the Goldelox first-char-drop is also documented there.
+The display is a **gen4-uLCD-43DT (Diablo16)** driven by **raw SPE serial graphics commands** over COM1 — **no ViSi-Genie, no Workshop4** (it uses the panel's factory SPE2 runtime). `KegDisplay.{h,cpp}` is a thin wrapper mapping the `display_*()` API onto the `KegDisplaySerial` module (`KDS::*`, at the project root; `tools/*` sketches symlink it). The genie path was dropped 2026-06-03. Hard-won details (full detail in the `kegwasher_display_serial` memory):
+
+- **Portrait 272×480**, RGB565. `KDS::begin()` RTS-resets the panel (adapter RESET-EN is wired), handshakes at 9600, then bumps the link to **115200** (~12× faster redraws) via the setbaud command + RTS-safe `ConnectorCOM1.Speed()`. NOTE: the 4D lib's `setbaudWait` is broken on ClearCore (host `begin()` commented out, and `begin()` floats RTS=RESET) — use `ConnectorCOM1.Speed()`, never `Serial1.begin()`.
+- Draw with **write-only (GetAck) commands + RX drain before each**; text via `putCH` per char (NOT `putstr`). Never `gfx_Get(GFX_XMAX)` or `txt_Set(TEXT_XPOS/YPOS)` — invalid args that HALT the runtime ("Bad … command number"). Font cell ≈ 12px×8px for `txt_MoveCursor`.
+- Touch: read raw-framed (the lib's `touch_Get`/GetAckResp desyncs); host-side **affine calibration** applied in `KDS::touch()` (coeffs baked in; SD `touchCalA..F` overrides). Re-cal via `tools/diablo_touch_cal` (tap 3 targets).
+- Footer = IP + MQTT pub/sub dots (`display_setMqttIndicators`, P=publish/S=receive). On-screen **START** button on READY/FINISHED (`display_takeTouchStart` → `isCycleStartPressed`, ESTOP-gated).
+- Recover a halted/stuck panel: **double-tap the on-board RESET** (forces the bootloader) or just re-flash (`begin()` RTS-resets it).
 
 ### Hardware specifics
 
@@ -91,7 +98,7 @@ The display is mid-migration from a Goldelox 128×128 (raw serial, 9600→115200
 
 - `io-table.md` — pin assignments, active states, error code → I/O mapping
 - `state-table.md` — per-state inputs/outputs/preconditions/error conditions
-- `display-guide.md` — display hardware path, render-once pattern, gotchas
+- `display-guide.md` — LEGACY (Goldelox/genie-era); the current raw-serial path is in the Display section above + the `kegwasher_display_serial` memory
 - `reliability-todo.md` — prioritized hardening roadmap (referenced from TODO.md)
 
 `TODO.md` at the root is the live roadmap (phases 0-5); `reliability-todo.md` has deeper per-item rationale.
@@ -100,6 +107,6 @@ The display is mid-migration from a Goldelox 128×128 (raw serial, 9600→115200
 
 - `ClearCore:sam` board package (Teknic) — adds `https://www.teknic.com/files/downloads/package_clearcore_index.json` to `arduino-cli` board manager URLs
 - `ClearCoreWatchdog` library — sibling repo at `github.com/RobotBuzzard/ClearCoreWatchdog`, also available via Arduino Library Manager
-- `genieArduinoDEV` — 4D Systems ViSi-Genie library
+- `Diablo_Serial_4DLib` — 4D Systems Diablo16 serial-command library (the display backend; genieArduinoDEV is no longer used)
 - `PubSubClient` — MQTT
 - `Ethernet`, `SPI`, `SD` — Arduino core libraries

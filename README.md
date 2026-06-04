@@ -21,7 +21,7 @@ Manually washing kegs is tedious, inconsistent, and wastes water and chemicals. 
 ## Hardware Platform
 
 - **Controller**: Teknic ClearCore + CCIO-8 expansion module
-- **Display**: 4D Systems Goldelox 128x128 (portrait, on COM1)
+- **Display**: 4D Systems gen4-uLCD-43DT (Diablo16, 480×272, used portrait 272×480) on COM1 — raw SPE serial, no ViSi-Genie
 - **Storage**: SD card in ClearCore slot for `washer.config`
 - **Heater**: 240V 5500W immersion heater, ~3 gal caustic reservoir (≈8 min from room temp to 60°C)
 
@@ -54,7 +54,7 @@ ERROR is reachable from any state; clear and acknowledge with the START button t
 
 1. Clone the repo, open `KegWasher.ino` in Arduino IDE (or use `arduino-cli`)
 2. Install the ClearCore board package — add `https://www.teknic.com/files/downloads/package_clearcore_index.json` to Boards Manager URLs, then install `ClearCore:sam`
-3. Install the `Goldelox-Serial-Arduino-Library` from the Library Manager
+3. Install the 4D Systems `Diablo16 Serial Arduino Library` from the Library Manager
 4. Compile and upload to the ClearCore (FQBN: `ClearCore:sam:clearcore`)
 4. Copy `config/washer.config.example` → `washer.config` on an SD card, edit timers as needed, insert into ClearCore
 5. Power up. The system heats caustic on first boot — wait for "Press START to begin"
