@@ -268,7 +268,7 @@ static bool canMachTransition(byte from, byte to) {
     case MACH_STOPPING: return to == MACH_STOPPED;
     case MACH_STOPPED:  return to == MACH_IDLE;
     case MACH_CLEARING: return to == MACH_STOPPED;
-    case MACH_ABORTED:  return to == MACH_CLEARING;
+    case MACH_ABORTED:  return to == MACH_CLEARING || to == MACH_IDLE;
     default:            return false;
   }
 }
@@ -813,6 +813,29 @@ static void state_aborted() {
     smBannerPrime(errorBannerText(errorCode), RED);
   }
   smBannerTick(errorBannerText(errorCode), RED);
+
+  // Fail-safe E-stop recovery (ISO 13850: releasing the E-stop must only PERMIT
+  // restart, never restart the machine). When the abort was an E-stop and the NC
+  // safety chain has been healthy again (button pulled out + all drive-OK
+  // contacts closed) for a short debounce window, return to IDLE → READY
+  // automatically — no auto-resume of the interrupted cycle; the operator presses
+  // START to run. Non-E-stop faults still require the manual clear below.
+  static unsigned long estopHealthySince = 0;
+  if (errorCode == ERR_ESTOP) {
+    if (isEstopActive) {
+      estopHealthySince = 0;                          // chain still open — stay latched
+    } else {
+      if (estopHealthySince == 0) estopHealthySince = millis();
+      if (millis() - estopHealthySince >= 300UL) {    // stable-healthy (debounce release bounce)
+        errorCode = ERR_NONE;
+        lastShown = 255;
+        estopHealthySince = 0;
+        diagnostics_logEvent("E-stop released -> ready");
+        changeMachineState(MACH_IDLE);                // IDLE → pre-check → READY
+        return;
+      }
+    }
+  }
 
   // Manual-drain (IO2) silences the alarm without resetting.
   if (isManualDrainPressed) {
