@@ -4,12 +4,13 @@
 > **ISA‑88 / IEC 61512** batch-control terminology. `state-table.md`,
 > `io-table.md`, and the Phase 6 operator manual derive from this document.
 >
-> **Scope of this revision (doc/lexicon only):** the firmware today uses a single
-> flat 15-value `currentState` enum. This document does **not** change that — it
-> *classifies* the existing firmware against the standard so we have citable
-> vocabulary and a clear target. A later, separately-planned re-architecture will
-> split the conflated axes (see `packml-rearchitecture-plan.md`). Everything here
-> is accurate to `KegConfig.h` + `KegStateMachine.cpp` as it runs.
+> **Status:** the firmware now **implements** this two-axis model — `machineState`
+> (MACH_*) + `recipePhase` (PHASE_*) — as of commit `4222034` on branch
+> `feat/packml-rearchitecture` (bench-verified, not yet merged to `main`). The
+> earlier "flat `currentState`" framing is historical. See
+> `packml-rearchitecture-plan.md` for the migration. Some sections below still
+> describe the pre-split firmware as the "before" for context; the **Two axes**
+> and **PackML mapping** sections are the current reality.
 
 ---
 

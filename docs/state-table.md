@@ -1,9 +1,12 @@
 # Keg Washer State Table (as-built FSM)
 
-> This is the **operational reference** for the firmware's flat 15-value
-> `currentState` enum exactly as it runs (`KegConfig.h`, `KegStateMachine.cpp`).
-> For the standards model — PackML machine states vs ISA‑88 recipe phases vs
-> modes, and how each state below classifies — see **`state-taxonomy.md`**.
+> ⚠️ **PENDING REWRITE.** The firmware now runs the **two-axis** model
+> (`machineState` MACH_* + `recipePhase` PHASE_*, commit `4222034`), not a flat
+> `currentState` enum. The map below still reads as a single 15-row list (with a
+> PackML column) — accurate as a *cross-reference* (each row is either a MACH
+> state or a PHASE), but it should be rewritten into the two-axis layout. The
+> current canonical model is **`state-taxonomy.md`**; this file is the as-built
+> operational cross-reference until rewritten.
 
 ## Main state map
 
