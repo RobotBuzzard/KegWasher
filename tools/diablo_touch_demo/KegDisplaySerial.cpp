@@ -88,6 +88,17 @@ namespace {
     return (word)((hi << 8) | lo);
   }
 
+  // host-side touch calibration (affine): screen = [a b c; d e f] . [rawx, rawy, 1]
+  // Defaults from diablo_touch_cal (2026-06-03); override at runtime via
+  // setTouchCalibration() (e.g. firmware loads per-unit values from SD config).
+  float g_a = 0.972363f, g_b = 0.031048f, g_c = -7.2746f,
+        g_d = 0.084970f, g_e = 0.989651f, g_f = -15.0600f;
+  int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  void applyCal(int rx, int ry, int* sx, int* sy) {
+    *sx = clampi((int)(g_a * rx + g_b * ry + g_c + 0.5f), 0, DW - 1);
+    *sy = clampi((int)(g_d * rx + g_e * ry + g_f + 0.5f), 0, DH - 1);
+  }
+
   void chrome(const char* title, word barColour) {
     bg(C_BG); cls();
     rect(0, 0, DW - 1, 46, barColour);
@@ -230,11 +241,25 @@ bool touch(int* x, int* y) {
   if (st == TOUCH_PRESSED) {
     int tx = rawCmdResp(F_touch_Get, TOUCH_GETX);
     int ty = rawCmdResp(F_touch_Get, TOUCH_GETY);
-    if (!down) { down = true; *x = tx; *y = ty; return true; }   // fresh press edge
+    if (!down) { down = true; applyCal(tx, ty, x, y); return true; }  // calibrated, fresh-press edge
   } else if (st == TOUCH_RELEASED || st == NOTOUCH) {
     down = false;
   }
   return false;
+}
+
+bool touchRaw(int* x, int* y) {                                  // uncalibrated sample (for cal)
+  word st = rawCmdResp(F_touch_Get, TOUCH_STATUS);
+  if (st == TOUCH_PRESSED || st == TOUCH_MOVING) {
+    *x = rawCmdResp(F_touch_Get, TOUCH_GETX);
+    *y = rawCmdResp(F_touch_Get, TOUCH_GETY);
+    return true;
+  }
+  return false;
+}
+
+void setTouchCalibration(float a, float b, float c, float d, float e, float f) {
+  g_a = a; g_b = b; g_c = c; g_d = d; g_e = e; g_f = f;
 }
 
 } // namespace KDS

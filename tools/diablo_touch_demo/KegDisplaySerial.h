@@ -32,8 +32,12 @@ void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool
 
 // ---- touch ----
 void touchEnable();
-bool touch(int* x, int* y);       // true once per fresh press; fills *x,*y (panel coords)
+bool touch(int* x, int* y);       // true once per fresh press; fills *x,*y (CALIBRATED coords)
+bool touchRaw(int* x, int* y);    // raw uncalibrated touch_Get sample; true while pressed
 void mark(int x, int y);          // draw a small marker at a panel coord (touch feedback)
+
+// ---- touch calibration (host-side affine: screen = [a b c; d e f] * [rawx rawy 1]) ----
+void setTouchCalibration(float a, float b, float c, float d, float e, float f);
 
 // ---- footer MQTT pub/sub indicators (partial update; call on MQTT state change) ----
 void mqttIndicators(bool connected, bool pubActive, bool subActive);
