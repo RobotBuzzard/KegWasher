@@ -9,7 +9,7 @@
 |------|-----|-------------|--------|-----------|----------|-------|
 | `airOk` | DI6 | Air pressure switch | HIGH | Yes | Yes | compressed-air availability |
 | `co2Ok` | DI7 | CO₂ pressure switch | HIGH | Yes | Yes | CO₂ availability |
-| `ESTOP` | DI8 | Emergency stop | HIGH | **No** | Yes | NC: closed=LOW=safe, open=HIGH=active. Not debounced (fastest response). PackML `Abort`. |
+| `ESTOP` | DI8 | Emergency stop / safety chain | LOW=tripped | **No** | Yes | Negative-true SINKING input (internal 3.3V/10k pull-up). NC chain from GND through drive-OK contacts + E-stop → DI8: healthy(closed)=GND=`digitalRead` HIGH=OK; open(trip/break)=pull-up=`digitalRead` LOW=ACTIVE. Not debounced. FALLING-edge ISR + polled backstop → PackML `Abort`. |
 | `largeKeg` | IO0 | Keg-size selector | HIGH | Yes | No | small (20 L) vs large (50 L); latched at cycle start |
 | `cycleStart` | IO1 | START button | HIGH | Yes | No | PackML `Start`/`Reset` (overloaded) |
 | `manualDrain` | IO2 | DRAIN/ACK button | HIGH | Yes | No | ack/silence (PackML `Clear`); diag-mode entry |
@@ -30,7 +30,7 @@
 | Name | Pin | Description | Active | Notes |
 |------|-----|-------------|--------|-------|
 | `co2Out` | IO3 | CO₂ solenoid | HIGH | SANI_RETURN push-gas + PRESSURE charge |
-| `alarmOut` | IO4 | Alarm | HIGH | cycle-complete / fault. (IO4↔IO5 swapped vs. original wiring) |
+| `alarmOut` | IO4 | Alarm / E-stop LED + red stacklight | HIGH | cycle-complete / fault / E-stop indicator. (IO4↔IO5 swapped vs. original wiring) |
 | `drainOut` | CCIO‑A0 | Drain valve | HIGH | **forced OFF during RETURN phases — chem never to drain** |
 | `waterOut` | CCIO‑A1 | Water valve | HIGH | FLOW phases |
 | `airOut` | CCIO‑A2 | Air valve | HIGH | DRAIN burst, PURGE, CAUSTIC_RETURN push-gas |
@@ -108,7 +108,7 @@ hardware interrupts** (`InterruptHandlerSet()`, RISING/FALLING via
 |--------|-----|-------------------|-------|
 | `airOk` | DI6 | ✅ | currently polled+debounced |
 | `co2Ok` | DI7 | ✅ | currently polled+debounced |
-| `ESTOP` | DI8 | ✅ | **uses the ISR** — correct placement for fastest abort |
+| `ESTOP` | DI8 | ✅ | **FALLING-edge ISR** (trip = HIGH→LOW) + polled backstop — correct placement for fastest abort |
 | `enclosureTemp` | A9 | ✅ (pin) | analog read; interrupt only on a digital threshold |
 | `causticTemp` | A10 | ✅ (pin) | analog read |
 | `waterOk` | A11 | ✅ | currently polled |
@@ -126,7 +126,8 @@ hardware interrupts** (`InterruptHandlerSet()`, RISING/FALLING via
 ## Wiring Notes
 
 - Solenoid valves include flyback diodes for inductive-spike protection.
-- ESTOP wired NC between 24 V and DI8: closed → DI8 LOW (safe); pressed or wire-break → DI8 HIGH (active). Fail-safe by design.
+- **ESTOP / safety chain (fail-safe):** DI6–DI8 are **negative-true SINKING** inputs with an internal **3.3 V / 10 kΩ pull-up** (`INPUT_PULLUP` ≡ `INPUT` on ClearCore — the pull-up is fixed, not software-selectable). The E-stop is a **normally-closed loop from GND** through the drive-OK contacts (pump, etc.) and the E-stop switch into DI8. Healthy → DI8 sunk to GND → `digitalRead` **HIGH** = OK. Any break (E-stop pressed, drive fault, severed wire) → internal pull-up → `digitalRead` **LOW** = TRIP. Firmware: `isEstopActive = (digitalRead(ESTOP)==LOW)`, FALLING-edge ISR + polled backstop. The firmware read is supervisory — the NC loop also hard-cuts the drives directly.
+- ⚠️ `airOk` (DI6) and `co2Ok` (DI7) are the **same negative-true sinking** input class as DI8. Their OK/FAIL polarity (via `debounceRead`) should be re-verified against how those sensors are wired — they may need the same active-low treatment. (Bench-bypassed today; check before the prototype move.)
 - IO0/IO1/IO2 (largeKeg/cycleStart/manualDrain): ClearCore IO pins have no internal pull — wire SPDT so the pin is actively driven in both positions, never floating.
 - **Chem-to-drain interlock:** caustic/sanitizer valve enables are ganged so a chemical can never be routed to the drain; firmware mirrors this (drain+pump OFF in RETURN phases).
 - All low-voltage control optically isolated from main power.

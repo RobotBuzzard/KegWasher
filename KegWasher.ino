@@ -730,12 +730,18 @@ void loop() {
   // do the non-ISR-safe follow-up: log it, set the error code, and move
   // the state machine to ERROR. Doing this in the ISR would risk dead-
   // locking on Serial / CCIO transactions.
-  if (hardware_consumeEstopFlag()) {
+  // E-STOP / safety-chain trip. The ISR (FALLING on DI8) kills outputs fast and
+  // sets a flag; but we react to the POLLED isEstopActive too, so a missed edge
+  // can't leave a tripped chain unhandled. Either way → Abort, and outputs are
+  // re-held off every loop while the chain stays open (can't recover until the
+  // NC chain is restored — operator releases E-stop AND drives report OK).
+  hardware_consumeEstopFlag();          // clear the ISR flag (outputs already killed)
+  if (isEstopActive) {
     hardware_allStop();
-    errorCode = ERR_ESTOP;
-    diagnostics_logEvent("E-STOP triggered");
     if (machineState != MACH_ABORTED) {
-      stateMachine_abort();   // PackML Abort → MACH_ABORTED
+      errorCode = ERR_ESTOP;
+      diagnostics_logEvent("E-STOP triggered");
+      stateMachine_abort();             // PackML Abort → MACH_ABORTED
     }
   }
 

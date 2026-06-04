@@ -151,9 +151,14 @@ void hardware_init() {
 
   hardware_allStop();
 
-  // ESTOP wiring is NC + internal pull-up; pressing OPENS the circuit,
-  // input transitions LOW (not pressed) → HIGH (pressed). Hence RISING.
-  attachInterrupt(digitalPinToInterrupt(ESTOP), hardware_estopIsr, RISING);
+  // Fail-safe E-stop. A normally-CLOSED safety chain runs from GND through the
+  // drive-OK contacts (pump, etc.) and the E-stop switch into DI8. DI6-DI8 are
+  // negative-true SINKING inputs with an internal 3.3V/10k pull-up, so:
+  //   chain healthy (closed) → DI8 sunk to GND → digitalRead HIGH → OK
+  //   E-stop pressed / drive fault / broken wire (open) → pull-up → LOW → TRIP
+  // The trip edge is therefore HIGH→LOW = FALLING. (INPUT_PULLUP is a no-op on
+  // ClearCore — the pull-up is fixed in hardware regardless of pinMode.)
+  attachInterrupt(digitalPinToInterrupt(ESTOP), hardware_estopIsr, FALLING);
 
   // Seed analog filters with one valid sample so the first cycle isn't
   // smeared by the zero-initialised previous value.
@@ -172,13 +177,13 @@ void hardware_readInputs() {
   isManualDrainPressed = debounceRead(DI_MANUAL_DRAIN);
 
   // ESTOP is intentionally not debounced — fastest possible response.
-  // Wiring is normally-closed (NC) with an internal pull-up:
-  //   not pressed → button closed → input pulled to GND → LOW
-  //   pressed     → button opens   → pull-up wins        → HIGH
-  // ISR catches the rising edge (LOW→HIGH = press); this poll tracks
-  // the held/released state so the system can recover when the
-  // operator twists the button to release.
-  isEstopActive = (digitalRead(ESTOP) == HIGH);
+  // Fail-safe NC safety chain to GND on a negative-true sinking input:
+  //   chain healthy (closed) → DI8 at GND → digitalRead HIGH → not active
+  //   E-stop / drive fault / wire break (open) → 3.3V pull-up → LOW → ACTIVE
+  // The ISR catches the FALLING edge (HIGH→LOW = trip); this poll tracks the
+  // held/released state so the loop reacts even if the edge is missed, and so
+  // the system recovers once the chain is restored.
+  isEstopActive = (digitalRead(ESTOP) == LOW);
 
   readTemperatureSensors();
 
