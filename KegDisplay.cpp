@@ -25,6 +25,12 @@ static const char* ipStr() {
 static bool g_mqttUp = false, g_pub = false, g_sub = false;
 static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
 
+// On-screen START button (READY + FINISHED screens). A touch in this rect sets
+// g_touchStart, which display_takeTouchStart() drains into isCycleStartPressed
+// (same one-tick-pulse path as the physical button / MQTT start command).
+static const int BTN_START_X = 46, BTN_START_Y = 300, BTN_START_W = 180, BTN_START_H = 90;
+static volatile bool g_touchStart = false;
+
 void display_init() {
   KDS::begin();
   KDS::touchEnable();
@@ -45,8 +51,16 @@ void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
   reapplyMqtt();
 }
 
-void display_showReadyScreen()    { KDS::ready(ipStr());    reapplyMqtt(); }
-void display_showFinishedScreen() { KDS::finished(ipStr()); reapplyMqtt(); }
+void display_showReadyScreen() {
+  KDS::ready(ipStr());
+  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  reapplyMqtt();
+}
+void display_showFinishedScreen() {
+  KDS::finished(ipStr());
+  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  reapplyMqtt();
+}
 void display_showError(const char* m)   { KDS::error(m, ipStr());   reapplyMqtt(); }
 void display_showMessage(const char* m) { KDS::message(m, ipStr()); reapplyMqtt(); }
 
@@ -95,11 +109,24 @@ void display_setMqttIndicators(bool connected, bool pubActive, bool subActive) {
 }
 
 void display_doEvents() {
-  // Pump touch every loop (replaces genie.DoEvents). No on-screen touch
-  // actions are wired yet (the genie UI had none either) — map (x,y) to
-  // on-screen buttons here when the touch UI is designed.
+  // Pump touch every loop (replaces genie.DoEvents). On the READY/FINISHED
+  // screens, a tap inside the START button arms a cycle start.
   int x, y;
   if (KDS::touch(&x, &y)) {
-    // touch at (x,y) — hook for future button handling
+    bool startScreen = (currentState == STATE_FINISHED) ||
+                       (currentState == STATE_STARTUP && startupSubState == STARTUP_READY);
+    if (startScreen &&
+        x >= BTN_START_X && x <= BTN_START_X + BTN_START_W &&
+        y >= BTN_START_Y && y <= BTN_START_Y + BTN_START_H) {
+      g_touchStart = true;
+      KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+    }
   }
+}
+
+// Drain a pending START-button touch (one-shot). Called from KegWasher.ino's
+// mqtt_applyCmdFlags() and injected into isCycleStartPressed.
+bool display_takeTouchStart() {
+  if (g_touchStart) { g_touchStart = false; return true; }
+  return false;
 }

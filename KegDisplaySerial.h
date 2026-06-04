@@ -43,5 +43,6 @@ void setTouchCalibration(float a, float b, float c, float d, float e, float f);
 void mqttIndicators(bool connected, bool pubActive, bool subActive);
 void footer(const char* ip);                                // redraw footer bar + IP + P/S labels
 void banner(const char* text, word colour, bool visible);   // flashing alert strip under the title
+void button(int x, int y, int w, int h, const char* label, word colour);  // tappable button
 
 } // namespace KDS

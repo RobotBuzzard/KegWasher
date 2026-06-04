@@ -18,6 +18,9 @@
 #ifndef GREEN
 #define GREEN 0x07E0u
 #endif
+#ifndef WHITE
+#define WHITE 0xFFFFu
+#endif
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 void display_init();
@@ -51,6 +54,7 @@ void display_setMqttIndicators(bool connected, bool pubActive, bool subActive);
 
 // ── Touch event pump — call every loop (replaces genie.DoEvents) ───────
 void display_doEvents();
+bool display_takeTouchStart();   // one-shot: a START button touch is pending
 
 // ── Network state (defined in KegWasher.ino) ───────────────────────────
 extern uint8_t kwLocalIP[4];

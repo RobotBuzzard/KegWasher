@@ -243,6 +243,15 @@ void banner(const char* text, word colour, bool visible) {
   else         { rect(0, 48, DW - 1, 84, C_BG); }
 }
 
+// filled button with a (roughly) centred size-2 label
+void button(int x, int y, int w, int h, const char* label, word colour) {
+  rect(x, y, x + w, y + h, colour);
+  int n = (int)strlen(label);
+  int tx = x + (w - n * CELL_W * 2) / 2; if (tx < x + 2) tx = x + 2;
+  int ty = y + (h - CELL_H * 2) / 2;     if (ty < y + 2) ty = y + 2;
+  textPx(tx, ty, 2, C_TXT, colour, label);
+}
+
 bool touch(int* x, int* y) {
   static bool down = false;
   word st = rawCmdResp(F_touch_Get, TOUCH_STATUS);               // raw framed read

@@ -240,6 +240,12 @@ static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
 // in state_error doesn't translate cleanly to a single MQTT publish.
 // We just clear errorCode and force the state transition directly.
 static void mqtt_applyCmdFlags() {
+  // On-screen START button (touch) — same one-tick pulse as the physical
+  // start button. Refused under ESTOP, like the MQTT start command.
+  if (display_takeTouchStart() && !isEstopActive) {
+    isCycleStartPressed = true;
+    diagnostics_logEvent("Touch: start");
+  }
   if (kwMqttCmdStart) {
     kwMqttCmdStart = false;
     diagnostics_logEvent("Remote cmd: start");
