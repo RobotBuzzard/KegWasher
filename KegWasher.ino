@@ -57,6 +57,11 @@ static char kwTopicIp[48];
 static unsigned long kwMqttNextRetryMs = 0;
 static const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 
+// Footer MQTT pub/sub indicator activity (drives the P/S dots on the panel).
+static unsigned long kwMqttLastPubMs = 0;   // last publish (P indicator)
+static unsigned long kwMqttLastRxMs  = 0;   // last received cmd (S indicator)
+static unsigned long kwMqttIndNextMs = 0;   // footer-indicator refresh throttle
+
 // Build a topic string under MQTT_TOPIC_ROOT into a shared buffer.
 // PubSubClient copies its inputs immediately on publish/subscribe so
 // reuse is safe. Defined here (not next to its other callers below)
@@ -196,6 +201,7 @@ static volatile bool kwMqttCmdReset   = false;
 // main-loop context. See bench-confirmed failure 2026-05-14.
 static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
   (void)payload; (void)length;  // payload ignored — see header comment
+  kwMqttLastRxMs = millis();    // sub-activity (drives the footer 'S' dot)
 
   const char *leaf = strrchr(topic, '/');
   if (!leaf || !leaf[1]) return;
@@ -501,6 +507,7 @@ static void mqtt_publishHeartbeat() {
   unsigned long now = millis();
   if (now < kwHeartbeatNextMs) return;
   kwHeartbeatNextMs = now + MQTT_HEARTBEAT_INTERVAL_MS;
+  kwMqttLastPubMs = now;   // pub-activity (drives the footer 'P' dot)
 
   char buf[16];
 
@@ -654,7 +661,7 @@ void loop() {
   unsigned long loopStartUs = micros();
 
   timers_update();
-  genie.DoEvents();  // drain Genie event queue every loop
+  display_doEvents();  // pump touch every loop (serial display; replaces genie.DoEvents)
   hardware_readInputs();
 
   // Inject any pending MQTT command flags into the button-pressed
@@ -727,6 +734,15 @@ void loop() {
   // Loop-health heartbeat (uptime, free RAM, longest loop). Internally
   // throttled to MQTT_HEARTBEAT_INTERVAL_MS (5 s).
   mqtt_publishHeartbeat();
+
+  // Refresh the footer MQTT pub/sub indicator dots (~4 Hz). P blinks on each
+  // heartbeat publish, S blinks when a command is received over MQTT.
+  if (millis() >= kwMqttIndNextMs) {
+    kwMqttIndNextMs = millis() + 250;
+    display_setMqttIndicators(kwMqttReady,
+                              (millis() - kwMqttLastPubMs) < 400,
+                              (millis() - kwMqttLastRxMs) < 400);
+  }
 
   // Update the loop-max accumulator with this iteration's work time.
   // Done BEFORE the pacing delay so the constant 10 ms tail isn't

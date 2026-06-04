@@ -27,6 +27,12 @@ unsigned long washTimer       = DEFAULT_STAGE_MS;
 unsigned long saniTimer       = DEFAULT_STAGE_MS;
 double        largeKegMod     = 1.5;
 
+// Touch calibration (host-side affine: screen=[a b c; d e f].[rawx rawy 1]).
+// KegDisplaySerial has its own baked defaults; these only override when the SD
+// config supplies touchCalA..F (which sets cfgTouchCalValid → display_init applies).
+float cfgTouchCal[6]  = {1, 0, 0, 0, 1, 0};
+bool  cfgTouchCalValid = false;
+
 static File settingsFile;
 
 // Accept timer values from 30s to 30min. Anything outside that is
@@ -101,6 +107,10 @@ bool config_loadFromSD() {
       } else {
         largeKegMod = v;
       }
+    }
+    else if (strncmp(key, "touchCal", 8) == 0 && key[8] >= 'A' && key[8] <= 'F' && key[9] == '\0') {
+      cfgTouchCal[key[8] - 'A'] = atof(value);   // touchCalA..F -> affine coeffs
+      cfgTouchCalValid = true;
     }
     // Unknown keys silently ignored — forward-compat with newer config files.
   }

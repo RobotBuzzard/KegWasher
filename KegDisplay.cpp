@@ -1,157 +1,60 @@
 // ======================================================================
-// KegDisplay.cpp - gen4-uLCD-43DT (Diablo16) wrapper, ViSi-Genie protocol
-// ======================================================================
-// Init dependency: KegWasher.ino calls display_init() before config_init()
-// and stateMachine_init() so error messages from those have a screen to
-// land on. The Diablo16 takes ~4 s to boot after RESET is released before
-// the Genie handshake can succeed.
+// KegDisplay.cpp - gen4-uLCD-43DT (Diablo16) wrapper, RAW SPE SERIAL backend.
+// Implements the display_*() API on top of KegDisplaySerial (KDS::*). No
+// ViSi-Genie. The Diablo16 takes ~4.5 s to boot after RESET (KDS::begin pulses
+// RTS) before it accepts commands; display_init() runs before the watchdog is
+// armed so that delay is fine.
 // ======================================================================
 #include "KegDisplay.h"
+#include "KegDisplaySerial.h"
 #include "KegStateMachine.h"
 #include "KegHardware.h"
 #include "KegTimers.h"
 
-Genie genie;
+// IP (or "offline") string for the footer.
+static const char* ipStr() {
+  static char buf[20];
+  if (kwEthernetReady)
+    snprintf(buf, sizeof(buf), "%u.%u.%u.%u", kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
+  else
+    snprintf(buf, sizeof(buf), "offline");
+  return buf;
+}
+
+// Remembered MQTT indicator state so a full screen redraw re-applies the dots.
+static bool g_mqttUp = false, g_pub = false, g_sub = false;
+static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
 
 void display_init() {
-  Serial1.begin(9600);  // display is in SPE2 mode at 9600 — match it
-
-  // Hardware reset via COM1 RTS (wired to display RESET pin on the adapter
-  // when the RESET-EN switch is ON — see 4D ClearCore Adaptor datasheet §3.6).
-  // LINE_ON asserts reset; LINE_OFF releases. The Diablo16 needs ~4 s to boot
-  // after release before it begins the Genie handshake.
-  ConnectorCOM1.RtsMode(SerialBase::LINE_ON);
-  delay(1000);
-  ConnectorCOM1.RtsMode(SerialBase::LINE_OFF);
-  delay(3000);
-
-  genie.Begin((Stream&)Serial1);  // 2-second handshake; returns false if display absent
-  genie.WriteContrast(15);
-  genie.SetForm(FORM_STARTUP);
+  KDS::begin();
+  KDS::touchEnable();
+  if (cfgTouchCalValid) {
+    KDS::setTouchCalibration(cfgTouchCal[0], cfgTouchCal[1], cfgTouchCal[2],
+                             cfgTouchCal[3], cfgTouchCal[4], cfgTouchCal[5]);
+  }
+  KDS::startup("KegWasher", "initializing...");
 }
 
 void display_showStartup() {
-  // FORM_STARTUP has static labels in Workshop4 (no dynamic content).
-  // Leave a 2 s window so the operator can see the splash.
-  genie.SetForm(FORM_STARTUP);
-  delay(2000);
+  KDS::startup("KegWasher", "starting up...");
+  delay(2000);   // let the operator see the splash
 }
-
-// ── footer helper ──────────────────────────────────────────────────────
-
-void display_updateFooter() {
-  char buf[20];
-  if (kwEthernetReady) {
-    snprintf(buf, sizeof(buf), "%u.%u.%u.%u",
-             kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
-  } else {
-    snprintf(buf, sizeof(buf), "offline");
-  }
-
-  // ViSi-Genie STRINGS are global per-type, so the footer string differs by
-  // form. Pick the right one for the active form; skip forms with no footer
-  // STRINGS (STARTUP/NOT_READY). Only FORM_READY's index is layout-confirmed;
-  // the others target each form's spare STRINGS and need on-screen position
-  // confirmation in Workshop4 (see OBJ_*_IP_STR notes in KegDisplay.h).
-  uint8_t idx;
-  switch (genie.GetForm()) {
-    case FORM_READY:     idx = OBJ_RD_IP_STR;  break;
-    case FORM_HEATING:   idx = OBJ_HT_IP_STR;  break;
-    case FORM_OPERATING: idx = OBJ_OP_IP_STR;  break;
-    case FORM_FINISHED:  idx = OBJ_FN_IP_STR;  break;
-    case FORM_ERROR:     idx = OBJ_ER_IP_STR;  break;
-    case FORM_MESSAGE:   idx = OBJ_MSG_IP_STR; break;
-    default:             idx = OBJ_NO_FOOTER;  break;  // STARTUP, NOT_READY
-  }
-  if (idx != OBJ_NO_FOOTER) {
-    genie.WriteStr(idx, buf);
-  }
-}
-
-// ── banner flash ──────────────────────────────────────────────────────
-
-void display_flashBanner(const char* text, word /*bgColor*/, bool visible) {
-  uint16_t val = visible ? 1 : 0;
-  switch (genie.GetForm()) {
-    case FORM_NOT_READY:
-      genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_NR_BANNER, val);
-      break;
-    case FORM_READY:
-      genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_RD_BANNER, val);
-      break;
-    case FORM_HEATING:
-      genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_HT_BANNER, val);
-      break;
-    case FORM_FINISHED:
-      if (strcmp(text, "READY") == 0) {
-        // Alarm acknowledged — hide COMPLETE, show READY
-        genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_FN_COMPLETE, 0);
-        genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_FN_READY, val);
-      } else {
-        // "COMPLETE" pre-ack flash
-        genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_FN_COMPLETE, val);
-      }
-      break;
-    case FORM_ERROR:
-      genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_ER_BANNER, val);
-      break;
-    default:
-      break;
-  }
-}
-
-// ── state screens ─────────────────────────────────────────────────────
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
-  if (genie.GetForm() != FORM_NOT_READY) {
-    genie.SetForm(FORM_NOT_READY);
-    display_updateFooter();
-  }
-  genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_NR_WATER, waterOk  ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_NR_AIR,   airOk    ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_NR_CO2,   co2Ok    ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_NR_ESTOP, estopOk  ? 1 : 0);
+  KDS::notReady(waterOk, airOk, co2Ok, estopOk, ipStr());
+  reapplyMqtt();
 }
 
-void display_showReadyScreen() {
-  genie.SetForm(FORM_READY);
-  display_updateFooter();
-}
-
-void display_showFinishedScreen() {
-  genie.SetForm(FORM_FINISHED);
-  display_updateFooter();
-}
+void display_showReadyScreen()    { KDS::ready(ipStr());    reapplyMqtt(); }
+void display_showFinishedScreen() { KDS::finished(ipStr()); reapplyMqtt(); }
+void display_showError(const char* m)   { KDS::error(m, ipStr());   reapplyMqtt(); }
+void display_showMessage(const char* m) { KDS::message(m, ipStr()); reapplyMqtt(); }
 
 void display_showProgress(const char* /*label*/, int percentage,
-                          int currentValue, int targetValue,
-                          int remainingMinutes) {
-  if (genie.GetForm() != FORM_HEATING) {
-    genie.SetForm(FORM_HEATING);
-    display_updateFooter();
-  }
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_HT_CURR,    (uint16_t)currentValue);
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_HT_TARGET,  (uint16_t)targetValue);
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_HT_PCT,     (uint16_t)percentage);
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_HT_LEVEL,   (uint16_t)hardware_getCausticLevel());
-  if (remainingMinutes >= 0) {
-    genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_HT_EST_MIN, (uint16_t)remainingMinutes);
-  }
+                          int currentValue, int targetValue, int /*remainingMinutes*/) {
+  KDS::heating(currentValue, targetValue, percentage, ipStr());
+  reapplyMqtt();
 }
-
-void display_showError(const char* errorMsg) {
-  genie.SetForm(FORM_ERROR);
-  genie.WriteStr(OBJ_ER_MSG, errorMsg);
-  display_updateFooter();
-}
-
-void display_showMessage(const char* message) {
-  genie.SetForm(FORM_MESSAGE);
-  genie.WriteStr(OBJ_MSG_TEXT, message);
-  display_updateFooter();
-}
-
-// ── operating state screen ────────────────────────────────────────────
 
 void display_updateTimer(unsigned long elapsedMs) {
   unsigned long duration = 0;
@@ -164,26 +67,39 @@ void display_updateTimer(unsigned long elapsedMs) {
     default: return;
   }
   unsigned long remaining = (elapsedMs < duration) ? (duration - elapsedMs) : 0UL;
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_OP_TIMER_MIN, (uint16_t)(remaining / 60000UL));
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_OP_TIMER_SEC, (uint16_t)((remaining / 1000UL) % 60UL));
+  KDS::operatingTimer((int)(remaining / 60000UL), (int)((remaining / 1000UL) % 60UL));
 }
 
 void display_updateStatus() {
-  genie.WriteObject(GENIE_OBJ_LED_DIGITS, OBJ_OP_TEMP,  (uint16_t)hardware_getCausticTemp());
-  genie.WriteObject(GENIE_OBJ_USER_LED,   OBJ_OP_WATER, isWaterOk     ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED,   OBJ_OP_AIR,   isAirOk       ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED,   OBJ_OP_CO2,   isCo2Ok       ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED,   OBJ_OP_ESTOP, isEstopActive ? 1 : 0);
-  genie.WriteObject(GENIE_OBJ_USER_LED,   OBJ_OP_MQTT,  kwMqttReady   ? 1 : 0);
+  KDS::operatingStatus((int)hardware_getCausticTemp(),
+                       isWaterOk, isAirOk, isCo2Ok, isEstopActive, kwMqttReady);
 }
 
 void display_showOperatingScreen() {
-  genie.SetForm(FORM_OPERATING);
-  genie.WriteStr(OBJ_OP_STATE_STR, stateNames[currentState]);
-  genie.WriteObject(GENIE_OBJ_USER_LED, OBJ_OP_KEG, isLargeKeg ? 1 : 0);
+  KDS::operatingFrame(stateNames[currentState], ipStr());
   display_updateTimer(timers_getStateElapsed());
   display_updateStatus();
-  display_updateFooter();
+  reapplyMqtt();
+}
+void display_update() { display_showOperatingScreen(); }
+
+void display_flashBanner(const char* text, word /*bgColor*/, bool visible) {
+  KDS::banner(text, RED, visible);
 }
 
-void display_update() { display_showOperatingScreen(); }
+void display_updateFooter() { KDS::footer(ipStr()); reapplyMqtt(); }
+
+void display_setMqttIndicators(bool connected, bool pubActive, bool subActive) {
+  g_mqttUp = connected; g_pub = pubActive; g_sub = subActive;
+  KDS::mqttIndicators(connected, pubActive, subActive);
+}
+
+void display_doEvents() {
+  // Pump touch every loop (replaces genie.DoEvents). No on-screen touch
+  // actions are wired yet (the genie UI had none either) — map (x,y) to
+  // on-screen buttons here when the touch UI is designed.
+  int x, y;
+  if (KDS::touch(&x, &y)) {
+    // touch at (x,y) — hook for future button handling
+  }
+}

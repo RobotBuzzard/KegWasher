@@ -146,6 +146,8 @@ extern unsigned long purgeTimer;
 extern unsigned long washTimer;
 extern unsigned long saniTimer;
 extern double largeKegMod;
+extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f)
+extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F
 
 // ---------- API ----------
 // NOTE: config_init() must be called AFTER display_init() so failure

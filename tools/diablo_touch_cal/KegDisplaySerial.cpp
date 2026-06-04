@@ -235,6 +235,14 @@ void mqttIndicators(bool connected, bool pubActive, bool subActive) {
   disc(SUB_DX, FOOT_DY, 5, sc);
 }
 
+void footer(const char* ip) { footerIP(ip); }   // redraw the footer (IP + P/S labels + reset dots)
+
+// flashing alert strip just under the title bar (visible toggled by the caller)
+void banner(const char* text, word colour, bool visible) {
+  if (visible) { rect(0, 48, DW - 1, 84, colour); textPx(8, 54, 2, C_TXT, colour, text); }
+  else         { rect(0, 48, DW - 1, 84, C_BG); }
+}
+
 bool touch(int* x, int* y) {
   static bool down = false;
   word st = rawCmdResp(F_touch_Get, TOUCH_STATUS);               // raw framed read
