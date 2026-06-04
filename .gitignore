@@ -28,8 +28,13 @@ config/washer.config
 # Secrets — broker credentials, etc. Use KegSecrets.h.example as the template.
 KegSecrets.h
 
-# 4D Systems vendor reference PDFs — ~51 MB, keep the .txt extracts for grep.
+# Vendor reference dumps downloaded from official sources (4D Systems
+# PDFs, their .txt extracts, wget'd HTML pages like the 4DGL reference).
+# Local-only authoritative lookups — kept on disk for fast/offline reference,
+# NOT tracked in the repo. Project documentation (docs/*.md) stays tracked.
 docs/*.pdf
+docs/*.txt
+docs/*.html
 docs/--help
 
 # Workshop4 build artifacts intermediate folder (the compiled GCI/DAT/TXF/4XE
