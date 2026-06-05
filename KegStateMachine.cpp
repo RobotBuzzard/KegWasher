@@ -629,9 +629,9 @@ static void state_idle() {
         display_showNotReady(waterOk, airOk, co2Ok, estopOk);
         drawn = true;
         prevWater = waterOk; prevAir = airOk; prevCo2 = co2Ok; prevEstop = estopOk;
-        smBannerPrime("NOT READY", AMBER);
       }
-      smBannerTick("NOT READY", AMBER);
+      // No flashing banner here — the amber title + signal rows convey readiness
+      // (banner is reserved for action/attention states).
 
       if (hardware_allSystemsGo()) {
         errorCode = ERR_NONE;
@@ -650,9 +650,8 @@ static void state_idle() {
       if (!drawn) {
         display_showReadyScreen();
         drawn = true;
-        smBannerPrime("READY", GREEN);
       }
-      smBannerTick("READY", GREEN);
+      // No flashing banner — green title + START button say it all.
 
       if (!hardware_allSystemsGo()) {   // a system went offline
         drawn = false;
@@ -714,9 +713,8 @@ static void state_starting() {
     showHeatingProgress();
     heatingDrawn = true;
     lastHeatDisplayMs = millis();
-    smBannerPrime("HEATING", AMBER);
   }
-  smBannerTick("HEATING", AMBER);
+  // No banner — amber "HEATING" title + the live progress (CUR/TGT/%) convey it.
 }
 
 // ---------- EXECUTE: recipe phase handlers ----------
@@ -777,9 +775,9 @@ static void state_complete() {
   if (!drawn) {
     display_showFinishedScreen();
     drawn = true;
-    smBannerPrime("COMPLETE", BLUE);
+    smBannerPrime("SWAP KEG", BLUE);
   }
-  smBannerTick("COMPLETE", BLUE);  // blink until the operator acts (screen-only; no red on success)
+  smBannerTick("SWAP KEG", BLUE);  // blue flashing = mandatory operator action (title already says COMPLETE)
 
   bool nowPressed = isCycleStartPressed;
 
@@ -825,6 +823,13 @@ static const char* errorBannerText(byte code) {
     case ERR_PAUSE_TIMEOUT:   return "PAUSE TIMEOUT";
     default:                  return "ERROR";
   }
+}
+
+// The recovery ACTION for the flashing banner (the title/message already say what
+// the fault IS). E-stop self-clears on release; everything else clears with a
+// 2 s START hold (or the touch RECOVER button) once the cause is fixed.
+static const char* recoveryHintText(byte code) {
+  return (code == ERR_ESTOP) ? "RELEASE E-STOP" : "HOLD START 2s";
 }
 
 // Is the underlying condition for a given fault STILL present right now? Drives
@@ -881,11 +886,11 @@ static void state_aborted() {
   if (errorCode != lastShown) {            // new fault → full redraw
     display_showError(diagnostics_getErrorMessage(errorCode));
     lastShown = errorCode;
-    smBannerPrime(errorBannerText(errorCode), RED);
+    smBannerPrime(recoveryHintText(errorCode), RED);
     clearedSince = 0;
     io4On = true;
   }
-  smBannerTick(errorBannerText(errorCode), RED);
+  smBannerTick(recoveryHintText(errorCode), RED);   // banner = the ACTION; title/msg = the fault
 
   bool active = faultConditionActive(errorCode);
 

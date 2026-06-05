@@ -30,6 +30,7 @@ static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
 // (same one-tick-pulse path as the physical button / MQTT start command).
 static const int BTN_START_X = 46, BTN_START_Y = 300, BTN_START_W = 180, BTN_START_H = 90;
 static volatile bool g_touchStart = false;
+static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED screen
 
 // Operating-screen cycle controls.
 //  - Running: a single PAUSE button.
@@ -60,12 +61,13 @@ void display_showStartup() {
 }
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
-  KDS::notReady(waterOk, airOk, co2Ok, estopOk, ipStr());
+  KDS::readiness(waterOk, airOk, co2Ok, estopOk, false, ipStr());  // amber, no START
   reapplyMqtt();
 }
 
 void display_showReadyScreen() {
-  KDS::ready(ipStr());
+  // Same unified screen, all-OK: green title + the live signal rows + START.
+  KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive, true, ipStr());
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
@@ -80,7 +82,14 @@ void display_showHaltedScreen() {
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
-void display_showError(const char* m)   { KDS::error(m, ipStr());   reapplyMqtt(); }
+void display_showError(const char* m) {
+  KDS::error(m, ipStr());
+  // RECOVER button (blue = operator action). Touch is gated to MACH_ABORTED in
+  // display_doEvents and drained → stateMachine_reset() (which refuses while the
+  // fault condition is still active). The flashing banner shows the hint.
+  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "RECOVER", BLUE);
+  reapplyMqtt();
+}
 void display_showMessage(const char* m) { KDS::message(m, ipStr()); reapplyMqtt(); }
 
 void display_showProgress(const char* /*label*/, int percentage,
@@ -168,6 +177,10 @@ void display_doEvents() {
   if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchStart = true;
     KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+  } else if (machineState == MACH_ABORTED &&
+             inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
+    g_touchRecover = true;   // RECOVER on the fault screen → stateMachine_reset()
+    KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "...", WHITE);
   } else if (operating && !held) {
     if (inRect(x, y, BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H)) {
       g_touchPause = true;
@@ -191,6 +204,12 @@ void display_doEvents() {
 // mqtt_applyCmdFlags() and injected into isCycleStartPressed.
 bool display_takeTouchStart() {
   if (g_touchStart) { g_touchStart = false; return true; }
+  return false;
+}
+
+// Drain a pending RECOVER-button touch (one-shot, ABORTED screen).
+bool display_takeTouchRecover() {
+  if (g_touchRecover) { g_touchRecover = false; return true; }
   return false;
 }
 

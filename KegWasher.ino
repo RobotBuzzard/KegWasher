@@ -281,6 +281,10 @@ static void mqtt_applyCmdFlags() {
     diagnostics_logEvent("Touch: stop/drain");
     stateMachine_stop();       // evacuate, then halt
   }
+  if (display_takeTouchRecover()) {
+    diagnostics_logEvent("Touch: recover");
+    stateMachine_reset();      // ABORTED → PAUSE/READY (refused while fault active)
+  }
   if (kwMqttCmdPause) {
     kwMqttCmdPause = false;
     diagnostics_logEvent("Remote cmd: pause");

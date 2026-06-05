@@ -178,25 +178,28 @@ void startup(const char* l1, const char* l2) {
   textPx(16, 140, 1, C_CYAN, C_BG, l2);
 }
 
-void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
-  chrome("NOT READY", C_WARN);   // amber: abnormal/waiting on inputs (not a fault)
+// Unified readiness screen (merges the old ready/notReady): always shows the four
+// signal rows; title + colour reflect overall readiness. The caller (KegDisplay)
+// adds the START button when allOk. Rows are compact so they clear the button.
+void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip) {
+  chrome(allOk ? "READY" : "NOT READY", allOk ? C_OK : C_WARN);
   const char* labels[4] = { "WATER", "AIR", "CO2", "ESTOP" };
   bool ok[4] = { water, air, co2, estop };
   for (int i = 0; i < 4; i++) {
-    int y = 100 + i * 80;
-    disc(30, y + 6, 12, ok[i] ? C_OK : C_BAD);
+    int y = 78 + i * 50;
+    disc(30, y + 6, 11, ok[i] ? C_OK : C_BAD);
     textPx(56, y, 2, C_TXT, C_BG, labels[i]);
-    textPx(180, y, 2, ok[i] ? C_OK : C_BAD, C_BG, ok[i] ? "OK" : "--");
+    textPx(190, y, 2, ok[i] ? C_OK : C_BAD, C_BG, ok[i] ? "OK" : "--");
   }
+  if (!allOk) textPx(24, 282, 1, C_WARN, C_BG, "fix inputs to enable START");
   footerIP(ip);
 }
 
-void ready(const char* ip) {
-  chrome("READY", C_OK);
-  textPx(24, 150, 2, C_TXT, C_BG, "Check levels");
-  textPx(24, 210, 2, C_TIMER, C_BG, "Press START");
-  footerIP(ip);
+// Legacy wrappers kept for any external callers; both route to readiness().
+void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
+  readiness(water, air, co2, estop, false, ip);
 }
+void ready(const char* ip) { readiness(true, true, true, true, true, ip); }
 
 void heating(int curC, int tgtC, int pct, const char* ip) {
   chrome("HEATING", C_WARN);

@@ -21,6 +21,7 @@ void startup(const char* line1, const char* line2);
 void notReady(bool water, bool air, bool co2, bool estop, const char* ip);
 void ready(const char* ip);
 void heating(int curC, int tgtC, int pct, const char* ip);
+void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip);
 void operatingFrame(const char* stateName, const char* ip, word barColour);   // static chrome
 void finished(const char* ip);
 void error(const char* msg, const char* ip);
