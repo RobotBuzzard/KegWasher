@@ -425,7 +425,10 @@ static bool machineEnter(byte s) {
       hardware_setAlarm(false);    // ...but a graceful STOP is silent
       return true;
     case MACH_COMPLETE:
-      hardware_setAlarm(true);
+      // Cycle complete is a SUCCESS — do NOT light the red stacklight (IO4 =
+      // alarmOut is reserved for fault / E-stop only; red should never mean "done").
+      // Completion is shown on-screen (blinking COMPLETE banner). No green tier or
+      // buzzer is wired; add a positive indicator here if one is added later.
       return true;
     case MACH_ABORTED:
       hardware_setAlarm(true);
@@ -768,7 +771,7 @@ static void state_complete() {
     drawn = true;
     smBannerPrime("COMPLETE", GREEN);
   }
-  smBannerTick("COMPLETE", GREEN);  // blink + alarm until the operator acts
+  smBannerTick("COMPLETE", GREEN);  // blink until the operator acts (screen-only; no red on success)
 
   bool nowPressed = isCycleStartPressed;
 
