@@ -21,6 +21,14 @@
 #ifndef WHITE
 #define WHITE 0xFFFFu
 #endif
+// IEC 60204-1 status palette: GREEN=normal/running, AMBER=abnormal/held,
+// RED=fault/emergency, BLUE=mandatory operator action.
+#ifndef AMBER
+#define AMBER 0xFD20u
+#endif
+#ifndef BLUE
+#define BLUE  0x001Fu
+#endif
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 void display_init();

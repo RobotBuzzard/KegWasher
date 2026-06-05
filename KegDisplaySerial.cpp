@@ -179,7 +179,7 @@ void startup(const char* l1, const char* l2) {
 }
 
 void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
-  chrome("NOT READY", C_BAD);
+  chrome("NOT READY", C_WARN);   // amber: abnormal/waiting on inputs (not a fault)
   const char* labels[4] = { "WATER", "AIR", "CO2", "ESTOP" };
   bool ok[4] = { water, air, co2, estop };
   for (int i = 0; i < 4; i++) {
@@ -207,8 +207,8 @@ void heating(int curC, int tgtC, int pct, const char* ip) {
   footerIP(ip);
 }
 
-void operatingFrame(const char* stateName, const char* ip) {
-  chrome(stateName, C_BAR);
+void operatingFrame(const char* stateName, const char* ip, word barColour) {
+  chrome(stateName, barColour);   // GREEN running / AMBER held — set by the caller
   textPx(8, 54, 1, C_CYAN, C_BG, "TIME LEFT");
   textPx(8, TMP_Y1 - 16, 1, C_CYAN, C_BG, "TEMP");
   const char* dl[5] = { "W", "A", "C", "E", "M" };       // static dot labels
@@ -232,7 +232,7 @@ void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool
 }
 
 void finished(const char* ip) {
-  chrome("COMPLETE", C_OK);
+  chrome("COMPLETE", C_BAR);   // blue: cycle done, mandatory operator action (swap keg)
   textPx(40, 130, 3, C_TXT, C_BG, "DONE!");
   textPx(16, 210, 2, C_CYAN, C_BG, "START=next keg");
   textPx(16, 250, 2, C_CYAN, C_BG, "DRAIN=stop");
@@ -246,7 +246,7 @@ void error(const char* msg, const char* ip) {
 }
 
 void stopping(const char* ip) {
-  chrome("DRAINING", C_BAR);
+  chrome("DRAINING", C_WARN);   // amber: in-progress teardown (not a fault)
   textPx(16, 130, 2, C_TXT,  C_BG, "Clearing keg");
   textPx(16, 190, 2, C_CYAN, C_BG, "please wait");
   footerIP(ip);

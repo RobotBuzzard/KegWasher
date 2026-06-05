@@ -109,7 +109,7 @@ void display_updateStatus() {
 //  - Paused : RESUME / RESTART / STOP-DRAIN, with a PAUSED banner.
 static void drawCycleControls() {
   if (machineState == MACH_HELD) {
-    display_flashBanner("PAUSED", RED, true);
+    display_flashBanner("PAUSED", AMBER, true);   // amber: operator hold, not a fault
     KDS::button(BTN_RESUME_X, BTN_RESUME_Y,  BTN_BAND_W, BTN_BAND_H, "RESUME",     GREEN);
     KDS::button(BTN_RESUME_X, BTN_RESTART_Y, BTN_BAND_W, BTN_BAND_H, "RESTART",    COL_PAUSE);
     KDS::button(BTN_RESUME_X, BTN_STOPDRN_Y, BTN_BAND_W, BTN_BAND_H, "STOP/DRAIN", RED);
@@ -119,7 +119,9 @@ static void drawCycleControls() {
 }
 
 void display_showOperatingScreen() {
-  KDS::operatingFrame(phaseNames[recipePhase], ipStr());
+  // Title bar: GREEN while running (IEC normal), AMBER while held (abnormal/hold).
+  KDS::operatingFrame(phaseNames[recipePhase], ipStr(),
+                      (machineState == MACH_HELD) ? AMBER : GREEN);
   display_updateTimer(timers_getStateElapsed());
   display_updateStatus();
   drawCycleControls();

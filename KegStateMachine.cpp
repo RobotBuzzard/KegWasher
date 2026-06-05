@@ -629,9 +629,9 @@ static void state_idle() {
         display_showNotReady(waterOk, airOk, co2Ok, estopOk);
         drawn = true;
         prevWater = waterOk; prevAir = airOk; prevCo2 = co2Ok; prevEstop = estopOk;
-        smBannerPrime("NOT READY", RED);
+        smBannerPrime("NOT READY", AMBER);
       }
-      smBannerTick("NOT READY", RED);
+      smBannerTick("NOT READY", AMBER);
 
       if (hardware_allSystemsGo()) {
         errorCode = ERR_NONE;
@@ -714,9 +714,9 @@ static void state_starting() {
     showHeatingProgress();
     heatingDrawn = true;
     lastHeatDisplayMs = millis();
-    smBannerPrime("HEATING", RED);
+    smBannerPrime("HEATING", AMBER);
   }
-  smBannerTick("HEATING", RED);
+  smBannerTick("HEATING", AMBER);
 }
 
 // ---------- EXECUTE: recipe phase handlers ----------
@@ -777,9 +777,9 @@ static void state_complete() {
   if (!drawn) {
     display_showFinishedScreen();
     drawn = true;
-    smBannerPrime("COMPLETE", GREEN);
+    smBannerPrime("COMPLETE", BLUE);
   }
-  smBannerTick("COMPLETE", GREEN);  // blink until the operator acts (screen-only; no red on success)
+  smBannerTick("COMPLETE", BLUE);  // blink until the operator acts (screen-only; no red on success)
 
   bool nowPressed = isCycleStartPressed;
 
