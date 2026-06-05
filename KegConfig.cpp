@@ -30,6 +30,7 @@ unsigned long saniTimer       = DEFAULT_STAGE_MS;
 unsigned long saniRtnTimer    = DEFAULT_STAGE_MS;
 unsigned long purgeTimer      = DEFAULT_STAGE_MS;
 double        largeKegMod     = 1.5;
+unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phase 3)
 
 // Touch calibration (host-side affine: screen=[a b c; d e f].[rawx rawy 1]).
 // KegDisplaySerial has its own baked defaults; these only override when the SD

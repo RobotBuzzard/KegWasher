@@ -48,10 +48,10 @@ static unsigned long pauseStartMs = 0;  // when MACH_HELD was entered
 enum { EVAC_NONE = 0, EVAC_CAUSTIC, EVAC_SANI, EVAC_WATER };
 static byte evacKind = EVAC_NONE;
 
-// Recipe phase captured at an E-stop trip so releasing the E-stop returns to
-// PAUSE (HELD) and lets the operator resume the interrupted cycle, instead of
-// discarding it. PHASE_NONE = no cycle was running → release goes to READY.
-static byte estopResumePhase = PHASE_NONE;
+// Recipe phase captured at ANY abort (E-stop or other fault) that interrupts a
+// running/paused cycle, so recovery returns to PAUSE (HELD) at that phase rather
+// than discarding the cycle. PHASE_NONE = no cycle was running → recover to READY.
+static byte abortResumePhase = PHASE_NONE;
 
 static const unsigned long AIR_BURST_DURATION = 5000UL;
 
@@ -69,6 +69,8 @@ static void state_idle();
 static void state_starting();
 static void state_complete();
 static void state_aborted();
+static bool faultConditionActive(byte code);
+static void abortRecover();
 static void state_clearing();
 static void state_stopping();
 static void state_stopped();
@@ -244,7 +246,7 @@ void stateMachine_process() {
     case MACH_HELD:
       // Frozen mid-recipe: outputs held safe (set at HELD entry), countdown
       // frozen. Only the pause-timeout safety bound runs here.
-      if (millis() - pauseStartMs > PAUSE_MAX_MS) {
+      if (millis() - pauseStartMs > pauseMaxMs) {
         diagnostics_logEvent("Pause timeout");
         errorCode = ERR_PAUSE_TIMEOUT;
         stateMachine_abort();
@@ -547,12 +549,12 @@ void stateMachine_restart() {
 
 // ---------- Abort / recovery ----------
 void stateMachine_abort() {
-  // If an E-stop interrupts a running/paused cycle, remember the phase so the
-  // release can return to PAUSE (HELD) and let the operator resume.
-  if (errorCode == ERR_ESTOP &&
-      (machineState == MACH_EXECUTE || machineState == MACH_HELD) &&
+  // If the abort interrupts a running/paused cycle, remember the phase so recovery
+  // returns to PAUSE (HELD) at that phase — same landing whether the trigger was
+  // E-stop or any other fault.
+  if ((machineState == MACH_EXECUTE || machineState == MACH_HELD) &&
       recipePhase != PHASE_NONE) {
-    estopResumePhase = recipePhase;
+    abortResumePhase = recipePhase;
   }
   changeMachineState(MACH_ABORTED);  // errorCode already set by the caller
 }
@@ -560,8 +562,14 @@ void stateMachine_abort() {
 void stateMachine_reset() {
   switch (machineState) {
     case MACH_ABORTED:
-      errorCode = ERR_NONE;
-      changeMachineState(MACH_CLEARING);   // PackML path B begins
+      // Same unified recovery as the panel: refuse while the fault is still
+      // active, else land at PAUSE (cycle preserved) or READY.
+      if (faultConditionActive(errorCode)) {
+        diagnostics_logEvent("Reset ignored (fault active)");
+        break;
+      }
+      diagnostics_logEvent("Remote acknowledge");
+      abortRecover();
       break;
     case MACH_STOPPED:
     case MACH_COMPLETE:
@@ -819,84 +827,108 @@ static const char* errorBannerText(byte code) {
   }
 }
 
+// Is the underlying condition for a given fault STILL present right now? Drives
+// the IO4 policy (steady = active, flash = waiting) and gates recovery (you can't
+// clear a fault whose cause is still there — mirrors "can't reset E-stop while
+// engaged"). Faults with no persistent condition (timeouts, pause-timeout) report
+// cleared immediately.
+static bool faultConditionActive(byte code) {
+  switch (code) {
+    case ERR_ESTOP:           return isEstopActive;
+    case ERR_WATER_PRESSURE:  return !isWaterOk;
+    case ERR_AIR_PRESSURE:    return !isAirOk;
+    case ERR_CO2_PRESSURE:    return !isCo2Ok;
+    case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  MIN_CAUSTIC_TEMP;
+    case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= MAX_CAUSTIC_TEMP;
+    case ERR_ENCLOSURE_TEMP:  return hardware_getEnclosureTemp() >= MAX_ENCLOSURE_TEMP;
+    case ERR_CAUSTIC_LEVEL:   return hardware_getCausticLevel() <  MIN_CAUSTIC_LEVEL;
+    case ERR_SENSOR_FAULT:    return causticTempSensorError || enclosureTempSensorError;
+    default:                  return false;  // transient — no standing condition to clear
+  }
+}
+
+// Unified recovery landing (same regardless of how the fault was acknowledged):
+// PAUSE (HELD) at the interrupted phase if a cycle was running, else IDLE → READY.
+// Per ISO 13850 this only PERMITS restart — it does not auto-resume; the operator
+// taps RESUME to continue or STOP/DRAIN to bail.
+static void abortRecover() {
+  errorCode = ERR_NONE;
+  hardware_setAlarm(false);
+  if (abortResumePhase != PHASE_NONE) {
+    recipePhase = abortResumePhase;
+    abortResumePhase = PHASE_NONE;
+    machineState = MACH_HELD;            // direct set preserves recipePhase
+    timers_resetStateTimer();
+    pauseStartMs = millis();
+    diagnostics_logEvent("Recovered -> PAUSE");
+  } else {
+    changeMachineState(MACH_IDLE);       // → pre-check → READY (logs "IDLE")
+  }
+}
+
 static void state_aborted() {
   static byte lastShown = 255;
-
-  if (errorCode != lastShown) {
-    display_showError(diagnostics_getErrorMessage(errorCode));
-    lastShown = errorCode;
-    smBannerPrime(errorBannerText(errorCode), RED);
-  }
-  smBannerTick(errorBannerText(errorCode), RED);
-
-  // Fail-safe E-stop recovery (ISO 13850: releasing the E-stop must only PERMIT
-  // restart, never restart the machine). When the abort was an E-stop and the NC
-  // safety chain has been healthy again (button pulled out + all drive-OK
-  // contacts closed) for a short debounce window, return to IDLE → READY
-  // automatically — no auto-resume of the interrupted cycle; the operator presses
-  // START to run. Non-E-stop faults still require the manual clear below.
-  static unsigned long estopHealthySince = 0;
-  if (errorCode == ERR_ESTOP) {
-    if (isEstopActive) {
-      estopHealthySince = 0;                          // chain still open — stay latched
-    } else {
-      if (estopHealthySince == 0) estopHealthySince = millis();
-      if (millis() - estopHealthySince >= 300UL) {    // stable-healthy (debounce release bounce)
-        errorCode = ERR_NONE;
-        lastShown = 255;
-        estopHealthySince = 0;
-        hardware_setAlarm(false);
-        if (estopResumePhase != PHASE_NONE) {
-          // A cycle was interrupted — return to PAUSE (HELD) so the operator can
-          // RESUME (or STOP/DRAIN). Per ISO 13850 this only PERMITS restart; the
-          // cycle does NOT auto-resume. The interrupted phase re-runs from its top.
-          recipePhase = estopResumePhase;
-          estopResumePhase = PHASE_NONE;
-          machineState = MACH_HELD;                   // direct set preserves recipePhase
-          timers_resetStateTimer();
-          pauseStartMs = millis();
-          diagnostics_logEvent("E-stop released -> PAUSE");
-        } else {
-          diagnostics_logEvent("E-stop released -> ready");
-          changeMachineState(MACH_IDLE);              // no cycle — IDLE → pre-check → READY
-        }
-        return;
-      }
-    }
-  }
-
-  // Manual-drain (IO2) silences the alarm without resetting.
-  if (isManualDrainPressed) {
-    hardware_setAlarm(false);
-  }
-
-  // Cycle-start (IO1): short = silence alarm; long = Clear (begin recovery, path B).
   static bool prevPress = false;
   static unsigned long pressStartMs = 0;
   static bool longFired = false;
-  const unsigned long LONG_PRESS_MS = 2000;
+  static unsigned long io4LastMs = 0;
+  static bool io4On = true;
+  static unsigned long clearedSince = 0;
+  const unsigned long LONG_PRESS_MS     = 2000;
+  const unsigned long IO4_FLASH_MS      = 250;
+  const unsigned long CLEAR_DEBOUNCE_MS = 300;
 
-  bool nowPressed = isCycleStartPressed;
+  if (errorCode != lastShown) {            // new fault → full redraw
+    display_showError(diagnostics_getErrorMessage(errorCode));
+    lastShown = errorCode;
+    smBannerPrime(errorBannerText(errorCode), RED);
+    clearedSince = 0;
+    io4On = true;
+  }
+  smBannerTick(errorBannerText(errorCode), RED);
 
-  if (smRising(nowPressed, prevPress)) {
-    pressStartMs = millis();
-    longFired = false;
+  bool active = faultConditionActive(errorCode);
+
+  // IO4 (red stacklight): STEADY ON while the fault condition is present; FLASH
+  // 250 ms once it clears and we're waiting for the operator to acknowledge.
+  if (active) {
+    clearedSince = 0;
+    if (!io4On) { hardware_setAlarm(true); io4On = true; }
+  } else {
+    if (clearedSince == 0) clearedSince = millis();
+    if (millis() - io4LastMs >= IO4_FLASH_MS) {
+      io4On = !io4On;
+      hardware_setAlarm(io4On);
+      io4LastMs = millis();
+    }
   }
 
-  if (nowPressed && !longFired && (millis() - pressStartMs) >= LONG_PRESS_MS) {
+  bool conditionCleared = !active && clearedSince != 0 &&
+                          (millis() - clearedSince) >= CLEAR_DEBOUNCE_MS;
+
+  // Recovery, gated on the condition being gone:
+  //  - E-stop auto-acknowledges on release (the release IS the ack).
+  //  - Any other fault: operator long-presses START (2 s) — the on-screen
+  //    instruction tells them; the touch RECOVER button (Pass 2) does the same.
+  bool nowPressed = isCycleStartPressed;
+  if (smRising(nowPressed, prevPress)) { pressStartMs = millis(); longFired = false; }
+
+  bool recover = false;
+  if (errorCode == ERR_ESTOP) {
+    recover = conditionCleared;
+  } else if (conditionCleared && nowPressed && !longFired &&
+             (millis() - pressStartMs) >= LONG_PRESS_MS) {
     longFired = true;
-    errorCode = ERR_NONE;
-    lastShown = 255;
-    prevPress = nowPressed;
-    changeMachineState(MACH_CLEARING);   // Clear → Clearing → Stopped → (Reset) → Idle
+    recover = true;
+  }
+  prevPress = nowPressed;
+
+  if (recover) {
+    lastShown = 255; io4On = true; clearedSince = 0; longFired = false;
+    diagnostics_logEvent(errorCode == ERR_ESTOP ? "E-stop released" : "Fault acknowledged");
+    abortRecover();
     return;
   }
-
-  if (smFalling(nowPressed, prevPress) && !longFired) {
-    hardware_setAlarm(false);
-  }
-
-  prevPress = nowPressed;
 }
 
 // ---------- CLEARING (fault-resolution gate, PackML path B) ----------

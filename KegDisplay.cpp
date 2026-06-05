@@ -131,8 +131,10 @@ void display_update() { display_showOperatingScreen(); }
 // (and, on resume, the status block the paused buttons overwrote) are correct.
 void display_setPaused(bool /*paused*/) { display_showOperatingScreen(); }
 
-void display_flashBanner(const char* text, word /*bgColor*/, bool visible) {
-  KDS::banner(text, RED, visible);
+void display_flashBanner(const char* text, word bgColor, bool visible) {
+  // Honour the caller's colour — GREEN for READY/COMPLETE, RED for faults.
+  // (Was hardcoded RED, which painted the green "READY" banner red.)
+  KDS::banner(text, bgColor, visible);
 }
 
 void display_updateFooter() { KDS::footer(ipStr()); reapplyMqtt(); }

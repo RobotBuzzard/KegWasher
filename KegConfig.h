@@ -183,6 +183,9 @@ extern unsigned long saniTimer;         // SANITIZE
 extern unsigned long saniRtnTimer;      // SANI_RETURN (CO2-blow sanitizer → reservoir)
 extern unsigned long purgeTimer;        // PRESSURE (CO2 charge / seal)
 extern double largeKegMod;
+// Max time a cycle may sit PAUSED (HELD) before it aborts (chem may be sitting in
+// the keg). Runtime var, seeded from PAUSE_MAX_MS; SD-config-overridable (Phase 3).
+extern unsigned long pauseMaxMs;
 extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f)
 extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F
 
