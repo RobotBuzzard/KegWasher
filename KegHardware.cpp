@@ -3,6 +3,7 @@
 // ======================================================================
 #include "KegHardware.h"
 #include "KegDiagnostics.h"
+#include <math.h>
 
 // ---------- Public state ----------
 bool isAirOk = false;
@@ -371,14 +372,44 @@ void hardware_manageFan() {
 // On sensor fault, return a value that triggers the relevant safety branch
 // in callers (caustic too cold → won't pass WASHING; enclosure too hot →
 // fan forced on).
+// Ender 3 Pro nozzle thermistor: 100k NTC, beta 3950, R25 = 100k @ 25C.
+// Wiring (bench bringup): thermistor from the +24V rail straight into the analog
+// pin — NO external divider; the ClearCore analog input's own load is the bottom
+// leg. The effective load was solved from one point (raw ADC 2225 @ 22.2C/72F,
+// supply 24.56V, 0-10V/12-bit input) → ~32.2k:
+//   V = adc/4095 * 10V ;  R_t = R_LOAD * (VPLUS - V) / V
+//   1/T = 1/T25 + ln(R_t/R25)/BETA
+// ⚠ With these values V hits the 10V input ceiling near ~43C, so this front-end
+// CANNOT sense the caustic range (50-70C). The caustic input (A10) needs a real
+// divider sized for that range before non-bench washing. See docs/io-table.md.
+static const float THERM_R25   = 100000.0f;
+static const float THERM_BETA  = 3950.0f;
+static const float THERM_T25   = 298.15f;
+static const float THERM_VPLUS = 24.56f;
+static const float THERM_VFS   = 10.0f;     // ClearCore analog full-scale (0-10V)
+static const float THERM_RLOAD = 32200.0f;  // effective analog-input load to GND
+
+static int thermistorTempC(int adcVal) {
+  if (adcVal < 30) return -99;              // open / no current → invalid (fails safe cold)
+  float v = (float)adcVal * (THERM_VFS / (float)ADC_MAX);
+  if (v < 0.05f || v >= THERM_VPLUS) return -99;
+  float rt = THERM_RLOAD * (THERM_VPLUS - v) / v;
+  if (rt < 1.0f) return 150;                // near short → very hot
+  float tK = 1.0f / (1.0f / THERM_T25 + logf(rt / THERM_R25) / THERM_BETA);
+  int tC = (int)(tK - 273.15f + 0.5f);
+  if (tC < -40) tC = -40;
+  if (tC > 150) tC = 150;
+  return tC;
+}
+
 int hardware_getCausticTemp() {
   if (causticTempSensorError) return MIN_CAUSTIC_TEMP - 10;
-  return map(causticTempValue, 0, ADC_MAX, 0, 100);
+  return thermistorTempC(causticTempValue);
 }
 
 int hardware_getEnclosureTemp() {
   if (enclosureTempSensorError) return MAX_ENCLOSURE_TEMP + 10;
-  return map(enclosureTempValue, 0, ADC_MAX, 0, 100);
+  return thermistorTempC(enclosureTempValue);
 }
 
 int hardware_getCausticLevel() {
