@@ -230,6 +230,33 @@ both into the long-press-START path today.
 
 ---
 
+## 6. Indicator & banner colour policy (IEC 60204‑1)
+
+Two on-screen elements, **distinct jobs**:
+- **Title bar** (`chrome()`) — steady; the state/phase **name** + status colour. The
+  at-a-glance "what state am I in."
+- **Flashing banner** (`banner()`) — flashing; reserved for **attention / required
+  action** (fault recovery instruction, "SWAP KEG"). *Pass 2 goal:* stop it
+  duplicating the title on normal states.
+
+Colours follow **IEC 60204‑1 §10.3** (indicator lights), applied to title bar,
+banner, and any future stacklight tier alike:
+
+| Colour | IEC meaning | KegWasher states |
+|--------|-------------|------------------|
+| 🟢 GREEN | normal operation | EXECUTE/washing, READY |
+| 🟠 AMBER | abnormal / impending — monitor/intervene | NOT READY, HEATING (STARTING), HELD/PAUSED, STOPPING/DRAINING |
+| 🔵 BLUE | mandatory operator action | COMPLETE (swap keg) |
+| 🔴 RED | emergency / fault | ABORTED, ESTOP, all faults |
+| ⚪ WHITE | power / status | (footer/info) |
+
+**IO4 red stacklight** (the one physical tier wired today) is fault-only with a
+3-state behaviour: **OFF** normal · **STEADY** while the fault condition is active ·
+**FLASH 250 ms** once it clears and is waiting for acknowledgment. A future
+Red/Amber/Green(/Blue) tower light maps straight onto the table above.
+
+---
+
 ## Sources
 
 - [ISA‑TR88.00.02‑2022, Machine and Unit States (ISA)](https://www.isa.org/products/isa-tr88-00-02-2022-machine-and-unit-states-an-imp)
