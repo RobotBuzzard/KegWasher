@@ -607,6 +607,7 @@ static void state_idle() {
   switch (idleSub) {
     case IDLE_INIT:
       errorCode = ERR_NONE;
+      hardware_setAlarm(false);   // IDLE/READY/NOT_READY is never a fault — IO4 (red) off
       diagnostics_logEvent("Idle: init");
       // Pre-check runs once, at power-up. After init, returning to IDLE (parked
       // via DRAIN, or recovered from STOPPED) skips straight to READY. A fault

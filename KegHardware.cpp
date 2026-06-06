@@ -151,6 +151,7 @@ void hardware_init() {
   pinMode(causticHeaterOut, OUTPUT);
 
   hardware_allStop();
+  hardware_setAlarm(false);   // boot is not a fault: allStop lights IO4, clear it
 
   // Fail-safe E-stop. A normally-CLOSED safety chain runs from GND through the
   // drive-OK contacts (pump, etc.) and the E-stop switch into DI8. DI6-DI8 are
