@@ -701,7 +701,7 @@ static void state_starting() {
   if (!isHeaterActive) {
     if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
       errorCode = ERR_CAUSTIC_LEVEL;
-      display_showError("Low caustic level");
+      display_showError(diagnostics_getErrorMessage(ERR_CAUSTIC_LEVEL));
       stateMachine_abort();
       return;
     }
