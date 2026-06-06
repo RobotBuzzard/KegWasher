@@ -74,6 +74,13 @@ bool display_takeTouchStop();    // one-shot: a STOP/DRAIN button touch is pendi
 // PAUSE/RESUME button label. Call when the pause state changes.
 void display_setPaused(bool paused);
 
+// ── On-screen settings editor (Phase 5) ───────────────────────────────
+// Enter from the READY screen's SETTINGS button. Edits working copies of the
+// stage timers + largeKegMod; SAVE applies them + writes WASHER.CFG, CANCEL
+// discards. Lives entirely in the display layer (idleSub = IDLE_SETTINGS); the
+// state machine no-ops while it's open and READY repaints on exit.
+void display_openSettings();
+
 // ── Network state (defined in KegWasher.ino) ───────────────────────────
 extern uint8_t kwLocalIP[4];
 extern bool    kwEthernetReady;

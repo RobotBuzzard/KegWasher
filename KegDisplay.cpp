@@ -10,6 +10,7 @@
 #include "KegStateMachine.h"
 #include "KegHardware.h"
 #include "KegTimers.h"
+#include "KegDiagnostics.h"
 
 // IP (or "offline") string for the footer.
 static const char* ipStr() {
@@ -45,6 +46,119 @@ static volatile bool g_touchPause   = false;
 static volatile bool g_touchRestart = false;
 static volatile bool g_touchStop    = false;
 
+// ── Settings editor (Phase 5) ─────────────────────────────────────────
+// 11 editable params: the 10 stage timers + largeKegMod, paginated 4/page.
+// Working copies are edited live; SAVE commits to the globals + WASHER.CFG.
+#define S_BLACK 0x0000u
+static const word S_GREY = 0x4208;          // disabled nav button
+static const int  S_NUM = 11, S_PER_PAGE = 4, S_PAGES = 3;   // ceil(11/4)=3
+
+static unsigned long sWkTimer[10];
+static double        sWkMod;
+static int           sPage = 0;
+
+static unsigned long* const sTimerPtr[10] = {
+  &dirtyDrainTimer, &dirtyRinseTimer, &dirtyPurgeTimer, &washTimer, &causticRtnTimer,
+  &rinseTimer, &rinsePurgeTimer, &saniTimer, &saniRtnTimer, &purgeTimer
+};
+static const char* const sLabel[S_NUM] = {
+  "DIRTY DRN", "DIRTY RNS", "DIRTY PRG", "WASH", "CAUS RTN",
+  "RINSE", "RNS PURGE", "SANITIZE", "SANI RTN", "PRESSURE", "LG KEG x"
+};
+// Validation bounds — MUST match KegConfig.cpp (TIMER_MIN_MS/MAX, kegmod 1.0-3.0).
+static const unsigned long S_TMIN = 5000UL, S_TMAX = 1800000UL, S_TSTEP = 5000UL;
+
+// Layout (portrait 272x480).
+static const int S_ROW_Y0 = 52, S_ROW_H = 64;
+static const int S_MINUS_X = 150, S_PLUS_X = 210, S_BTN_W = 54, S_BTN_H = 50;
+static const int S_NAV_Y = 318, S_NAV_W = 76, S_NAV_H = 40, S_NEXT_X = 188;
+static const int S_ACT_Y = 404, S_ACT_W = 120, S_ACT_H = 44, S_CANCEL_X = 144;
+// SETTINGS button on the READY screen.
+static const int S_OPEN_X = 66, S_OPEN_Y = 406, S_OPEN_W = 140, S_OPEN_H = 42;
+
+static void sFmt(int idx, char* buf, size_t n) {
+  if (idx < 10) { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
+  // largeKegMod, formatted without %f (newlib-nano printf may omit float support)
+  int whole = (int)(sWkMod + 0.0001);
+  int frac  = (int)((sWkMod - whole) * 10.0 + 0.5);
+  if (frac >= 10) { whole++; frac = 0; }
+  snprintf(buf, n, "%d.%dx", whole, frac);
+}
+
+static void sDrawValue(int slot, int idx) {
+  int rowY = S_ROW_Y0 + slot * S_ROW_H;
+  char v[12]; sFmt(idx, v, sizeof(v));
+  KDS::fillRect(8, rowY + 32, 144, rowY + 58, S_BLACK);   // clear old value first
+  KDS::text(10, rowY + 34, 2, AMBER, S_BLACK, v);
+}
+
+static void sDrawRow(int slot, int idx) {
+  int rowY = S_ROW_Y0 + slot * S_ROW_H;
+  KDS::text(8, rowY + 6, 2, WHITE, S_BLACK, sLabel[idx]);
+  sDrawValue(slot, idx);
+  KDS::button(S_MINUS_X, rowY + 7, S_BTN_W, S_BTN_H, "-", BLUE);
+  KDS::button(S_PLUS_X,  rowY + 7, S_BTN_W, S_BTN_H, "+", BLUE);
+}
+
+static void sDraw() {
+  KDS::screen("SETTINGS", AMBER);
+  int first = sPage * S_PER_PAGE;
+  for (int slot = 0; slot < S_PER_PAGE; slot++) {
+    int idx = first + slot;
+    if (idx >= S_NUM) break;
+    sDrawRow(slot, idx);
+  }
+  KDS::button(8,        S_NAV_Y, S_NAV_W, S_NAV_H, "PREV", sPage > 0 ? BLUE : S_GREY);
+  KDS::button(S_NEXT_X, S_NAV_Y, S_NAV_W, S_NAV_H, "NEXT", sPage < S_PAGES - 1 ? BLUE : S_GREY);
+  char pg[8]; snprintf(pg, sizeof(pg), "P%d/%d", sPage + 1, S_PAGES);
+  KDS::text(112, S_NAV_Y + 12, 2, WHITE, S_BLACK, pg);
+  KDS::button(8,          S_ACT_Y, S_ACT_W, S_ACT_H, "SAVE",   GREEN);
+  KDS::button(S_CANCEL_X, S_ACT_Y, S_ACT_W, S_ACT_H, "CANCEL", RED);
+  KDS::footer(ipStr());
+  reapplyMqtt();          // re-show live pub/sub dots (footer reset them to red)
+}
+
+static void sAdjust(int idx, int dir) {
+  if (idx < 10) {
+    long v = (long)sWkTimer[idx] + dir * (long)S_TSTEP;
+    if (v < (long)S_TMIN) v = (long)S_TMIN;
+    if (v > (long)S_TMAX) v = (long)S_TMAX;
+    sWkTimer[idx] = (unsigned long)v;
+  } else {
+    double m = sWkMod + dir * 0.1;
+    if (m < 1.0) m = 1.0;
+    if (m > 3.0) m = 3.0;
+    sWkMod = m;
+  }
+}
+
+static void sExitToReady() {
+  idleSub = IDLE_READY;          // state machine no-ops in SETTINGS; repaint READY here
+  display_showReadyScreen();
+}
+
+static void sSave() {
+  for (int i = 0; i < 10; i++) *sTimerPtr[i] = sWkTimer[i];
+  largeKegMod = sWkMod;
+  config_saveToSD();             // persists the full config (incl. these) to WASHER.CFG
+  diagnostics_logEvent("Settings saved");
+  sExitToReady();
+}
+
+static void sCancel() {
+  diagnostics_logEvent("Settings cancelled");
+  sExitToReady();                // working copies discarded (re-copied on next open)
+}
+
+void display_openSettings() {
+  for (int i = 0; i < 10; i++) sWkTimer[i] = *sTimerPtr[i];
+  sWkMod = largeKegMod;
+  sPage  = 0;
+  idleSub = IDLE_SETTINGS;       // state_idle no-ops; this screen owns the panel
+  diagnostics_logEvent("Settings opened");
+  sDraw();
+}
+
 void display_init() {
   KDS::begin();
   KDS::touchEnable();
@@ -69,6 +183,7 @@ void display_showReadyScreen() {
   // Same unified screen, all-OK: green title + the live signal rows + START.
   KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive, true, ipStr());
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  KDS::button(S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H, "SETTINGS", BLUE);
   reapplyMqtt();
 }
 void display_showFinishedScreen() {
@@ -168,6 +283,23 @@ void display_doEvents() {
   int x, y;
   if (!KDS::touch(&x, &y)) return;
 
+  // The settings editor owns every touch while it's open (idleSub == SETTINGS).
+  if (machineState == MACH_IDLE && idleSub == IDLE_SETTINGS) {
+    int first = sPage * S_PER_PAGE;
+    for (int slot = 0; slot < S_PER_PAGE; slot++) {
+      int idx = first + slot;
+      if (idx >= S_NUM) break;
+      int rowY = S_ROW_Y0 + slot * S_ROW_H;
+      if (inRect(x, y, S_MINUS_X, rowY + 7, S_BTN_W, S_BTN_H)) { sAdjust(idx, -1); sDrawValue(slot, idx); return; }
+      if (inRect(x, y, S_PLUS_X,  rowY + 7, S_BTN_W, S_BTN_H)) { sAdjust(idx, +1); sDrawValue(slot, idx); return; }
+    }
+    if (inRect(x, y, 8,         S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage > 0)           { sPage--; sDraw(); } return; }
+    if (inRect(x, y, S_NEXT_X,  S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage < S_PAGES - 1) { sPage++; sDraw(); } return; }
+    if (inRect(x, y, 8,         S_ACT_Y, S_ACT_W, S_ACT_H)) { sSave();   return; }
+    if (inRect(x, y, S_CANCEL_X, S_ACT_Y, S_ACT_W, S_ACT_H)) { sCancel(); return; }
+    return;   // swallow stray touches while editing
+  }
+
   bool startScreen = (machineState == MACH_COMPLETE) ||
                      (machineState == MACH_STOPPED) ||
                      (machineState == MACH_IDLE && idleSub == IDLE_READY);
@@ -177,6 +309,9 @@ void display_doEvents() {
   if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchStart = true;
     KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+  } else if (machineState == MACH_IDLE && idleSub == IDLE_READY &&
+             inRect(x, y, S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H)) {
+    display_openSettings();        // SETTINGS button on the READY screen
   } else if (machineState == MACH_ABORTED &&
              inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchRecover = true;   // RECOVER on the fault screen → stateMachine_reset()

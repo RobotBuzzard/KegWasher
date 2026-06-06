@@ -299,6 +299,11 @@ void button(int x, int y, int w, int h, const char* label, word colour) {
   textPx(tx, ty, 2, C_TXT, colour, label);
 }
 
+// ---- generic primitives for composite screens (settings editor) ----
+void screen(const char* title, word barColour) { chrome(title, barColour); }
+void text(int x, int y, int sz, word fg, word bg, const char* s) { textPx(x, y, sz, fg, bg, s); }
+void fillRect(int x, int y, int x2, int y2, word col) { rect(x, y, x2, y2, col); }
+
 bool touch(int* x, int* y) {
   static bool down = false;
   word st = rawCmdResp(F_touch_Get, TOUCH_STATUS);               // raw framed read

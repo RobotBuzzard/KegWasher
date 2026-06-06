@@ -48,4 +48,9 @@ void footer(const char* ip);                                // redraw footer bar
 void banner(const char* text, word colour, bool visible);   // flashing alert strip under the title
 void button(int x, int y, int w, int h, const char* label, word colour);  // tappable button
 
+// ---- generic primitives (used by the settings editor in KegDisplay) ----
+void screen(const char* title, word barColour);              // title bar + cleared body + footer strip
+void text(int x, int y, int sz, word fg, word bg, const char* s);  // opaque text at pixel (x,y)
+void fillRect(int x, int y, int x2, int y2, word col);       // filled rect (clear/refresh a field)
+
 } // namespace KDS
