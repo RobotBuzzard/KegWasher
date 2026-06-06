@@ -12,29 +12,46 @@
 #define KW_STR2(x) #x
 #define KW_STR(x)  KW_STR2(x)
 
-// Default cycle timer.
-//   Production: 3 min per stage (15 min full cycle).
-//   BENCH_MODE: 5 sec per stage (~30 sec full cycle), so bench demos
-//   can exercise the entire state machine in well under a minute.
-//   The validation bounds [30s, 30min] still apply to SD-loaded values
-//   — the override only affects compiled defaults.
+// Per-stage default durations (ms). The washer is a TWO-HEAD system — one cycle
+// cleans 2 kegs in parallel — so these are per-cycle (both kegs), not per keg.
+// Production defaults total ≈ 4.4 min/cycle; tune per process via WASHER.CFG or
+// the on-screen settings editor. BENCH_MODE compresses every stage to 5 s so a
+// cardless bench cycle runs in ~50 s. (5 s multiples → clean ±5 s editor steps.)
 #ifdef BENCH_MODE
-  #define DEFAULT_STAGE_MS 5000UL
+  #define DEF_DIRTY_DRAIN_MS  5000UL
+  #define DEF_DIRTY_RINSE_MS  5000UL
+  #define DEF_DIRTY_PURGE_MS  5000UL
+  #define DEF_WASH_MS         5000UL
+  #define DEF_CAUSTIC_RTN_MS  5000UL
+  #define DEF_RINSE_MS        5000UL
+  #define DEF_RINSE_PURGE_MS  5000UL
+  #define DEF_SANI_MS         5000UL
+  #define DEF_SANI_RTN_MS     5000UL
+  #define DEF_PRESSURE_MS     5000UL
 #else
-  #define DEFAULT_STAGE_MS 180000UL
+  #define DEF_DIRTY_DRAIN_MS  20000UL   // drain old beer (+5 s air burst)
+  #define DEF_DIRTY_RINSE_MS  20000UL   // pre-rinse
+  #define DEF_DIRTY_PURGE_MS  10000UL   // air blow to drain
+  #define DEF_WASH_MS         90000UL   // caustic recirc — the real clean
+  #define DEF_CAUSTIC_RTN_MS  15000UL   // air-blow caustic back to tank
+  #define DEF_RINSE_MS        25000UL   // post-caustic rinse
+  #define DEF_RINSE_PURGE_MS  10000UL   // air blow to drain
+  #define DEF_SANI_MS         45000UL   // sanitizer recirc
+  #define DEF_SANI_RTN_MS     15000UL   // CO2-blow sani back to tank
+  #define DEF_PRESSURE_MS     15000UL   // CO2 charge / seal
 #endif
 
 // Stage durations, in cycle order. See KegConfig.h for the stage each drives.
-unsigned long dirtyDrainTimer = DEFAULT_STAGE_MS;
-unsigned long dirtyRinseTimer = DEFAULT_STAGE_MS;
-unsigned long dirtyPurgeTimer = DEFAULT_STAGE_MS;
-unsigned long washTimer       = DEFAULT_STAGE_MS;
-unsigned long causticRtnTimer = DEFAULT_STAGE_MS;
-unsigned long rinseTimer      = DEFAULT_STAGE_MS;
-unsigned long rinsePurgeTimer = DEFAULT_STAGE_MS;
-unsigned long saniTimer       = DEFAULT_STAGE_MS;
-unsigned long saniRtnTimer    = DEFAULT_STAGE_MS;
-unsigned long purgeTimer      = DEFAULT_STAGE_MS;
+unsigned long dirtyDrainTimer = DEF_DIRTY_DRAIN_MS;
+unsigned long dirtyRinseTimer = DEF_DIRTY_RINSE_MS;
+unsigned long dirtyPurgeTimer = DEF_DIRTY_PURGE_MS;
+unsigned long washTimer       = DEF_WASH_MS;
+unsigned long causticRtnTimer = DEF_CAUSTIC_RTN_MS;
+unsigned long rinseTimer      = DEF_RINSE_MS;
+unsigned long rinsePurgeTimer = DEF_RINSE_PURGE_MS;
+unsigned long saniTimer       = DEF_SANI_MS;
+unsigned long saniRtnTimer    = DEF_SANI_RTN_MS;
+unsigned long purgeTimer      = DEF_PRESSURE_MS;
 double        largeKegMod     = 1.5;
 unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phase 3)
 
@@ -63,9 +80,10 @@ bool  cfgTouchCalValid = false;
 
 static File settingsFile;
 
-// Accept timer values from 30s to 30min. Anything outside that is
-// almost certainly a config typo (e.g. forgetting the trailing zeros).
-static const unsigned long TIMER_MIN_MS = 30000UL;
+// Accept timer values from 5s to 30min. The 5s floor allows the genuinely short
+// purge/return/charge stages (air blow-down, CO2 charge) while still rejecting
+// obvious typos (e.g. a forgotten trailing zero / a 0-length stage).
+static const unsigned long TIMER_MIN_MS = 5000UL;
 static const unsigned long TIMER_MAX_MS = 1800000UL;
 static const double KEGMOD_MIN = 1.0;
 static const double KEGMOD_MAX = 3.0;
@@ -236,16 +254,16 @@ void config_saveToSD() {
 }
 
 void config_setDefaults() {
-  dirtyDrainTimer = DEFAULT_STAGE_MS;
-  dirtyRinseTimer = DEFAULT_STAGE_MS;
-  dirtyPurgeTimer = DEFAULT_STAGE_MS;
-  washTimer       = DEFAULT_STAGE_MS;
-  causticRtnTimer = DEFAULT_STAGE_MS;
-  rinseTimer      = DEFAULT_STAGE_MS;
-  rinsePurgeTimer = DEFAULT_STAGE_MS;
-  saniTimer       = DEFAULT_STAGE_MS;
-  saniRtnTimer    = DEFAULT_STAGE_MS;
-  purgeTimer      = DEFAULT_STAGE_MS;
+  dirtyDrainTimer = DEF_DIRTY_DRAIN_MS;
+  dirtyRinseTimer = DEF_DIRTY_RINSE_MS;
+  dirtyPurgeTimer = DEF_DIRTY_PURGE_MS;
+  washTimer       = DEF_WASH_MS;
+  causticRtnTimer = DEF_CAUSTIC_RTN_MS;
+  rinseTimer      = DEF_RINSE_MS;
+  rinsePurgeTimer = DEF_RINSE_PURGE_MS;
+  saniTimer       = DEF_SANI_MS;
+  saniRtnTimer    = DEF_SANI_RTN_MS;
+  purgeTimer      = DEF_PRESSURE_MS;
   largeKegMod     = 1.5;
   pauseMaxMs      = PAUSE_MAX_MS;
 

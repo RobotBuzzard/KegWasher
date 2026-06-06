@@ -9,27 +9,29 @@
 # Times are milliseconds (1000 = 1 s). Values shown are the compiled defaults.
 
 # ============================================================
-# CYCLE STAGE TIMERS  (valid range 30000..1800000 ms = 30 s..30 min)
+# CYCLE STAGE TIMERS  (valid range 5000..1800000 ms = 5 s..30 min)
 # In cycle order. Each large-keg run multiplies these by largeKegMod.
+# Two-head system: these are per CYCLE (both kegs in parallel), not per keg.
+# Defaults below total ~4.4 min/cycle.
 # ============================================================
 
 # --- Pre-clean (to drain) ---
-dirtyDrainTimer=180000     # drain old product (+5 s air burst at start)
-dirtyRinseTimer=180000     # initial water rinse of gross residue
-dirtyPurgeTimer=180000     # air-blow the dirty rinse water out
+dirtyDrainTimer=20000      # drain old beer (+5 s air burst at start)
+dirtyRinseTimer=20000      # initial water rinse of gross residue
+dirtyPurgeTimer=10000      # air-blow the dirty rinse water out
 
 # --- Caustic wash ---
-washTimer=180000           # recirculate hot caustic (the main clean)
-causticRtnTimer=180000     # air-blow caustic back to its reservoir (NOT drain)
+washTimer=90000            # recirculate hot caustic (the main clean)
+causticRtnTimer=15000      # air-blow caustic back to its reservoir (NOT drain)
 
 # --- Rinse ---
-rinseTimer=180000          # post-caustic water rinse (to drain)
-rinsePurgeTimer=180000     # air-blow the rinse water out (to drain)
+rinseTimer=25000           # post-caustic water rinse (to drain)
+rinsePurgeTimer=10000      # air-blow the rinse water out (to drain)
 
 # --- Sanitize + seal ---
-saniTimer=180000           # recirculate sanitizer
-saniRtnTimer=180000        # CO2-blow sanitizer back to its reservoir (NOT drain)
-purgeTimer=180000          # CO2 charge / pressurize + seal the keg
+saniTimer=45000            # recirculate sanitizer
+saniRtnTimer=15000         # CO2-blow sanitizer back to its reservoir (NOT drain)
+purgeTimer=15000           # CO2 charge / pressurize + seal the keg
 
 # ============================================================
 # KEG SIZE MODIFIER  (valid range 1.0..3.0)
