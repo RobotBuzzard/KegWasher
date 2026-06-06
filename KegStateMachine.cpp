@@ -200,7 +200,7 @@ static void monitorActiveResources() {
   if (machineState != MACH_EXECUTE) return;
 
 #ifndef BENCH_MODE
-  if (hardware_getEnclosureTemp() >= MAX_ENCLOSURE_TEMP) {
+  if (hardware_getEnclosureTemp() >= maxEnclosureTemp) {
     errorCode = ERR_ENCLOSURE_TEMP;
     display_showError(diagnostics_getErrorMessage(ERR_ENCLOSURE_TEMP));
     stateMachine_abort();
@@ -225,7 +225,7 @@ static void monitorActiveResources() {
   if      (needAir   && !isAirOk)                                       err = ERR_AIR_PRESSURE;
   else if (needWater && !isWaterOk)                                     err = ERR_WATER_PRESSURE;
   else if (needCo2   && !isCo2Ok)                                       err = ERR_CO2_PRESSURE;
-  else if (needCaustic && hardware_getCausticTemp() < MIN_CAUSTIC_TEMP) err = ERR_CAUSTIC_TEMP;
+  else if (needCaustic && hardware_getCausticTemp() < minCausticTemp) err = ERR_CAUSTIC_TEMP;
 
   if (err != ERR_NONE) {
     errorCode = err;
@@ -320,7 +320,7 @@ static bool enterPhase(byte phase) {
       hardware_setDrain(true);
       return true;
     case PHASE_WASHING:
-      if (!requireResource(hardware_getCausticTemp() >= MIN_CAUSTIC_TEMP,
+      if (!requireResource(hardware_getCausticTemp() >= minCausticTemp,
                            ERR_CAUSTIC_TEMP)) return false;
       hardware_setCaustic(true);
       hardware_setPump(true);
@@ -584,7 +584,7 @@ void stateMachine_reset() {
 // ---------- IDLE (ready / not-ready) ----------
 static void showHeatingProgress() {
   int currentTemp = hardware_getCausticTemp();
-  int targetTemp  = OPTIMAL_CAUSTIC_TEMP;
+  int targetTemp  = optimalCausticTemp;
   int pct = constrain(map(currentTemp, heatingStartTemp, targetTemp, 0, 100), 0, 100);
 
   if (!isHeaterActive) {
@@ -667,7 +667,7 @@ static void state_idle() {
 #ifdef BENCH_MODE
         startRecipe();
 #else
-        if (hardware_getCausticTemp() >= OPTIMAL_CAUSTIC_TEMP) {
+        if (hardware_getCausticTemp() >= optimalCausticTemp) {
           startRecipe();
         } else {
           diagnostics_logEvent("Startup: heating");
@@ -690,7 +690,7 @@ static void state_starting() {
   static bool heatingDrawn = false;
   static unsigned long lastHeatDisplayMs = 0;
 
-  if (hardware_getCausticTemp() >= OPTIMAL_CAUSTIC_TEMP) {
+  if (hardware_getCausticTemp() >= optimalCausticTemp) {
     hardware_setCausticHeater(false);
     heatingDrawn = false;
     diagnostics_logEvent("Heating complete");
@@ -843,9 +843,9 @@ static bool faultConditionActive(byte code) {
     case ERR_WATER_PRESSURE:  return !isWaterOk;
     case ERR_AIR_PRESSURE:    return !isAirOk;
     case ERR_CO2_PRESSURE:    return !isCo2Ok;
-    case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  MIN_CAUSTIC_TEMP;
-    case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= MAX_CAUSTIC_TEMP;
-    case ERR_ENCLOSURE_TEMP:  return hardware_getEnclosureTemp() >= MAX_ENCLOSURE_TEMP;
+    case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  minCausticTemp;
+    case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= maxCausticTemp;
+    case ERR_ENCLOSURE_TEMP:  return hardware_getEnclosureTemp() >= maxEnclosureTemp;
     case ERR_CAUSTIC_LEVEL:   return hardware_getCausticLevel() <  MIN_CAUSTIC_LEVEL;
     case ERR_SENSOR_FAULT:    return causticTempSensorError || enclosureTempSensorError;
     default:                  return false;  // transient — no standing condition to clear

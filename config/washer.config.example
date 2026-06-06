@@ -1,37 +1,68 @@
 # Keg Washer Configuration File
-# Copy this file to "washer.config" on your SD card.
-# All time values are in milliseconds (1000ms = 1 second).
-# Lines starting with # are comments and ignored.
-# Unknown keys are silently ignored, so older firmware will
-# tolerate config files written for newer versions.
+# Copy this file to "washer.config" on the SD card.
+# Format: KEY=VALUE, one per line. Lines starting with # are comments.
+# Unknown keys are silently ignored, so older firmware tolerates files written
+# for newer versions. Any value outside its valid range is logged and ignored
+# (the compiled default / prior value is kept), so one typo can't brick a unit.
+# Times are milliseconds (1000 = 1 s). Values shown are the compiled defaults.
 
-# === DIRTY KEG TIMERS (initial drain/rinse before main wash) ===
-# Time to drain old product from the keg (default 3 min)
-dirtyDrainTimer=180000
+# ============================================================
+# CYCLE STAGE TIMERS  (valid range 30000..1800000 ms = 30 s..30 min)
+# In cycle order. Each large-keg run multiplies these by largeKegMod.
+# ============================================================
 
-# Time for initial water rinse to remove gross residue (default 3 min)
-dirtyRinseTimer=180000
+# --- Pre-clean (to drain) ---
+dirtyDrainTimer=180000     # drain old product (+5 s air burst at start)
+dirtyRinseTimer=180000     # initial water rinse of gross residue
+dirtyPurgeTimer=180000     # air-blow the dirty rinse water out
 
-# Time for air purge after dirty rinse (default 3 min)
-dirtyPurgeTimer=180000
+# --- Caustic wash ---
+washTimer=180000           # recirculate hot caustic (the main clean)
+causticRtnTimer=180000     # air-blow caustic back to its reservoir (NOT drain)
 
-# === MAIN CYCLE TIMERS ===
-# Water rinse duration after caustic wash (default 3 min)
-rinseTimer=180000
+# --- Rinse ---
+rinseTimer=180000          # post-caustic water rinse (to drain)
+rinsePurgeTimer=180000     # air-blow the rinse water out (to drain)
 
-# Air/CO2 purge duration (default 3 min)
-purgeTimer=180000
+# --- Sanitize + seal ---
+saniTimer=180000           # recirculate sanitizer
+saniRtnTimer=180000        # CO2-blow sanitizer back to its reservoir (NOT drain)
+purgeTimer=180000          # CO2 charge / pressurize + seal the keg
 
-# Caustic wash duration - most important for cleaning effectiveness
-# (default 3 min)
-washTimer=180000
-
-# Sanitizer cycle duration (default 3 min)
-saniTimer=180000
-
-# === KEG SIZE MODIFIER ===
-# Multiplier applied to all timers when the "large keg" switch is on.
-# 1.5 = 50% longer cycles for 1/2 BBL kegs vs 1/6 BBL kegs.
-# Adjust based on your specific equipment, water flow rates, and
-# how dirty your kegs typically are.
+# ============================================================
+# KEG SIZE MODIFIER  (valid range 1.0..3.0)
+# Multiplier applied to every timer when the "large keg" switch is on.
+# 1.5 = 50% longer cycles for 1/2 BBL vs 1/6 BBL kegs.
+# ============================================================
 largeKegMod=1.5
+
+# ============================================================
+# PAUSE TIMEOUT  (valid range 60000..3600000 ms = 1..60 min)
+# Max time a cycle may sit PAUSED before it alarms and aborts (chem may be
+# sitting in the keg). RESUME any time before this expires.
+# ============================================================
+pauseMaxMs=600000
+
+# ============================================================
+# TEMPERATURE THRESHOLDS (°C, valid range 0..120)
+# ============================================================
+minCausticTemp=50          # WASHING aborts if caustic drops below this
+optimalCausticTemp=60      # heater target during STARTING (warm-up)
+maxCausticTemp=70          # caustic safety cutoff
+maxEnclosureTemp=60        # enclosure overtemp -> abort
+                           #  NOTE: the bench A9 thermistor front-end saturates
+                           #  ~43 °C; set this to ~42 until A9 is re-ranged.
+fanOnTemp=40               # cabinet fan on at/above
+fanOffTemp=35              # cabinet fan off below
+
+# ============================================================
+# MQTT BROKER  (overrides the compiled KegSecrets.h defaults)
+# Lets a shipped binary be configured per-device with no rebuild. All values
+# are capped at 29 characters. Omit this whole block to use the compiled creds.
+# ============================================================
+mqttBrokerIp=192.168.1.111
+mqttBrokerPort=1883
+mqttUser=rrN
+mqttPass=changeme
+mqttClientId=kegwasher-1
+mqttTopicRoot=kegwasher

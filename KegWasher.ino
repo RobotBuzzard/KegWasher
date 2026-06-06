@@ -62,13 +62,13 @@ static unsigned long kwMqttLastPubMs = 0;   // last publish (P indicator)
 static unsigned long kwMqttLastRxMs  = 0;   // last received cmd (S indicator)
 static unsigned long kwMqttIndNextMs = 0;   // footer-indicator refresh throttle
 
-// Build a topic string under MQTT_TOPIC_ROOT into a shared buffer.
+// Build a topic string under the runtime MQTT topic root into a shared buffer.
 // PubSubClient copies its inputs immediately on publish/subscribe so
 // reuse is safe. Defined here (not next to its other callers below)
 // so mqtt_try_connect can subscribe at connect time.
 static char kwTopicBuf[64];
 static const char* kwTopic(const char* leaf) {
-  snprintf(kwTopicBuf, sizeof(kwTopicBuf), "%s/%s", MQTT_TOPIC_ROOT, leaf);
+  snprintf(kwTopicBuf, sizeof(kwTopicBuf), "%s/%s", mqttTopicRoot, leaf);
   return kwTopicBuf;
 }
 
@@ -85,7 +85,7 @@ static bool mqtt_try_connect() {
   // to the online topic (retained, so any new subscriber sees the
   // last-known liveness).
   bool ok = kwMqtt.connect(
-      MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS,
+      mqttClientId, mqttUser, mqttPass,
       kwTopicOnline,  // will topic
       0,              // will QoS
       true,           // will retain
@@ -630,22 +630,22 @@ static void setupEthernet() {
 
     // Bring up the MQTT log mirror. From here on, every
     // diagnostics_logEvent call also publishes to the broker.
-    snprintf(kwTopicLog,    sizeof(kwTopicLog),    "%s/log",    MQTT_TOPIC_ROOT);
-    snprintf(kwTopicOnline, sizeof(kwTopicOnline), "%s/online", MQTT_TOPIC_ROOT);
-    snprintf(kwTopicIp,     sizeof(kwTopicIp),     "%s/ip",     MQTT_TOPIC_ROOT);
+    snprintf(kwTopicLog,    sizeof(kwTopicLog),    "%s/log",    mqttTopicRoot);
+    snprintf(kwTopicOnline, sizeof(kwTopicOnline), "%s/online", mqttTopicRoot);
+    snprintf(kwTopicIp,     sizeof(kwTopicIp),     "%s/ip",     mqttTopicRoot);
 
-    IPAddress brokerIP(MQTT_BROKER_IP_0, MQTT_BROKER_IP_1,
-                       MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);
-    kwMqtt.setServer(brokerIP, MQTT_BROKER_PORT);
+    // Broker IP comes from the runtime config as a dotted-quad string.
+    int bo0 = 0, bo1 = 0, bo2 = 0, bo3 = 0;
+    sscanf(mqttBrokerIp, "%d.%d.%d.%d", &bo0, &bo1, &bo2, &bo3);
+    IPAddress brokerIP(bo0, bo1, bo2, bo3);
+    kwMqtt.setServer(brokerIP, mqttBrokerPort);
     kwMqtt.setCallback(mqtt_callback);
     // setBufferSize default is 256 bytes — fine for short log lines
     // and for the empty/single-byte command payloads we expect.
 
     if (mqtt_try_connect()) {
-      snprintf(buf, sizeof(buf),
-               "MQTT: %u.%u.%u.%u:%u as %s",
-               MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2,
-               MQTT_BROKER_IP_3, (unsigned)MQTT_BROKER_PORT, MQTT_USER);
+      snprintf(buf, sizeof(buf), "MQTT: %s:%u as %s",
+               mqttBrokerIp, (unsigned)mqttBrokerPort, mqttUser);
       diagnostics_logEvent(buf);
     } else {
       diagnostics_logEvent("MQTT: initial connect failed — will retry in loop");

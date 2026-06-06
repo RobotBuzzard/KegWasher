@@ -248,7 +248,7 @@ void hardware_setCausticHeater(bool state) {
       diagnostics_logEvent("Heater blocked: low caustic level");
       return;
     }
-    if (hardware_getCausticTemp() >= MAX_CAUSTIC_TEMP) {
+    if (hardware_getCausticTemp() >= maxCausticTemp) {
       digitalWrite(causticHeaterOut, LOW);
       isHeaterActive = false;
       errorCode = ERR_HEATER_OVERTEMP;
@@ -281,7 +281,7 @@ bool hardware_monitorHeating() {
   int currentTemp = hardware_getCausticTemp();
   unsigned long now = millis();
 
-  if (currentTemp >= MAX_CAUSTIC_TEMP) {
+  if (currentTemp >= maxCausticTemp) {
     hardware_setCausticHeater(false);
     errorCode = ERR_HEATER_OVERTEMP;
     diagnostics_logEvent("Heater overtemp shutdown");
@@ -297,7 +297,7 @@ bool hardware_monitorHeating() {
 
   if (now - heatingLastCheckTime > 60000UL) {
     int delta = currentTemp - heatingLastTemp;
-    if (delta < MIN_HEATING_RATE && currentTemp < (OPTIMAL_CAUSTIC_TEMP - 5)) {
+    if (delta < MIN_HEATING_RATE && currentTemp < (optimalCausticTemp - 5)) {
       char buf[48];
       snprintf(buf, sizeof(buf), "Slow heating: %dC/min", delta);
       diagnostics_logEvent(buf);
@@ -345,7 +345,7 @@ void hardware_manageFan() {
 
   // Force fan on near the enclosure cutoff regardless of hysteresis or
   // rate limit — this is the safety override.
-  if (t >= MAX_ENCLOSURE_TEMP - 5) {
+  if (t >= maxEnclosureTemp - 5) {
     if (!fanOn) {
       hardware_setCabinFan(255);
       fanOn = true;
@@ -357,11 +357,11 @@ void hardware_manageFan() {
   // Normal hysteresis, rate-limited.
   if (millis() - lastChangeMs < FAN_MIN_CHANGE_MS) return;
 
-  if (t > FAN_ON_TEMP && !fanOn) {
+  if (t > fanOnTemp && !fanOn) {
     hardware_setCabinFan(255);
     fanOn = true;
     lastChangeMs = millis();
-  } else if (t < FAN_OFF_TEMP && fanOn) {
+  } else if (t < fanOffTemp && fanOn) {
     hardware_setCabinFan(0);
     fanOn = false;
     lastChangeMs = millis();
@@ -403,12 +403,12 @@ static int thermistorTempC(int adcVal) {
 }
 
 int hardware_getCausticTemp() {
-  if (causticTempSensorError) return MIN_CAUSTIC_TEMP - 10;
+  if (causticTempSensorError) return minCausticTemp - 10;
   return thermistorTempC(causticTempValue);
 }
 
 int hardware_getEnclosureTemp() {
-  if (enclosureTempSensorError) return MAX_ENCLOSURE_TEMP + 10;
+  if (enclosureTempSensorError) return maxEnclosureTemp + 10;
   return thermistorTempC(enclosureTempValue);
 }
 

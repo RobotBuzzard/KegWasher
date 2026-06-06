@@ -131,13 +131,15 @@
 #define adcResolution          12
 #define ADC_MAX                4095
 
-// ---------- Temperature thresholds (°C) ----------
-#define MIN_CAUSTIC_TEMP       50      // below this in WASHING → ERROR
-#define OPTIMAL_CAUSTIC_TEMP   60      // heater target during STARTUP
-#define MAX_CAUSTIC_TEMP       70      // safety cutoff
-#define MAX_ENCLOSURE_TEMP     60
-#define FAN_ON_TEMP            40
-#define FAN_OFF_TEMP           35
+// ---------- Temperature thresholds (°C) — compiled defaults ----------
+// These seed the runtime globals below (minCausticTemp, …), which are
+// SD-config-overridable so a unit can be re-tuned without a recompile.
+#define DEFAULT_MIN_CAUSTIC_TEMP       50   // below this in WASHING → fault
+#define DEFAULT_OPTIMAL_CAUSTIC_TEMP   60   // heater target during STARTING
+#define DEFAULT_MAX_CAUSTIC_TEMP       70   // caustic safety cutoff
+#define DEFAULT_MAX_ENCLOSURE_TEMP     60   // enclosure overtemp → fault
+#define DEFAULT_FAN_ON_TEMP            40   // cabinet fan on at/above
+#define DEFAULT_FAN_OFF_TEMP           35   // cabinet fan off below
 
 // ---------- Heater limits ----------
 #define MIN_HEATING_RATE       3       // °C/min minimum during heating
@@ -188,6 +190,27 @@ extern double largeKegMod;
 extern unsigned long pauseMaxMs;
 extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f)
 extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F
+
+// ---------- Runtime temperature thresholds (°C) ----------
+// Seeded from the DEFAULT_*_TEMP defines above; overridable from SD washer.config.
+// Consumers (KegHardware, KegStateMachine) read these, not the DEFAULT_* macros.
+extern int minCausticTemp;       // WASHING abort floor
+extern int optimalCausticTemp;   // STARTING heater target
+extern int maxCausticTemp;       // caustic safety cutoff
+extern int maxEnclosureTemp;     // enclosure overtemp abort
+extern int fanOnTemp;            // cabinet fan on
+extern int fanOffTemp;           // cabinet fan off
+
+// ---------- Runtime MQTT broker config ----------
+// Seeded from KegSecrets.h compiled defaults; overridable per-device from SD so a
+// shipped binary needs no baked-in broker/creds. Strings are capped at
+// VALUE_MAX_LENGTH-1 chars by the config-line parser.
+extern char mqttBrokerIp[16];    // dotted-quad string, e.g. "192.168.1.111"
+extern int  mqttBrokerPort;
+extern char mqttUser[32];
+extern char mqttPass[32];
+extern char mqttClientId[32];
+extern char mqttTopicRoot[32];
 
 // ---------- API ----------
 // NOTE: config_init() must be called AFTER display_init() so failure

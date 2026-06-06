@@ -5,6 +5,12 @@
 #include "KegUtils.h"
 #include "KegDisplay.h"
 #include "KegDiagnostics.h"
+#include "KegSecrets.h"   // compiled MQTT broker/cred defaults (seed the runtime globals)
+
+// Stringize the 4 broker-IP octet macros into a "a.b.c.d" literal for the
+// compile-time default of mqttBrokerIp (static init can't run snprintf).
+#define KW_STR2(x) #x
+#define KW_STR(x)  KW_STR2(x)
 
 // Default cycle timer.
 //   Production: 3 min per stage (15 min full cycle).
@@ -32,6 +38,23 @@ unsigned long purgeTimer      = DEFAULT_STAGE_MS;
 double        largeKegMod     = 1.5;
 unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phase 3)
 
+// Temperature thresholds (°C) — seeded from DEFAULT_*; SD-overridable.
+int minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
+int optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
+int maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
+int maxEnclosureTemp   = DEFAULT_MAX_ENCLOSURE_TEMP;
+int fanOnTemp          = DEFAULT_FAN_ON_TEMP;
+int fanOffTemp         = DEFAULT_FAN_OFF_TEMP;
+
+// MQTT broker config — seeded from KegSecrets.h; SD-overridable per device.
+char mqttBrokerIp[16]  = KW_STR(MQTT_BROKER_IP_0) "." KW_STR(MQTT_BROKER_IP_1) "."
+                         KW_STR(MQTT_BROKER_IP_2) "." KW_STR(MQTT_BROKER_IP_3);
+int  mqttBrokerPort    = MQTT_BROKER_PORT;
+char mqttUser[32]      = MQTT_USER;
+char mqttPass[32]      = MQTT_PASS;
+char mqttClientId[32]  = MQTT_CLIENT_ID;
+char mqttTopicRoot[32] = MQTT_TOPIC_ROOT;
+
 // Touch calibration (host-side affine: screen=[a b c; d e f].[rawx rawy 1]).
 // KegDisplaySerial has its own baked defaults; these only override when the SD
 // config supplies touchCalA..F (which sets cfgTouchCalValid → display_init applies).
@@ -46,15 +69,33 @@ static const unsigned long TIMER_MIN_MS = 30000UL;
 static const unsigned long TIMER_MAX_MS = 1800000UL;
 static const double KEGMOD_MIN = 1.0;
 static const double KEGMOD_MAX = 3.0;
+static const int  TEMP_MIN_C   = 0;        // plausible threshold range (°C)
+static const int  TEMP_MAX_C   = 120;
+static const unsigned long PAUSE_MIN_MS   = 60000UL;       // 1 min
+static const unsigned long PAUSE_LIMIT_MS = 3600000UL;     // 60 min
+
+static void logOutOfRange(const char* key, const char* value) {
+  diagnostics_logEvent((String("Config out of range: ") + key + "=" + value).c_str());
+}
 
 static bool applyTimerKey(const char* key, const char* value, unsigned long& target) {
   unsigned long v = strtoul(value, nullptr, 10);
-  if (v < TIMER_MIN_MS || v > TIMER_MAX_MS) {
-    diagnostics_logEvent((String("Config out of range: ") + key + "=" + value).c_str());
-    return false;
-  }
+  if (v < TIMER_MIN_MS || v > TIMER_MAX_MS) { logOutOfRange(key, value); return false; }
   target = v;
   return true;
+}
+
+// Bounded integer (temperature thresholds).
+static bool applyTempKey(const char* key, const char* value, int& target) {
+  int v = atoi(value);
+  if (v < TEMP_MIN_C || v > TEMP_MAX_C) { logOutOfRange(key, value); return false; }
+  target = v;
+  return true;
+}
+
+// Free-form string value → fixed buffer (snprintf null-terminates + truncates).
+static void applyStrKey(const char* value, char* target, size_t cap) {
+  snprintf(target, cap, "%s", value);
 }
 
 void config_init() {
@@ -111,11 +152,34 @@ bool config_loadFromSD() {
     else if (strcmp(key, "largeKegMod")     == 0) {
       double v = atof(value);
       if (v < KEGMOD_MIN || v > KEGMOD_MAX) {
-        diagnostics_logEvent((String("Config out of range: largeKegMod=") + value).c_str());
+        logOutOfRange(key, value);
       } else {
         largeKegMod = v;
       }
     }
+    else if (strcmp(key, "pauseMaxMs")      == 0) {
+      unsigned long v = strtoul(value, nullptr, 10);
+      if (v < PAUSE_MIN_MS || v > PAUSE_LIMIT_MS) logOutOfRange(key, value);
+      else pauseMaxMs = v;
+    }
+    // Temperature thresholds (°C)
+    else if (strcmp(key, "minCausticTemp")     == 0) applyTempKey(key, value, minCausticTemp);
+    else if (strcmp(key, "optimalCausticTemp") == 0) applyTempKey(key, value, optimalCausticTemp);
+    else if (strcmp(key, "maxCausticTemp")     == 0) applyTempKey(key, value, maxCausticTemp);
+    else if (strcmp(key, "maxEnclosureTemp")   == 0) applyTempKey(key, value, maxEnclosureTemp);
+    else if (strcmp(key, "fanOnTemp")          == 0) applyTempKey(key, value, fanOnTemp);
+    else if (strcmp(key, "fanOffTemp")         == 0) applyTempKey(key, value, fanOffTemp);
+    // MQTT broker config (override the KegSecrets.h compiled defaults)
+    else if (strcmp(key, "mqttBrokerIp")    == 0) applyStrKey(value, mqttBrokerIp,  sizeof(mqttBrokerIp));
+    else if (strcmp(key, "mqttBrokerPort")  == 0) {
+      long p = strtol(value, nullptr, 10);
+      if (p < 1 || p > 65535) logOutOfRange(key, value);
+      else mqttBrokerPort = (int)p;
+    }
+    else if (strcmp(key, "mqttUser")        == 0) applyStrKey(value, mqttUser,      sizeof(mqttUser));
+    else if (strcmp(key, "mqttPass")        == 0) applyStrKey(value, mqttPass,      sizeof(mqttPass));
+    else if (strcmp(key, "mqttClientId")    == 0) applyStrKey(value, mqttClientId,  sizeof(mqttClientId));
+    else if (strcmp(key, "mqttTopicRoot")   == 0) applyStrKey(value, mqttTopicRoot, sizeof(mqttTopicRoot));
     else if (strncmp(key, "touchCal", 8) == 0 && key[8] >= 'A' && key[8] <= 'F' && key[9] == '\0') {
       cfgTouchCal[key[8] - 'A'] = atof(value);   // touchCalA..F -> affine coeffs
       cfgTouchCalValid = true;
@@ -148,6 +212,25 @@ void config_saveToSD() {
   settingsFile.print("saniRtnTimer=");    settingsFile.println(saniRtnTimer);
   settingsFile.print("purgeTimer=");      settingsFile.println(purgeTimer);
   settingsFile.print("largeKegMod=");     settingsFile.println(largeKegMod);
+  settingsFile.print("pauseMaxMs=");      settingsFile.println(pauseMaxMs);
+
+  // Temperature thresholds
+  settingsFile.print("minCausticTemp=");     settingsFile.println(minCausticTemp);
+  settingsFile.print("optimalCausticTemp="); settingsFile.println(optimalCausticTemp);
+  settingsFile.print("maxCausticTemp=");     settingsFile.println(maxCausticTemp);
+  settingsFile.print("maxEnclosureTemp=");   settingsFile.println(maxEnclosureTemp);
+  settingsFile.print("fanOnTemp=");          settingsFile.println(fanOnTemp);
+  settingsFile.print("fanOffTemp=");         settingsFile.println(fanOffTemp);
+
+  // MQTT broker config. Rewriting the whole file from the live globals means an
+  // on-device save (e.g. the Phase-5 settings editor) preserves this block
+  // instead of dropping it. Creds are stored on the device's own card.
+  settingsFile.print("mqttBrokerIp=");    settingsFile.println(mqttBrokerIp);
+  settingsFile.print("mqttBrokerPort=");  settingsFile.println(mqttBrokerPort);
+  settingsFile.print("mqttUser=");        settingsFile.println(mqttUser);
+  settingsFile.print("mqttPass=");        settingsFile.println(mqttPass);
+  settingsFile.print("mqttClientId=");    settingsFile.println(mqttClientId);
+  settingsFile.print("mqttTopicRoot=");   settingsFile.println(mqttTopicRoot);
 
   settingsFile.close();
 }
@@ -164,4 +247,20 @@ void config_setDefaults() {
   saniRtnTimer    = DEFAULT_STAGE_MS;
   purgeTimer      = DEFAULT_STAGE_MS;
   largeKegMod     = 1.5;
+  pauseMaxMs      = PAUSE_MAX_MS;
+
+  minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
+  optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
+  maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
+  maxEnclosureTemp   = DEFAULT_MAX_ENCLOSURE_TEMP;
+  fanOnTemp          = DEFAULT_FAN_ON_TEMP;
+  fanOffTemp         = DEFAULT_FAN_OFF_TEMP;
+
+  snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
+           MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);
+  mqttBrokerPort = MQTT_BROKER_PORT;
+  snprintf(mqttUser,      sizeof(mqttUser),      "%s", MQTT_USER);
+  snprintf(mqttPass,      sizeof(mqttPass),      "%s", MQTT_PASS);
+  snprintf(mqttClientId,  sizeof(mqttClientId),  "%s", MQTT_CLIENT_ID);
+  snprintf(mqttTopicRoot, sizeof(mqttTopicRoot), "%s", MQTT_TOPIC_ROOT);
 }
