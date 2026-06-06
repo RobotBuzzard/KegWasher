@@ -22,7 +22,7 @@ Manually washing kegs is tedious, inconsistent, and wastes water and chemicals. 
 
 - **Controller**: Teknic ClearCore + CCIO-8 expansion module
 - **Display**: 4D Systems gen4-uLCD-43DT (Diablo16, 480×272, used portrait 272×480) on COM1 — raw SPE serial, no ViSi-Genie
-- **Storage**: SD card in ClearCore slot for `washer.config`
+- **Storage**: SD card in ClearCore slot for `WASHER.CFG` (8.3 filename required)
 - **Heater**: 240V 5500W immersion heater, ~3 gal caustic reservoir (≈8 min from room temp to 60°C)
 
 ### Utility Requirements
@@ -56,12 +56,12 @@ ERROR is reachable from any state; clear and acknowledge with the START button t
 2. Install the ClearCore board package — add `https://www.teknic.com/files/downloads/package_clearcore_index.json` to Boards Manager URLs, then install `ClearCore:sam`
 3. Install the 4D Systems `Diablo16 Serial Arduino Library` from the Library Manager
 4. Compile and upload to the ClearCore (FQBN: `ClearCore:sam:clearcore`)
-4. Copy `config/washer.config.example` → `washer.config` on an SD card, edit timers as needed, insert into ClearCore
+4. Copy `config/washer.cfg.example` → `WASHER.CFG` (uppercase 8.3 name — required by the SD library) on an SD card, edit timers as needed, insert into ClearCore
 5. Power up. The system heats caustic on first boot — wait for "Press START to begin"
 
 ## Configuration
 
-All cycle timing lives in `washer.config` on the SD card. Default cycle is 3 minutes per stage; large kegs get 1.5× by default. See `config/washer.config.example` for all keys and explanations.
+All cycle timing lives in `WASHER.CFG` on the SD card. Default cycle is 3 minutes per stage; large kegs get 1.5× by default. See `config/washer.cfg.example` for all keys and explanations.
 
 If the SD card or config file is missing/corrupt, the firmware falls back to compiled defaults and shows "Using default settings" briefly on the display.
 

@@ -80,7 +80,12 @@
 // published / subscribed are all under MQTT_TOPIC_ROOT.
 
 // ---------- SD config file ----------
-#define settingsFileName       "washer.config"
+// MUST be a strict 8.3 filename (<=8 base, <=3 ext, UPPERCASE). The classic
+// Arduino SD library (utility/SdFile.cpp make83Name) has NO long-filename
+// support — it rejects any name whose extension exceeds 3 chars, so SD.open()
+// silently fails. The old "washer.config" (6-char ext) could never be opened;
+// that was the long-standing "Config file missing -> using defaults" bug.
+#define settingsFileName       "WASHER.CFG"
 #define KEY_MAX_LENGTH         30
 #define VALUE_MAX_LENGTH       30
 
@@ -192,7 +197,7 @@ extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f
 extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F
 
 // ---------- Runtime temperature thresholds (°C) ----------
-// Seeded from the DEFAULT_*_TEMP defines above; overridable from SD washer.config.
+// Seeded from the DEFAULT_*_TEMP defines above; overridable from SD WASHER.CFG.
 // Consumers (KegHardware, KegStateMachine) read these, not the DEFAULT_* macros.
 extern int minCausticTemp;       // WASHING abort floor
 extern int optimalCausticTemp;   // STARTING heater target

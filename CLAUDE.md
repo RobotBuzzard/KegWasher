@@ -96,7 +96,7 @@ The display is a **gen4-uLCD-43DT (Diablo16)** driven by **raw SPE serial graphi
 
 - Inputs: `airOk`, `co2Ok`, `waterOk` are software-debounced. `ESTOP` is **not** debounced (NC wiring, fastest response wins). The ESTOP ISR is bare-metal — no Serial, no CCIO writes, no display calls; it sets `estopFlag` + kills outputs and that's it. Main loop drains the flag via `hardware_consumeEstopFlag()`.
 - CCIO-8 expansion module is on COM0; the display is on COM1. USB Serial is diagnostics only.
-- SD card holds `washer.config` (timer overrides). Schema is the `KEY=VALUE` format under `config/washer.config.example`. If the SD is missing/corrupt, compiled defaults from `KegConfig.cpp` are used and a banner is shown.
+- SD card holds `WASHER.CFG` (timer/threshold/MQTT overrides). **Filename must be 8.3/UPPERCASE** — the classic Arduino SD library has no long-filename support, so a name like `washer.config` silently fails to open (this was a real bug). Schema is the `KEY=VALUE` format under `config/washer.cfg.example`. If the SD is missing/corrupt, compiled defaults from `KegConfig.cpp` are used and a banner is shown.
 - Watchdog: armed in `setup()` after `setupEthernet()` because DHCP can legitimately take longer than the 8 s WDT timeout. `diagnostics_runTest()` disables WDT around its ~10 s of output exercises and re-enables on exit.
 
 ### Reference docs (in `docs/`)

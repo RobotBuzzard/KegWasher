@@ -1,5 +1,7 @@
 # Keg Washer Configuration File
-# Copy this file to "washer.config" on the SD card.
+# Copy this file to "WASHER.CFG" on the SD card root.
+# (The filename MUST be 8.3 / UPPERCASE — the ClearCore SD library can't open
+#  long names like "washer.config" and silently falls back to defaults.)
 # Format: KEY=VALUE, one per line. Lines starting with # are comments.
 # Unknown keys are silently ignored, so older firmware tolerates files written
 # for newer versions. Any value outside its valid range is logged and ignored
