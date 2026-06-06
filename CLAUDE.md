@@ -43,7 +43,7 @@ Single Arduino sketch, all sources at the project root (Arduino requires `.ino` 
 KegWasher.ino       setup() + loop() — Ethernet/MQTT lives here, NOT in a module
 KegConfig.{h,cpp}   Pin map, state IDs, error codes, thresholds, SD config loader
 KegHardware.{h,cpp} Debounced inputs, filtered analog reads, output drivers, heater FSM
-KegStateMachine.*   The 8-state cycle FSM (STARTUP → DRAINING → ... → FINISHED, + ERROR)
+KegStateMachine.*   Two-axis FSM — PackML machineState (IDLE→STARTING→EXECUTE→…→COMPLETE/STOPPED/ABORTED) × ISA-88 recipePhase (the 10 wash phases, run inside EXECUTE)
 KegDisplay.{h,cpp}  gen4-uLCD-43DT (Diablo16) wrapper — raw SPE serial via KegDisplaySerial (KDS::*), NOT genie
 KegDisplaySerial.{h,cpp} Firmware-independent serial draw module (screens, partial updates, touch+cal, footer)
 KegTimers.*         State-elapsed timing + keg-size duration scaling (`largeKegMod`)
@@ -58,16 +58,21 @@ Order in `loop()` is load-bearing — don't reshuffle without understanding why:
 
 1. `timers_update()`, `display_doEvents()` (touch pump), `hardware_readInputs()` — read state.
 2. `mqtt_applyCmdFlags()` — **must** run after `hardware_readInputs()` (which overwrites button flags) and before state processing. MQTT commands set `isCycleStartPressed` / `isManualDrainPressed` as one-tick pulses so they flow through the existing button paths.
-3. `hardware_consumeEstopFlag()` → log + transition to ERROR. ISR has already killed outputs; this is the non-ISR-safe follow-up.
+3. `hardware_consumeEstopFlag()` → log + abort to `MACH_ABORTED` (`ERR_ESTOP`). ISR has already killed outputs; this is the non-ISR-safe follow-up.
 4. `stateMachine_process()`.
-5. Display: operating-state screens draw once on entry, then partial updates at 1 Hz (timer) / 5 Hz (status). STARTUP/FINISHED/ERROR manage their own form transitions from within state handlers.
+5. Display: the operating screen (EXECUTE/HELD) draws once on entry and on `recipePhase` change, then partial updates at 1 Hz (timer) / 5 Hz (status). IDLE/COMPLETE/ABORTED/STOPPING/STOPPED manage their own screen transitions from within their state handlers.
 6. `Ethernet.maintain()`, `mqtt_loop()`, `mqtt_publishStatus()`, `mqtt_publishHeartbeat()`.
 7. `Watchdog.kick()` — **last**, so any hang above triggers an 8 s reset.
 8. `delay(10)` paces the loop for debounce stability.
 
 ### State machine
 
-States are numeric `#define`s in `KegConfig.h` (not an enum, for backward-compat with persisted values). `currentState` is `volatile byte` because the ESTOP path touches it. The "operating" states are the contiguous range `STATE_DRAINING..STATE_PRESSURE` — checked by range in `loop()` to decide whether to draw the operating screen. `STATE_STARTUP` has its own sub-states (`STARTUP_INIT`/`HEATING`/`IO_CHECK`/`READY`/`NOT_READY`) exposed via `startupSubState`. Keg size is **latched** on cycle-start press (`kegSizeLatched`); flipping the selector mid-cycle does not affect timers, but `isLargeKeg` still reflects the live pin state for display/MQTT.
+The FSM has **two orthogonal axes** (canonical model: `docs/state-taxonomy.md`; as-built I/O + transitions: `docs/state-table.md`). All IDs are numeric `#define`s in `KegConfig.h`:
+
+- **`machineState`** — PackML control state (`MACH_IDLE`/`STARTING`/`EXECUTE`/`HELD`/`COMPLETE`/`STOPPING`/`STOPPED`/`CLEARING`/`ABORTED`). `volatile byte` because the ESTOP path touches it. `loop()` draws the operating screen while `EXECUTE`/`HELD`.
+- **`recipePhase`** — ISA-88 wash phase (`PHASE_DIRTY_DRAIN`..`PHASE_PRESSURE`, 10 phases). Valid **only** while `machineState == MACH_EXECUTE`; forced to `PHASE_NONE` otherwise. Advancing the phase is *not* a machine-state change — `machineState` stays `EXECUTE` across the whole recipe.
+
+`MACH_IDLE` has sub-states (`IDLE_INIT`/`NOT_READY`/`READY`/`SETTINGS`) exposed via `idleSub`. PAUSE/RESUME is the `MACH_HELD` state (PackML Hold/Unhold). Per-phase duration comes from `stageTimerFor(phase)` — the single source shared by the phase handlers, the display countdown, and the MQTT remaining-time publish. Abort (`stateMachine_abort()`) is reachable from any state → `MACH_ABORTED`; recovery (`abortRecover()`) lands at `HELD` (cycle preserved) or `IDLE→READY`, gated on the fault condition having cleared. Keg size is **latched** on cycle-start press (`kegSizeLatched`); flipping the selector mid-cycle does not affect timers, but `isLargeKeg` still reflects the live pin state for display/MQTT.
 
 ### MQTT layer
 
