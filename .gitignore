@@ -37,9 +37,14 @@ docs/*.txt
 docs/*.html
 docs/--help
 
-# Workshop4 build artifacts intermediate folder (the compiled GCI/DAT/TXF/4XE
-# at the project root are the canonical outputs that get committed).
+# Workshop4 / ViSi-Genie build artifacts. OBSOLETE: the display now uses the raw
+# SPE serial path (KegDisplaySerial), so the genie compiled outputs (4XE program +
+# GCI/DAT/TXF image/data/font resources) are dead and no longer committed.
 KegWasher.4DWork/
+*.4XE
+KEGW~UCD.gci
+KEGW~UCD.dat
+KEGW~UCD.txf
 
 # Captured serial protocol traces — large one-shot artifacts, regenerate as needed.
 tools/*.strace
