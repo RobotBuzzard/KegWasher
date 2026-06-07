@@ -62,6 +62,13 @@ static bool debounceRead(DigitalIdx idx) {
   return db_stable[idx];
 }
 
+// NOTE: the IO1 START-button "ready lamp" (time-multiplexed LED on the same pin)
+// was reverted — the active-low read auto-asserted START because IO1 reads LOW
+// when *not* pressed (the indicator LED does NOT pull the node high as the wiring
+// suggested). Needs bench measurement of IO1-S (pressed vs released, as a plain
+// input, with/without a pull-up) before re-attempting. cycleStart is back to the
+// original active-high debounced read.
+
 // ---------- Analog filtering ----------
 // Reject the extreme ends of the ADC range — those almost always mean
 // open- or short-circuit on the sensor wiring rather than a real reading.
@@ -136,11 +143,11 @@ void hardware_init() {
   pinMode(ESTOP, INPUT);
   pinMode(waterOk, INPUT);
   pinMode(largeKeg, INPUT);
-  pinMode(cycleStart, INPUT);
+  pinMode(cycleStart, INPUT);   // NO momentary switch S<->G; IO0-5 inputs are negative-true
   pinMode(manualDrain, INPUT);
 
   pinMode(co2Out, OUTPUT);
-  pinMode(cabinFanPWM, OUTPUT);
+  pinMode(readyLedOut, OUTPUT);   // GREEN cycle-start indicator (was the fan on IO5)
   pinMode(alarmOut, OUTPUT);
   pinMode(drainOut, OUTPUT);
   pinMode(waterOut, OUTPUT);
@@ -149,6 +156,7 @@ void hardware_init() {
   pinMode(pumpOut, OUTPUT);
   pinMode(sanitizerOut, OUTPUT);
   pinMode(causticHeaterOut, OUTPUT);
+  pinMode(cabinFanOut, OUTPUT);   // enclosure fan on CCIO-A7 (ON/OFF)
 
   hardware_allStop();
   hardware_setAlarm(false);   // boot is not a fault: allStop lights IO4, clear it
@@ -175,6 +183,10 @@ void hardware_readInputs() {
   isCo2Ok              = debounceRead(DI_CO2_OK);
   isWaterOk            = debounceRead(DI_WATER_OK);
   isLargeKeg           = debounceRead(DI_LARGE_KEG);
+  // IO1 is a plain NO switch S<->G. ClearCore digital inputs are negative-true:
+  // digitalRead() returns HIGH when the pin is at GND (pressed), LOW when open
+  // (released). So the press reads HIGH -> ACTIVE-HIGH. (Verified vs the manual +
+  // libClearCore DigitalIn::UpdateFilterState; see clearcore_io_input_behavior memo.)
   isCycleStartPressed  = debounceRead(DI_CYCLE_START);
   isManualDrainPressed = debounceRead(DI_MANUAL_DRAIN);
 
@@ -217,7 +229,8 @@ bool hardware_allSystemsGo() {
 void hardware_allStop() {
   digitalWrite(co2Out, LOW);
   digitalWrite(alarmOut, HIGH);
-  analogWrite(cabinFanPWM, 0);
+  digitalWrite(readyLedOut, LOW);     // green off on all-stop (fault/estop)
+  digitalWrite(cabinFanOut, LOW);     // CCIO-A7 fan, ON/OFF
   digitalWrite(drainOut, LOW);
   digitalWrite(waterOut, LOW);
   digitalWrite(airOut, LOW);
@@ -237,7 +250,10 @@ void hardware_setAir(bool state)       { digitalWrite(airOut, state ? HIGH : LOW
 void hardware_setCaustic(bool state)   { digitalWrite(causticOut, state ? HIGH : LOW); }
 void hardware_setPump(bool state)      { digitalWrite(pumpOut, state ? HIGH : LOW); }
 void hardware_setSanitizer(bool state) { digitalWrite(sanitizerOut, state ? HIGH : LOW); }
-void hardware_setCabinFan(int pwm)     { analogWrite(cabinFanPWM, pwm); }
+// Fan is now on a CCIO-8 point (digital, no PWM) — treat any non-zero as ON.
+void hardware_setCabinFan(int pwm)     { digitalWrite(cabinFanOut, pwm > 0 ? HIGH : LOW); }
+// GREEN cycle-start / ready indicator on IO5 — a dedicated output (no time-mux).
+void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : LOW); }
 
 // ---------- Heater (interlocked) ----------
 void hardware_setCausticHeater(bool state) {

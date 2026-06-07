@@ -77,6 +77,7 @@ char mqttTopicRoot[32] = MQTT_TOPIC_ROOT;
 // config supplies touchCalA..F (which sets cfgTouchCalValid → display_init applies).
 float cfgTouchCal[6]  = {1, 0, 0, 0, 1, 0};
 bool  cfgTouchCalValid = false;
+bool  cfgLoadedFromSD  = false;   // set by config_init(); drives the boot-screen SD line
 
 static File settingsFile;
 
@@ -119,10 +120,12 @@ static void applyStrKey(const char* value, char* target, size_t cap) {
 void config_init() {
   analogReadResolution(adcResolution);
 
-  if (!config_loadFromSD()) {
+  if (config_loadFromSD()) {
+    cfgLoadedFromSD = true;
+  } else {
+    cfgLoadedFromSD = false;
     config_setDefaults();
-    display_showError("Using default settings");
-    delay(1500);
+    // The boot summary screen reports "SD CONFIG: DEFAULT"; no separate banner.
   }
 }
 

@@ -52,6 +52,7 @@ void hardware_setPump(bool state);
 void hardware_setSanitizer(bool state);
 void hardware_setCausticHeater(bool state);
 void hardware_setCabinFan(int pwmValue);
+void hardware_setReadyLamp(bool on);   // GREEN cycle-start indicator on IO5 (dedicated output)
 
 int  hardware_getCausticTemp();
 int  hardware_getEnclosureTemp();

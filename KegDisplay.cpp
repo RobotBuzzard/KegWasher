@@ -166,12 +166,27 @@ void display_init() {
     KDS::setTouchCalibration(cfgTouchCal[0], cfgTouchCal[1], cfgTouchCal[2],
                              cfgTouchCal[3], cfgTouchCal[4], cfgTouchCal[5]);
   }
-  KDS::startup("KegWasher", "initializing...");
+  // The ONE boot screen — setup() fills in status rows on this same frame.
+  KDS::screen("KEGWASHER", BLUE);
 }
 
 void display_showStartup() {
   KDS::startup("KegWasher", "starting up...");
   delay(2000);   // let the operator see the splash
+}
+
+// Single progressive boot screen (Linux-boot style). display_init() drew the
+// "KEGWASHER" frame; setup() calls display_bootStatus() to fill one status row in
+// as each subsystem comes up, then display_bootDone(). No splash chain.
+void display_bootStatus(int row, const char* label, const char* value, word color) {
+  int y = 74 + row * 34;
+  KDS::text(8,   y,     2, WHITE, 0x0000u, label);   // label (size 2)
+  KDS::text(158, y + 6, 1, color, 0x0000u, value);   // status (size 1)
+}
+void display_bootDone(bool ok) {
+  KDS::text(16, 300, 3, ok ? GREEN : AMBER, 0x0000u, ok ? "SYSTEMS GO" : "CHECK SYS");
+  KDS::footer(ipStr());   // IP shown here, so the NETWORK row can just say OK/OFFLINE
+  reapplyMqtt();
 }
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {

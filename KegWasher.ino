@@ -679,11 +679,13 @@ void setup() {
   // Display before config, hardware, etc. — failures in those modules
   // call display_showError() and need somewhere to render. Goldelox boot
   // sequence is the longest single step in setup (~4 s).
-  display_init();
-  display_showStartup();
+  display_init();          // panel up + the single "KEGWASHER" boot screen
 
   config_init();
+  display_bootStatus(0, "SD CONFIG", cfgLoadedFromSD ? "READ OK" : "DEFAULT",
+                     cfgLoadedFromSD ? GREEN : AMBER);
   hardware_init();
+  display_bootStatus(1, "HARDWARE", "OK", GREEN);
   timers_init();
   diagnostics_init();
   stateMachine_init();
@@ -697,6 +699,14 @@ void setup() {
   // take many seconds, well over an 8 s WDT timeout. Degrades gracefully
   // to offline mode if no link or no DHCP server.
   setupEthernet();
+  display_bootStatus(2, "NETWORK", kwEthernetReady ? "OK" : "OFFLINE",
+                     kwEthernetReady ? GREEN : AMBER);   // IP shown in the footer
+  display_bootStatus(3, "MQTT", kwMqttReady ? "OK" : "--",
+                     kwMqttReady ? GREEN : AMBER);
+  display_bootStatus(4, "SENSORS", hardware_allSystemsGo() ? "OK" : "CHECK",
+                     hardware_allSystemsGo() ? GREEN : AMBER);
+  display_bootDone(hardware_allSystemsGo());
+  delay(2000);   // hold the completed boot screen, then the loop's IDLE screen takes over
 
   diagnostics_logEvent("Boot complete");
 
@@ -757,6 +767,11 @@ void loop() {
   }
 
   stateMachine_process();
+
+  // GREEN cycle-start indicator (IO5, dedicated output): lit whenever a START press
+  // will begin/advance a cycle — READY, COMPLETE (next keg), STOPPED (recover).
+  hardware_setReadyLamp(machineState == MACH_COMPLETE || machineState == MACH_STOPPED ||
+                        (machineState == MACH_IDLE && idleSub == IDLE_READY));
 
   // Operating display: the operating screen is shown while EXECUTE (running) or
   // HELD (paused). Full redraw on recipe-phase change (the title) or first entry;

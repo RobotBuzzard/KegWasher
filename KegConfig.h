@@ -58,11 +58,8 @@
 
 // Outputs
 #define co2Out                 IO3
-// Swapped from the original io-table to match as-wired bench hardware:
-// the cabinet fan is on IO5 and the alarm is on IO4. Both pins support
-// PWM via the SAME53's TCC channels — the choice is wiring-driven.
-#define alarmOut               IO4
-#define cabinFanPWM            IO5
+#define alarmOut               IO4    // RED fault / E-stop stacklight (HIGH = on)
+#define readyLedOut            IO5    // GREEN cycle-start / ready indicator (HIGH = on)
 #define drainOut               CLEARCORE_PIN_CCIOA0
 #define waterOut               CLEARCORE_PIN_CCIOA1
 #define airOut                 CLEARCORE_PIN_CCIOA2
@@ -70,6 +67,7 @@
 #define pumpOut                CLEARCORE_PIN_CCIOA4
 #define sanitizerOut           CLEARCORE_PIN_CCIOA5
 #define causticHeaterOut       CLEARCORE_PIN_CCIOA6
+#define cabinFanOut            CLEARCORE_PIN_CCIOA7   // enclosure fan, moved off IO5 (ON/OFF, not PWM)
 
 // Serial ports
 #define CcioPort               ConnectorCOM0
@@ -195,6 +193,7 @@ extern double largeKegMod;
 extern unsigned long pauseMaxMs;
 extern float  cfgTouchCal[6];    // touch calibration affine coeffs (a,b,c,d,e,f)
 extern bool   cfgTouchCalValid;  // true once SD config supplied touchCalA..F
+extern bool   cfgLoadedFromSD;   // true if WASHER.CFG was read; false = compiled defaults
 
 // ---------- Runtime temperature thresholds (°C) ----------
 // Seeded from the DEFAULT_*_TEMP defines above; overridable from SD WASHER.CFG.

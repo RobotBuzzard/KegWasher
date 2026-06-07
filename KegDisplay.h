@@ -31,8 +31,11 @@
 #endif
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
-void display_init();
-void display_showStartup();
+void display_init();              // brings up the panel + draws the single boot frame
+void display_showStartup();       // (legacy splash; no longer called from setup)
+// Single progressive boot screen: fill rows during setup(), then call _bootDone().
+void display_bootStatus(int row, const char* label, const char* value, word color);
+void display_bootDone(bool ok);
 
 // ── State screens ──────────────────────────────────────────────────────
 // Operating states: call once on state entry, then call the update fns below.
