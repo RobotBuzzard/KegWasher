@@ -380,9 +380,10 @@ void hardware_manageFan() {
 // supply 24.56V, 0-10V/12-bit input) → ~32.2k:
 //   V = adc/4095 * 10V ;  R_t = R_LOAD * (VPLUS - V) / V
 //   1/T = 1/T25 + ln(R_t/R25)/BETA
-// ⚠ With these values V hits the 10V input ceiling near ~43C, so this front-end
-// CANNOT sense the caustic range (50-70C). The caustic input (A10) needs a real
-// divider sized for that range before non-bench washing. See docs/io-table.md.
+// NOTE: this curve now serves ONLY the A9 enclosure thermistor — caustic (A10) is
+// the ETS50N 4-20mA probe (see hardware_getCausticTemp). ⚠ V hits the 10V input
+// ceiling near ~43C, so it's fine for fan/enclosure control but can't sense a 60C
+// overtemp — lower MAX_ENCLOSURE_TEMP or re-range A9. See docs/io-table.md.
 static const float THERM_R25   = 100000.0f;
 static const float THERM_BETA  = 3950.0f;
 static const float THERM_T25   = 298.15f;
@@ -403,9 +404,28 @@ static int thermistorTempC(int adcVal) {
   return tC;
 }
 
+// ---- Caustic temp: ProSense ETS50N-150-1001, 4-20mA transmitter on A10 ----
+// Read across a shunt (A10 -> GND) on the ClearCore 0-10V / 12-bit input (range +
+// depth confirmed against the ClearCore manual + AdcManager: 0-10V, 0-4095).
+// Using a 470 ohm shunt: 4mA=1.88V .. 20mA=9.40V. The transmitter's 4-20mA output
+// is scaled to its native measuring range -50..150C (device default); if you
+// rescale the span in the ETS menu, change ETS_T_AT_4MA / ETS_T_AT_20MA to match.
+// <~3.6mA (~1.7V) = open / under-range loop -> fail cold.
+// ETS_SHUNT_OHMS MUST equal the installed resistor — set it to the MEASURED value
+// (470 ohm ±5% = 446..494) for best accuracy; nominal 470 is the default.
+static const float ETS_SHUNT_OHMS = 470.0f;
+static const float ETS_T_AT_4MA   = -50.0f;
+static const float ETS_T_AT_20MA  = 150.0f;
+static const float ETS_MA_FAULT   = 3.6f;
+
 int hardware_getCausticTemp() {
-  if (causticTempSensorError) return minCausticTemp - 10;
-  return thermistorTempC(causticTempValue);
+  // A fully open/short loop (0V or >10V) is already flagged by the ADC rail-reject.
+  if (causticTempSensorError) return (int)minCausticTemp - 10;
+  float v  = (float)causticTempValue / (float)ADC_MAX * 10.0f;   // ClearCore 0-10V input
+  float mA = v / ETS_SHUNT_OHMS * 1000.0f;                       // current through the shunt
+  if (mA < ETS_MA_FAULT) return (int)minCausticTemp - 10;        // loop fault -> fail cold
+  float t = ETS_T_AT_4MA + (mA - 4.0f) * (ETS_T_AT_20MA - ETS_T_AT_4MA) / 16.0f;
+  return (int)lroundf(t);
 }
 
 int hardware_getEnclosureTemp() {
