@@ -240,16 +240,15 @@ void config_saveToSD() {
   settingsFile.print("fanOnTemp=");          settingsFile.println(fanOnTemp);
   settingsFile.print("fanOffTemp=");         settingsFile.println(fanOffTemp);
 
-  // MQTT broker config. Rewriting the whole file from the live globals means an
-  // on-device save (e.g. the Phase-5 settings editor) preserves this block
-  // instead of dropping it. Creds are stored on the device's own card.
-  settingsFile.print("mqttBrokerIp=");    settingsFile.println(mqttBrokerIp);
-  settingsFile.print("mqttBrokerPort=");  settingsFile.println(mqttBrokerPort);
-  settingsFile.print("mqttUser=");        settingsFile.println(mqttUser);
-  settingsFile.print("mqttPass=");        settingsFile.println(mqttPass);
-  settingsFile.print("mqttClientId=");    settingsFile.println(mqttClientId);
-  settingsFile.print("mqttTopicRoot=");   settingsFile.println(mqttTopicRoot);
-
+  // NOTE: the MQTT broker block is intentionally NOT written here. This save does
+  // SD.remove + full rewrite, so it INTENTIONALLY drops any MQTT block from the
+  // file — the device then falls back to compiled KegSecrets.h creds on next boot.
+  // Rationale: the on-device editor only tunes timers/thresholds; previously it
+  // rewrote MQTT from RAM, which let a save clobber the broker creds with stale/
+  // placeholder values (and wrote the password to the card on every timer edit).
+  // Consequence: don't rely on SD-only MQTT creds AND the on-device editor on the
+  // same unit — provision MQTT via KegSecrets.h (or the future host configurator)
+  // if operators will edit timers on the panel.
   settingsFile.close();
 }
 
