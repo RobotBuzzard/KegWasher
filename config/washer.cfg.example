@@ -53,11 +53,9 @@ pauseMaxMs=600000
 minCausticTemp=50          # WASHING aborts if caustic drops below this
 optimalCausticTemp=60      # heater target during STARTING (warm-up)
 maxCausticTemp=70          # caustic safety cutoff
-maxEnclosureTemp=60        # enclosure overtemp -> abort
-                           #  NOTE: the bench A9 thermistor front-end saturates
-                           #  ~43 °C; set this to ~42 until A9 is re-ranged.
-fanOnTemp=40               # cabinet fan on at/above
-fanOffTemp=35              # cabinet fan off below
+# (enclosure temp + fan thresholds removed: the enclosure fan is a standalone
+#  self-regulating unit with its own thermometer, off the controller. A9 + CCIO-A7
+#  are free. maxEnclosureTemp/fanOnTemp/fanOffTemp keys are now ignored if present.)
 
 # ============================================================
 # MQTT BROKER  (overrides the compiled KegSecrets.h defaults)

@@ -48,7 +48,8 @@
 #define airOk                  DI6
 #define co2Ok                  DI7
 #define ESTOP                  DI8
-#define enclosureTemp          A9
+// A9 is free — enclosure temp moved off the controller (self-regulating fan with
+// its own built-in thermometer). Was the Ender-3 100k NTC thermistor.
 #define causticTemp            A10
 #define waterOk                A11
 #define causticLevelSensor     A12
@@ -67,7 +68,8 @@
 #define pumpOut                CLEARCORE_PIN_CCIOA4
 #define sanitizerOut           CLEARCORE_PIN_CCIOA5
 #define causticHeaterOut       CLEARCORE_PIN_CCIOA6
-#define cabinFanOut            CLEARCORE_PIN_CCIOA7   // enclosure fan, moved off IO5 (ON/OFF, not PWM)
+// CCIO-A7 is free — the enclosure fan is a standalone self-regulating unit
+// (built-in thermometer), not switched by the controller.
 
 // Serial ports
 #define CcioPort               ConnectorCOM0
@@ -140,9 +142,8 @@
 #define DEFAULT_MIN_CAUSTIC_TEMP       50   // below this in WASHING → fault
 #define DEFAULT_OPTIMAL_CAUSTIC_TEMP   60   // heater target during STARTING
 #define DEFAULT_MAX_CAUSTIC_TEMP       70   // caustic safety cutoff
-#define DEFAULT_MAX_ENCLOSURE_TEMP     60   // enclosure overtemp → fault
-#define DEFAULT_FAN_ON_TEMP            40   // cabinet fan on at/above
-#define DEFAULT_FAN_OFF_TEMP           35   // cabinet fan off below
+// (enclosure overtemp + fan on/off thresholds removed — enclosure temp/fan are
+//  off-controller now; the fan self-regulates via its own thermometer.)
 
 // ---------- Heater limits ----------
 #define MIN_HEATING_RATE       3       // °C/min minimum during heating
@@ -157,7 +158,8 @@
 #define ERR_AIR_PRESSURE      4
 #define ERR_CO2_PRESSURE      5
 #define ERR_CAUSTIC_TEMP      6
-#define ERR_ENCLOSURE_TEMP    7
+// 7 retired (was ERR_ENCLOSURE_TEMP) — enclosure temp moved off-controller. Codes
+// are not renumbered so existing dashboard/MQTT mappings stay stable.
 #define ERR_ESTOP             8
 #define ERR_INVALID_STATE     9
 #define ERR_HEATING_TIMEOUT   10
@@ -201,9 +203,6 @@ extern bool   cfgLoadedFromSD;   // true if WASHER.CFG was read; false = compile
 extern int minCausticTemp;       // WASHING abort floor
 extern int optimalCausticTemp;   // STARTING heater target
 extern int maxCausticTemp;       // caustic safety cutoff
-extern int maxEnclosureTemp;     // enclosure overtemp abort
-extern int fanOnTemp;            // cabinet fan on
-extern int fanOffTemp;           // cabinet fan off
 
 // ---------- Runtime MQTT broker config ----------
 // Seeded from KegSecrets.h compiled defaults; overridable per-device from SD so a

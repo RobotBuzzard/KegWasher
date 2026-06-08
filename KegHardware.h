@@ -18,13 +18,11 @@ extern bool isCycleStartPressed;
 extern bool isManualDrainPressed;
 
 // Filtered analog readings (raw ADC counts; convert via getters).
-extern int  enclosureTempValue;
 extern int  causticTempValue;
 extern int  causticLevelValue;
 
 // Sensor health flags. True when reading is out of range.
 extern bool causticTempSensorError;
-extern bool enclosureTempSensorError;
 
 // Heater state tracking.
 extern bool          isHeaterActive;
@@ -51,14 +49,11 @@ void hardware_setCaustic(bool state);
 void hardware_setPump(bool state);
 void hardware_setSanitizer(bool state);
 void hardware_setCausticHeater(bool state);
-void hardware_setCabinFan(int pwmValue);
 void hardware_setReadyLamp(bool on);   // GREEN cycle-start indicator on IO5 (dedicated output)
 
 int  hardware_getCausticTemp();
-int  hardware_getEnclosureTemp();
 int  hardware_getCausticLevel();
 
-void hardware_manageFan();
 bool hardware_monitorHeating();
 bool hardware_checkHeatingRate();
 

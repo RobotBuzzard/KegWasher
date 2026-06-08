@@ -18,8 +18,8 @@
 
 | Name | Pin | Description | Bits | Range | Filter | Notes |
 |------|-----|-------------|------|-------|--------|-------|
-| `enclosureTemp` | A9 | Enclosure temperature | 12 | 0–100 °C | low-pass | drives fan; overtemp → `ERR_ENCLOSURE_TEMP` |
-| `causticTemp` | A10 | Caustic solution temp | 12 | 0–100 °C | low-pass | wash gate ≥ 50 °C; heater target 60 °C |
+| *(free)* | A9 | — | — | — | — | enclosure temp moved off-controller (self-regulating fan w/ own thermometer); A9 unused |
+| `causticTemp` | A10 | Caustic solution temp | 12 | 0–100 °C | low-pass | ProSense ETS50N 4–20 mA across a 470 Ω shunt; wash gate ≥ 50 °C; heater target 60 °C |
 | `waterOk` | A11 | Water pressure (threshold) | 12 | — | low-pass | analog pin read as a water-available gate |
 | `causticLevelSensor` | A12 | Caustic reservoir level | 12 | 0–100 % | low-pass | heating refused below `MIN_CAUSTIC_LEVEL` (25 %) |
 
@@ -30,7 +30,8 @@
 | Name | Pin | Description | Active | Notes |
 |------|-----|-------------|--------|-------|
 | `co2Out` | IO3 | CO₂ solenoid | HIGH | SANI_RETURN push-gas + PRESSURE charge |
-| `alarmOut` | IO4 | Alarm / E-stop LED + red stacklight | HIGH | cycle-complete / fault / E-stop indicator. (IO4↔IO5 swapped vs. original wiring) |
+| `alarmOut` | IO4 | RED fault / E-stop stacklight | HIGH | fault / E-stop indicator |
+| `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | lit in IDLE-READY, COMPLETE, STOPPED (a START press will act) |
 | `drainOut` | CCIO‑A0 | Drain valve | HIGH | **forced OFF during RETURN phases — chem never to drain** |
 | `waterOut` | CCIO‑A1 | Water valve | HIGH | FLOW phases |
 | `airOut` | CCIO‑A2 | Air valve | HIGH | DRAIN burst, PURGE, CAUSTIC_RETURN push-gas |
@@ -43,9 +44,9 @@
 
 ## PWM Outputs
 
-| Name | Pin | Description | Bits | Notes |
-|------|-----|-------------|------|-------|
-| `cabinFanPWM` | IO5 | Cabinet cooling fan | 8 | temp-controlled (`FAN_ON_TEMP`/`FAN_OFF_TEMP`). IO4/IO5 both PWM-capable via SAME53 TCC; choice is wiring-driven |
+None. The cabinet cooling fan (formerly `cabinFanPWM` on IO5, later CCIO‑A7) is now a
+standalone self-regulating unit with its own thermometer — not driven by the controller.
+**CCIO‑A7 is free.**
 
 ## Communication Ports
 
@@ -87,7 +88,7 @@
 | 4 | AIR_PRESSURE | `airOk` |
 | 5 | CO2_PRESSURE | `co2Ok` |
 | 6 | CAUSTIC_TEMP | `causticTemp` |
-| 7 | ENCLOSURE_TEMP | `enclosureTemp` |
+| 7 | *(retired)* | was ENCLOSURE_TEMP — enclosure temp off-controller; code not reused |
 | 8 | ESTOP | `ESTOP` |
 | 9 | INVALID_STATE | — |
 | 10 | HEATING_TIMEOUT | `causticHeaterOut`/`causticTemp` |
@@ -109,7 +110,7 @@ hardware interrupts** (`InterruptHandlerSet()`, RISING/FALLING via
 | `airOk` | DI6 | ✅ | currently polled+debounced |
 | `co2Ok` | DI7 | ✅ | currently polled+debounced |
 | `ESTOP` | DI8 | ✅ | **FALLING-edge ISR** (trip = HIGH→LOW) + polled backstop — correct placement for fastest abort |
-| `enclosureTemp` | A9 | ✅ (pin) | analog read; interrupt only on a digital threshold |
+| *(free)* | A9 | ✅ (pin) | unused — enclosure temp moved off-controller |
 | `causticTemp` | A10 | ✅ (pin) | analog read |
 | `waterOk` | A11 | ✅ | currently polled |
 | `causticLevelSensor` | A12 | ✅ (pin) | analog read |

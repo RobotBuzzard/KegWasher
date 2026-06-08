@@ -194,19 +194,13 @@ static void checkStateTimeout() {
 }
 
 // Per-tick safety monitor for the running recipe. Aborts if the resource a phase
-// is *actively using* drops out, or the enclosure overheats. Runs only while
-// EXECUTE; sensor-dependent checks are bench-gated.
+// is *actively using* drops out. Runs only while EXECUTE; sensor-dependent checks
+// are bench-gated. (Enclosure overtemp is no longer monitored here — the fan is a
+// standalone self-regulating unit, off the controller.)
 static void monitorActiveResources() {
   if (machineState != MACH_EXECUTE) return;
 
 #ifndef BENCH_MODE
-  if (hardware_getEnclosureTemp() >= maxEnclosureTemp) {
-    errorCode = ERR_ENCLOSURE_TEMP;
-    display_showError(diagnostics_getErrorMessage(ERR_ENCLOSURE_TEMP));
-    stateMachine_abort();
-    return;
-  }
-
   bool needAir = false, needWater = false, needCo2 = false, needCaustic = false;
   switch (recipePhase) {
     case PHASE_DIRTY_DRAIN:    needAir   = (timers_getStateElapsed() < AIR_BURST_DURATION); break;
@@ -811,7 +805,6 @@ static const char* errorBannerText(byte code) {
     case ERR_AIR_PRESSURE:    return "AIR FAULT";
     case ERR_CO2_PRESSURE:    return "CO2 FAULT";
     case ERR_CAUSTIC_TEMP:    return "TEMP FAULT";
-    case ERR_ENCLOSURE_TEMP:  return "OVERHEAT";
     case ERR_ESTOP:           return "ESTOP";
     case ERR_HEATING_TIMEOUT: return "HEAT TIMEOUT";
     case ERR_HEATING_RATE:    return "HEAT SLOW";
@@ -846,9 +839,8 @@ static bool faultConditionActive(byte code) {
     case ERR_CO2_PRESSURE:    return !isCo2Ok;
     case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  minCausticTemp;
     case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= maxCausticTemp;
-    case ERR_ENCLOSURE_TEMP:  return hardware_getEnclosureTemp() >= maxEnclosureTemp;
     case ERR_CAUSTIC_LEVEL:   return hardware_getCausticLevel() <  MIN_CAUSTIC_LEVEL;
-    case ERR_SENSOR_FAULT:    return causticTempSensorError || enclosureTempSensorError;
+    case ERR_SENSOR_FAULT:    return causticTempSensorError;
     default:                  return false;  // transient — no standing condition to clear
   }
 }

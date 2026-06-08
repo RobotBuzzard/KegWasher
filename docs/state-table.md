@@ -65,8 +65,8 @@ remaining-time publish. Timeouts are in `phaseMaxDuration[]`.
 **Entry gates** (`enterPhase`, `#ifndef BENCH_MODE`): the monitored resource is
 also checked *before* entry — a missing resource aborts the entry to ABORTED with
 the matching `ERR_*`. **Per-tick monitors** (`monitorActiveResources`, EXECUTE
-only, bench-gated): the in-use resource is re-checked every loop, plus a blanket
-`enclosure ≥ MAX_ENCLOSURE_TEMP → ERR_ENCLOSURE_TEMP` across all phases. See
+only, bench-gated): the in-use resource is re-checked every loop. (Enclosure
+overtemp is no longer monitored — the fan self-regulates off-controller.) See
 `state-taxonomy.md` §3c/§3d for the full gate/monitor matrix.
 
 ## IDLE sub-states (`idleSub`, valid only while `machineState == MACH_IDLE`)

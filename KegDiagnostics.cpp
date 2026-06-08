@@ -73,8 +73,8 @@ void diagnostics_runTest() {
   display_showMessage("Testing CO2...");
   hardware_setCo2(true);  delay(1000); hardware_setCo2(false);
 
-  display_showMessage("Testing fan...");
-  hardware_setCabinFan(255); delay(1000); hardware_setCabinFan(0);
+  // (No fan test — the enclosure fan is a standalone self-regulating unit, off
+  //  the controller. CCIO-A7 is now free.)
 
   display_showMessage("Testing alarm...");
   hardware_setAlarm(true); delay(1000); hardware_setAlarm(false);
@@ -151,7 +151,6 @@ const char* diagnostics_getErrorMessage(byte code) {
     case ERR_AIR_PRESSURE:    return "Air pressure low";
     case ERR_CO2_PRESSURE:    return "CO2 pressure low";
     case ERR_CAUSTIC_TEMP:    return "Caustic temp low";
-    case ERR_ENCLOSURE_TEMP:  return "Cabinet overheated";
     case ERR_ESTOP:           return "Emergency stop";
     case ERR_INVALID_STATE:   return "Invalid state";
     case ERR_HEATING_TIMEOUT: return "Heater timeout";

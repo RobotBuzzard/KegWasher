@@ -172,12 +172,12 @@ unconditional in every state/phase.**
 
 ### 3d. Per-phase active-resource monitors (`monitorActiveResources`)
 
-Aborts to `Aborted` if the resource a phase is *actively using* drops out, plus a
-blanket enclosure-overtemp across all phases:
+Aborts to `Aborted` if the resource a phase is *actively using* drops out.
+(Enclosure overtemp is no longer monitored — the enclosure fan self-regulates
+off-controller, so the controller has no enclosure-temp input.)
 
 | Condition | Phases | Error |
 |-----------|--------|-------|
-| enclosure ≥ `MAX_ENCLOSURE_TEMP` | all (1–10) | `ERR_ENCLOSURE_TEMP` |
 | `!isAirOk` | DIRTY_DRAIN (≤5 s), DIRTY_PURGE, CAUSTIC_RETURN, RINSE_PURGE | `ERR_AIR_PRESSURE` |
 | `!isWaterOk` | DIRTY_RINSE, RINSING | `ERR_WATER_PRESSURE` |
 | `!isCo2Ok` | SANI_RETURN, PRESSURE | `ERR_CO2_PRESSURE` |
@@ -216,7 +216,7 @@ All faults land in PackML `Aborted` (`STATE_ERROR`) with an `errorCode`:
 | 4 | AIR_PRESSURE | abort cause |
 | 5 | CO2_PRESSURE | abort cause |
 | 6 | CAUSTIC_TEMP | abort cause |
-| 7 | ENCLOSURE_TEMP | abort cause |
+| 7 | *(retired)* | was ENCLOSURE_TEMP — enclosure temp off-controller; code not reused |
 | 8 | ESTOP | `Abort` command |
 | 9 | INVALID_STATE | abort cause |
 | 10–13 | HEATING_*/CAUSTIC_LEVEL/HEATER_OVERTEMP | abort cause (Starting/heating) |

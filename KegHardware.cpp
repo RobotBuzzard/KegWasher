@@ -14,12 +14,10 @@ bool isLargeKeg = false;
 bool isCycleStartPressed = false;
 bool isManualDrainPressed = false;
 
-int  enclosureTempValue = 0;
 int  causticTempValue = 0;
 int  causticLevelValue = 0;
 
 bool causticTempSensorError = false;
-bool enclosureTempSensorError = false;
 
 bool          isHeaterActive = false;
 unsigned long heatingStartTime = 0;
@@ -86,16 +84,8 @@ static int filterAdc(int prev, int raw) {
 }
 
 static void readTemperatureSensors() {
-  int rawEnc = analogRead(enclosureTemp);
   int rawCau = analogRead(causticTemp);
   int rawLvl = analogRead(causticLevelSensor);
-
-  if (validateAdc(rawEnc)) {
-    enclosureTempValue = filterAdc(enclosureTempValue, rawEnc);
-    enclosureTempSensorError = false;
-  } else {
-    enclosureTempSensorError = true;
-  }
 
   if (validateAdc(rawCau)) {
     causticTempValue = filterAdc(causticTempValue, rawCau);
@@ -156,7 +146,6 @@ void hardware_init() {
   pinMode(pumpOut, OUTPUT);
   pinMode(sanitizerOut, OUTPUT);
   pinMode(causticHeaterOut, OUTPUT);
-  pinMode(cabinFanOut, OUTPUT);   // enclosure fan on CCIO-A7 (ON/OFF)
 
   hardware_allStop();
   hardware_setAlarm(false);   // boot is not a fault: allStop lights IO4, clear it
@@ -172,7 +161,6 @@ void hardware_init() {
 
   // Seed analog filters with one valid sample so the first cycle isn't
   // smeared by the zero-initialised previous value.
-  enclosureTempValue = analogRead(enclosureTemp);
   causticTempValue   = analogRead(causticTemp);
   causticLevelValue  = analogRead(causticLevelSensor);
 }
@@ -202,7 +190,6 @@ void hardware_readInputs() {
   readTemperatureSensors();
 
   if (isHeaterActive) hardware_monitorHeating();
-  hardware_manageFan();
 }
 
 // ---------- System-go check ----------
@@ -217,8 +204,7 @@ bool hardware_allSystemsGo() {
   if (!isAirOk)                                   { errorCode = ERR_AIR_PRESSURE;   return false; }
   if (!isCo2Ok)                                   { errorCode = ERR_CO2_PRESSURE;   return false; }
   if (!isWaterOk)                                 { errorCode = ERR_WATER_PRESSURE; return false; }
-  if (causticTempSensorError ||
-      enclosureTempSensorError)                   { errorCode = ERR_SENSOR_FAULT;   return false; }
+  if (causticTempSensorError)                     { errorCode = ERR_SENSOR_FAULT;   return false; }
   if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
                                                     errorCode = ERR_CAUSTIC_LEVEL;  return false; }
   return true;
@@ -230,7 +216,6 @@ void hardware_allStop() {
   digitalWrite(co2Out, LOW);
   digitalWrite(alarmOut, HIGH);
   digitalWrite(readyLedOut, LOW);     // green off on all-stop (fault/estop)
-  digitalWrite(cabinFanOut, LOW);     // CCIO-A7 fan, ON/OFF
   digitalWrite(drainOut, LOW);
   digitalWrite(waterOut, LOW);
   digitalWrite(airOut, LOW);
@@ -250,8 +235,6 @@ void hardware_setAir(bool state)       { digitalWrite(airOut, state ? HIGH : LOW
 void hardware_setCaustic(bool state)   { digitalWrite(causticOut, state ? HIGH : LOW); }
 void hardware_setPump(bool state)      { digitalWrite(pumpOut, state ? HIGH : LOW); }
 void hardware_setSanitizer(bool state) { digitalWrite(sanitizerOut, state ? HIGH : LOW); }
-// Fan is now on a CCIO-8 point (digital, no PWM) — treat any non-zero as ON.
-void hardware_setCabinFan(int pwm)     { digitalWrite(cabinFanOut, pwm > 0 ? HIGH : LOW); }
 // GREEN cycle-start / ready indicator on IO5 — a dedicated output (no time-mux).
 void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : LOW); }
 
@@ -341,84 +324,12 @@ bool hardware_checkHeatingRate() {
   return (totalDelta / minutes) >= MIN_HEATING_RATE;
 }
 
-// ---------- Fan (with hysteresis + safety override) ----------
-void hardware_manageFan() {
-  static bool fanOn = false;
-  static unsigned long lastChangeMs = 0;
-  // Hysteresis transitions are rate-limited to avoid PWM thrashing when
-  // the analog input is noisy or floating (e.g., bench testing without
-  // the enclosure-temp sensor wired). With a real sensor, enclosure
-  // temperature changes on the order of seconds, not milliseconds, so
-  // this rate limit is invisible during normal operation.
-  const unsigned long FAN_MIN_CHANGE_MS = 5000;
-
-  // If the sensor is faulted, hold the fan in its last known state
-  // rather than reacting to bogus readings. The accessor returns a
-  // safety-tripping value on fault, but holding here is more honest:
-  // we don't actually know what the temperature is.
-  if (enclosureTempSensorError) return;
-
-  int t = hardware_getEnclosureTemp();
-
-  // Force fan on near the enclosure cutoff regardless of hysteresis or
-  // rate limit — this is the safety override.
-  if (t >= maxEnclosureTemp - 5) {
-    if (!fanOn) {
-      hardware_setCabinFan(255);
-      fanOn = true;
-      lastChangeMs = millis();
-    }
-    return;
-  }
-
-  // Normal hysteresis, rate-limited.
-  if (millis() - lastChangeMs < FAN_MIN_CHANGE_MS) return;
-
-  if (t > fanOnTemp && !fanOn) {
-    hardware_setCabinFan(255);
-    fanOn = true;
-    lastChangeMs = millis();
-  } else if (t < fanOffTemp && fanOn) {
-    hardware_setCabinFan(0);
-    fanOn = false;
-    lastChangeMs = millis();
-  }
-}
-
 // ---------- Sensor accessors ----------
-// On sensor fault, return a value that triggers the relevant safety branch
-// in callers (caustic too cold → won't pass WASHING; enclosure too hot →
-// fan forced on).
-// Ender 3 Pro nozzle thermistor: 100k NTC, beta 3950, R25 = 100k @ 25C.
-// Wiring (bench bringup): thermistor from the +24V rail straight into the analog
-// pin — NO external divider; the ClearCore analog input's own load is the bottom
-// leg. The effective load was solved from one point (raw ADC 2225 @ 22.2C/72F,
-// supply 24.56V, 0-10V/12-bit input) → ~32.2k:
-//   V = adc/4095 * 10V ;  R_t = R_LOAD * (VPLUS - V) / V
-//   1/T = 1/T25 + ln(R_t/R25)/BETA
-// NOTE: this curve now serves ONLY the A9 enclosure thermistor — caustic (A10) is
-// the ETS50N 4-20mA probe (see hardware_getCausticTemp). ⚠ V hits the 10V input
-// ceiling near ~43C, so it's fine for fan/enclosure control but can't sense a 60C
-// overtemp — lower MAX_ENCLOSURE_TEMP or re-range A9. See docs/io-table.md.
-static const float THERM_R25   = 100000.0f;
-static const float THERM_BETA  = 3950.0f;
-static const float THERM_T25   = 298.15f;
-static const float THERM_VPLUS = 24.56f;
-static const float THERM_VFS   = 10.0f;     // ClearCore analog full-scale (0-10V)
-static const float THERM_RLOAD = 32200.0f;  // effective analog-input load to GND
-
-static int thermistorTempC(int adcVal) {
-  if (adcVal < 30) return -99;              // open / no current → invalid (fails safe cold)
-  float v = (float)adcVal * (THERM_VFS / (float)ADC_MAX);
-  if (v < 0.05f || v >= THERM_VPLUS) return -99;
-  float rt = THERM_RLOAD * (THERM_VPLUS - v) / v;
-  if (rt < 1.0f) return 150;                // near short → very hot
-  float tK = 1.0f / (1.0f / THERM_T25 + logf(rt / THERM_R25) / THERM_BETA);
-  int tC = (int)(tK - 273.15f + 0.5f);
-  if (tC < -40) tC = -40;
-  if (tC > 150) tC = 150;
-  return tC;
-}
+// On sensor fault, return a value that triggers the relevant safety branch in
+// callers (caustic too cold → won't pass WASHING).
+//
+// (The enclosure NTC + fan-management code was removed: the enclosure fan is now a
+//  standalone self-regulating unit with its own thermometer, off the controller.)
 
 // ---- Caustic temp: ProSense ETS50N-150-1001, 4-20mA transmitter on A10 ----
 // Read across a shunt (A10 -> GND) on the ClearCore 0-10V / 12-bit input (range +
@@ -442,11 +353,6 @@ int hardware_getCausticTemp() {
   if (mA < ETS_MA_FAULT) return (int)minCausticTemp - 10;        // loop fault -> fail cold
   float t = ETS_T_AT_4MA + (mA - 4.0f) * (ETS_T_AT_20MA - ETS_T_AT_4MA) / 16.0f;
   return (int)lroundf(t);
-}
-
-int hardware_getEnclosureTemp() {
-  if (enclosureTempSensorError) return maxEnclosureTemp + 10;
-  return thermistorTempC(enclosureTempValue);
 }
 
 int hardware_getCausticLevel() {

@@ -335,7 +335,6 @@ static void mqtt_applyCmdFlags() {
 //   sensors/co2          — OK|FAIL
 //   sensors/estop        — INACTIVE|ACTIVE
 //   temp/caustic         — int °C
-//   temp/enclosure       — int °C
 //   level/caustic        — int %
 //   timer/elapsed_s      — seconds in current state
 //   timer/remaining_s    — seconds remaining (0 outside operating states)
@@ -365,7 +364,6 @@ struct MqttStatusCache {
   bool          estopActive   = false;
   bool          sensorsInit   = false;
   int           causticTemp   = -999;
-  int           enclosureTemp = -999;
   int           causticLevel  = -999;
   unsigned long elapsedSec    = 0xFFFFFFFFUL;
   unsigned long remainingSec  = 0xFFFFFFFFUL;
@@ -519,12 +517,6 @@ static void mqtt_publishStatus() {
     snprintf(buf, sizeof(buf), "%d", causticT);
     kwMqtt.publish(kwTopic("temp/caustic"), buf, true);
   }
-  int enclosureT = hardware_getEnclosureTemp();
-  if (enclosureT != kwMqttCache.enclosureTemp) {
-    kwMqttCache.enclosureTemp = enclosureT;
-    snprintf(buf, sizeof(buf), "%d", enclosureT);
-    kwMqtt.publish(kwTopic("temp/enclosure"), buf, true);
-  }
   int level = hardware_getCausticLevel();
   if (level != kwMqttCache.causticLevel) {
     kwMqttCache.causticLevel = level;
@@ -532,10 +524,8 @@ static void mqtt_publishStatus() {
     kwMqtt.publish(kwTopic("level/caustic"), buf, true);
   }
 
-  // --- TEMP DEBUG (temporary): raw filtered ADC counts for thermistor
-  // characterization. Remove once the A9/A10 conversions are calibrated. ---
-  snprintf(buf, sizeof(buf), "%d", enclosureTempValue);
-  kwMqtt.publish(kwTopic("debug/enc_adc"), buf, true);
+  // --- TEMP DEBUG (temporary): raw filtered ADC counts for the A10 caustic
+  // probe. Remove once the ETS50N 4-20mA conversion is calibrated. ---
   snprintf(buf, sizeof(buf), "%d", causticTempValue);
   kwMqtt.publish(kwTopic("debug/cau_adc"), buf, true);
 
