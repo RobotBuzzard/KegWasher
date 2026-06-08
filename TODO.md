@@ -2,7 +2,19 @@
 
 Live roadmap from current bench-only build to a production-ready keg cleaner controller. Reorganised when the project's state changes meaningfully — not just a backlog dump. Deeper per-item rationale lives in [`docs/reliability-todo.md`](docs/reliability-todo.md).
 
-## Status (2026-06-04)
+## Status (2026-06-08)
+
+**Update 2026-06-08 (PackML re-arch + sensor bring-up — bench-verified on hardware):** The state
+machine was re-architected to the **two-axis PackML / ISA-88 model** (`machineState` × `recipePhase`)
+and merged to main. Config schema promoted temp thresholds + the MQTT broker block to runtime,
+SD-overridable values (Phase 3); an **on-screen settings editor** lets the operator tune stage timers
+on the panel (Phase 5); a single Linux-style **boot screen** confirms the SD-config read. Sensor
+bring-up: the **ProSense ETS50N caustic probe on A10** (linear 4–20 mA map across a 470 Ω shunt) is
+wired and **calibrated — reads true**. The **physical START button (IO1, active-high)** is confirmed
+working and lit via the new **GREEN ready indicator on IO5** (RED fault/E-stop stacklight on IO4).
+**Enclosure temp + the fan were removed from the controller** — the fan is now a standalone
+self-regulating unit with its own thermometer, so **A9 + CCIO-A7 are free** and `ERR_ENCLOSURE_TEMP`
+(code 7) is retired. `docs/` (state-table, io-table, state-taxonomy) are synced to the as-built model.
 
 **Update 2026-06-04 (cycle + controls rework — bench-verified on hardware):** The cycle is now the
 full **10-stage** sequence with chemical recovery: `DIRTY_DRAIN → DIRTY_RINSE → DIRTY_PURGE → WASHING
@@ -10,8 +22,7 @@ full **10-stage** sequence with chemical recovery: `DIRTY_DRAIN → DIRTY_RINSE 
 to their reservoirs, never to drain). Added: per-state safety monitoring + entry preconditions
 (bench-gated), one-press-per-keg flow with a one-time power-up pre-check, on-screen + MQTT cycle
 controls (PAUSE/RESUME, RESTART = re-run current stage, STOP/DRAIN = evacuate → HALTED), and a
-countdown-skip fix. SD card formatted + `washer.config` written. The paragraph below + the docs in
-`docs/` are now **stale** (they describe the old 5-stage cycle) — doc sync is the next doc task.
+countdown-skip fix. SD card formatted + `washer.config` written.
 
 Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed via `#define BENCH_MODE` in `KegConfig.h`.
 
@@ -56,8 +67,8 @@ When the actual keg-washer chassis is built and wired, this is the I/O verificat
 - [ ] **Diagnostic mode pass** — hold DRAIN + START in STARTUP/FINISHED to enter `diagnostics_runTest()`. Verify each output drives the right relay (visible / audible click), each input reads the expected state when stimulated.
 - [ ] **Verify ESTOP both ways** — confirm pressing E-STOP kills outputs via the ISR (instant), and that the main-loop ERROR transition fires and renders the screen.
 - [ ] **Verify watchdog with real loads** — if any peripheral (CCIO, Goldelox) hangs at load, confirm WDT recovers; document any new long-blocking paths that need bracketing.
-- [ ] **Caustic temp via ProSense ETS50N (4–20 mA)** — A10 probe is a ProSense ETS50N‑150‑1001 PT100 transmitter (−50…150 °C), 4–20 mA on **White (OUT2)**. Wiring: Brown→24 V, Blue→GND, **White→A‑10 + a 499 Ω ½ W shunt from A‑10→GND** (shunt across the input, NOT in series — current must flow through it to ground). Black/PNP optional as an independent ~70 °C hardware cutoff into the E‑stop/safety chain. Firmware: **replace the wrongly-applied thermistor β-curve on `getCausticTemp` with a linear 4–20 mA→°C map** via `AnalogVoltage()` (2 V@4 mA … 10 V@20 mA); `<4 mA`(<2 V) = loop fault → fail cold. Confirm the ETS 4–20 mA span (default −50…150 °C, or scaled tighter) before writing the map. Remove the `debug/enc_adc`+`debug/cau_adc` temp publishes after cal. *(Decided 2026-06-04; 499 Ω to be wired.)*
-- [ ] **Enclosure temp (A9 thermistor)** — Ender 3 Pro 100k NTC β3950, +24 V→A9 (no external divider; the ClearCore input load is the bottom leg). β-conversion done, single-point anchored at 72 °F (commit 710f6fa). NOTE: this front-end saturates ~43 °C — fine for fan control (35–40 °C) but **can't sense a 60 °C enclosure overtemp** (pegs ~43 °C → reads as sensor-fault). Lower `MAX_ENCLOSURE_TEMP` to ~42 °C, or accept the early sensor-fault trip. Optional 2nd-point (ice water) check to validate the curve away from room temp.
+- [x] **Caustic temp via ProSense ETS50N (4–20 mA)** — *Done + calibrated (2026-06-08; reads true on the bench).* A10 probe is a ProSense ETS50N‑150‑1001 (−50…150 °C), 4–20 mA. Wiring: Brown→24 V, Blue→GND, **White→A‑10 + a 470 Ω (measured 469.9 Ω) shunt from A‑10→GND**. Firmware `getCausticTemp()` is a linear 4–20 mA→°C map across the shunt; `<3.6 mA` = loop fault → fail cold. Span left at the native −50…150 °C. Black/PNP still available as an independent ~70 °C hardware cutoff into the E‑stop chain if wanted. *Loose end:* drop the temporary `debug/cau_adc` MQTT publish now that cal is confirmed (`debug/enc_adc` already removed).
+- [x] **Enclosure temp + fan — REMOVED from the controller** — *Done (2026-06-08, commit `c50fb44`).* The enclosure fan is now a standalone self-regulating unit with its own thermometer, so the controller no longer senses enclosure temp or drives a fan. Removed: A9 thermistor + β-curve, `getEnclosureTemp`, `hardware_manageFan`, CCIO-A7 `cabinFanOut`, `ERR_ENCLOSURE_TEMP` + its overtemp monitor, and the `maxEnclosureTemp`/`fanOnTemp`/`fanOffTemp` config keys. **A9 + CCIO-A7 are free; code 7 retired.** (This obsoletes the old "lower MAX_ENCLOSURE_TEMP / re-range A9" plan.)
 - [ ] **Switch off BENCH_MODE** — comment out `#define BENCH_MODE` in `KegConfig.h`; re-flash; verify `grep -r BENCH_MODE` returns only `#ifdef` references; verify boot splash no longer shows the banner; verify the systems-go gate now blocks STARTUP_READY when sensors aren't asserted.
 
 ## Phase 2 — Wet testing
@@ -75,6 +86,7 @@ Real fluids in stages. Each step assumes the previous passed.
 Items that don't block first wet test but should land before a customer ever sees the firmware.
 
 - [ ] **Per-state display pages refactor** ([`reliability-todo.md` P0](docs/reliability-todo.md)) — replace the every-handler-writes-the-screen pattern with a pending-render queue. Dedicated layouts per state (heating ETA bar, mm:ss countdown grid, FINISHED banner, error code + recovery hint).
+- [ ] **Button + indicator refinement** — *deferred by the user until the functions are all figured out (2026-06-08).* Minor changes to the physical buttons/indicators (IO1 START, IO2 DRAIN/ACK, IO4 RED fault, IO5 GREEN ready) and the on-screen controls (START / PAUSE-RESUME / RESTART / STOP-DRAIN / SETTINGS) — behavior, when each lights (solid vs flash), color, label, position. Specifics TBD. Bench-verified so far: START registers + the green ready indicator lights in the right states.
 - [ ] **Screen UX overhaul** — once the cleaner is functionally complete (Phases 0-2 done), revisit display content for operator clarity. Things to consider: bigger fonts for the most-glanced values (mm:ss countdown, current state badge), prioritise what's on each screen by what the operator needs at that moment vs. what's nice-to-have, lose information that duplicates the dashboard, add at-a-glance status icons (heater on, valve states), use color more deliberately (red for FAIL, green for OK, etc.), maybe a dedicated "summary" screen for FINISHED with cycle time + peak temps. See `docs/display-guide.md` for the current layout grid + footer-icon precedent.
 - [ ] **Power-fail recovery** ([`reliability-todo.md` P2](docs/reliability-todo.md)) — persist `currentState`, `errorCode`, and stage elapsed time to NVM on each state transition. On boot, prompt the operator to resume or abort if the previous cycle was interrupted.
 - [ ] **Config checksum + EEPROM/NVM backup** ([`reliability-todo.md` P3](docs/reliability-todo.md)) — CRC on `washer.config`; if the SD copy is corrupt, fall back to the NVM-saved copy instead of compiled defaults.
@@ -124,6 +136,17 @@ Operator-facing materials. Distinct from the developer docs in `docs/`; these sh
 
 ## Recently done (last ~2 weeks)
 
+- ✅ **PackML / ISA-88 re-architecture** — split the monolithic `currentState` into `machineState` (PackML) × `recipePhase` (ISA-88); IDLE sub-states; HELD = Hold/Unhold; abort/recover. ESTOP-tested, merged to main.
+- ✅ **10-stage cycle + chem recovery** — full `DIRTY_DRAIN…PRESSURE` with caustic/sani blown back to reservoirs (never to drain); per-state safety monitors + entry preconditions (bench-gated).
+- ✅ **Operator flow + cycle controls** — one-press-per-keg with a one-time power-up pre-check; PAUSE/RESUME, RESTART (re-run stage), STOP-DRAIN (evacuate → HALTED); on-screen + MQTT command surface.
+- ✅ **Config schema (Phase 3)** — temp thresholds + MQTT broker block promoted to runtime, SD-overridable. SD filename fixed to strict 8.3 `WASHER.CFG` (classic SD lib has no LFN — was silently never loading).
+- ✅ **On-screen settings editor (Phase 5)** — tune stage timers on the panel; SAVE → `config_saveToSD()`.
+- ✅ **Boot screen** — single Linux-style progressive screen (SD CONFIG / HARDWARE / NETWORK / MQTT / SENSORS → SYSTEMS GO) that confirms the SD-config read.
+- ✅ **Indicators remapped** — GREEN ready lamp on IO5 (lit in IDLE-READY / COMPLETE / STOPPED), RED fault/E-stop stacklight on IO4. **IO1 START confirmed working + lit on the panel** (active-high; verified ClearCore inputs are negative-true).
+- ✅ **`config_saveToSD` MQTT-clobber fix** — the on-device editor no longer rewrites the MQTT block (was clobbering broker creds + writing the password to the card on every timer edit).
+- ✅ **ProSense ETS50N caustic probe on A10** — linear 4–20 mA→°C map across a 470 Ω shunt; **calibrated, reads true**.
+- ✅ **Enclosure temp + fan removed from the controller** — fan is now standalone/self-regulating; A9 + CCIO-A7 free; `ERR_ENCLOSURE_TEMP` (code 7) retired.
+- ✅ **Docs synced** — `state-table`, `io-table`, and `state-taxonomy` to the as-built two-axis model.
 - ✅ Project rewrite from prior claude.ai conversation artifacts → consolidated canonical source tree
 - ✅ Input debouncing, sensor validation + filtering, state timeouts, config validation
 - ✅ Air-burst at DRAINING start + end of RINSING
