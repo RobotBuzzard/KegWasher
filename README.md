@@ -38,49 +38,58 @@ Manually washing kegs is tedious, inconsistent, and wastes water and chemicals. 
 
 ## Cycle Sequence
 
+The wash is a **10-stage recipe with chemical recovery** — caustic and sanitizer are reused, so each is blown back to its reservoir (never to drain) before the next stage. Caustic is heated during start-up; WASHING requires it at ≥ 50 °C.
+
 ```
-STARTUP   → heat caustic to 60°C, validate I/O, wait for START button
-DRAINING  → open drain + 5s air burst to expel old product
-RINSING   → water + drain open continuously, 5s air burst at end
-WASHING   → caustic + pump (requires caustic ≥ 50°C)
-SANITIZE  → sanitizer + pump
-PRESSURE  → CO2 to pressurize and seal-test the keg
-FINISHED  → alarm, wait for button press
+ 1  DIRTY DRAIN    drain old product (+ 5s air burst)        → drain
+ 2  DIRTY RINSE    water + drain                             → drain
+ 3  DIRTY PURGE    air blow                                  → drain
+ 4  WASHING        caustic + pump (recirc, requires ≥ 50°C)
+ 5  CAUSTIC RTN    air blows caustic back                    → caustic tank
+ 6  RINSING        water + drain
+ 7  RINSE PURGE    air blow                                  → drain
+ 8  SANITIZE       sanitizer + pump (recirc)
+ 9  SANI RTN       CO2 blows sanitizer back                  → sanitizer tank
+10  PRESSURE       CO2 charge / seal-test
 ```
 
-ERROR is reachable from any state; clear and acknowledge with the START button to return to STARTUP.
+The controller runs a **two-axis state machine**: a PackML machine state (`IDLE → STARTING → EXECUTE → COMPLETE`, plus `HELD`/`STOPPING`/`STOPPED`/`ABORTED`) with the 10 wash phases above running as ISA-88 recipe phases inside `EXECUTE`. Operator controls: one button press per keg to START; PAUSE/RESUME (HELD), RESTART (re-run the current stage), and STOP-DRAIN (evacuate → HALTED). A fault lands in `ABORTED`; recover with a long-press of START once the cause clears. Canonical model in [`docs/state-taxonomy.md`](docs/state-taxonomy.md).
+
+Remote status and control are also available over MQTT (see [Remote operation](#remote-operation)).
 
 ## Quick Start
 
 1. Clone the repo, open `KegWasher.ino` in Arduino IDE (or use `arduino-cli`)
 2. Install the ClearCore board package — add `https://www.teknic.com/files/downloads/package_clearcore_index.json` to Boards Manager URLs, then install `ClearCore:sam`
-3. Install the 4D Systems `Diablo16 Serial Arduino Library` from the Library Manager
-4. Compile and upload to the ClearCore (FQBN: `ClearCore:sam:clearcore`)
-4. Copy `config/washer.cfg.example` → `WASHER.CFG` (uppercase 8.3 name — required by the SD library) on an SD card, edit timers as needed, insert into ClearCore
-5. Power up. The system heats caustic on first boot — wait for "Press START to begin"
+3. Install the `Diablo_Serial_4DLib` (4D Systems Diablo16 serial) library, plus `PubSubClient` (MQTT)
+4. Copy `KegSecrets.h.example` → `KegSecrets.h` and fill in the MQTT broker IP / user / pass / client id / topic root (required to compile)
+5. Compile and upload to the ClearCore (FQBN: `ClearCore:sam:clearcore`)
+6. Copy `config/washer.cfg.example` → `WASHER.CFG` (uppercase 8.3 name — required by the SD library) on an SD card, edit timers as needed, insert into ClearCore
+7. Power up. In a production build the system heats caustic on first boot — wait for the READY screen
 
 ## Configuration
 
-All cycle timing lives in `WASHER.CFG` on the SD card. Default cycle is 3 minutes per stage; large kegs get 1.5× by default. See `config/washer.cfg.example` for all keys and explanations.
+Cycle timing, temperature thresholds, and the MQTT broker block all live in `WASHER.CFG` (key=value) on the SD card. Production defaults total **≈ 4.4 min/cycle** (per-stage timers, not a single flat value); large kegs get 1.5× by default. See `config/washer.cfg.example` for all keys and explanations.
 
-If the SD card or config file is missing/corrupt, the firmware falls back to compiled defaults and shows "Using default settings" briefly on the display.
+Timers can also be tuned **on the panel** via the on-screen settings editor (the SETTINGS button on the READY screen).
+
+If the SD card or config file is missing/corrupt, the firmware falls back to compiled defaults; the boot screen reports `SD CONFIG: DEFAULT` (vs `READ OK` when `WASHER.CFG` loaded).
 
 ## Bench mode
 
 `KegConfig.h` defines `BENCH_MODE` as a compile-time flag (uncommented today, while the project is in pre-production). With it active, the firmware:
 
-- Skips `STARTUP_HEATING` (goes directly INIT → IO_CHECK → READY)
+- Skips the `STARTING` caustic heat-up (boots directly to `IDLE → READY`)
 - Returns `true` from `hardware_allSystemsGo()` regardless of sensor state
-- Skips the per-tick and entry caustic-temp checks in `STATE_WASHING`
-- Overrides the compiled-default stage timers from 3 min to **5 sec each**, so a full cycle runs in ~25 sec instead of 15 min (validation bounds on SD-loaded values are unchanged)
-- Logs a loud `*** BENCH_MODE ACTIVE — DO NOT SHIP THIS ***` banner to USB Serial at every boot
-- Renders a persistent `** BENCH MODE **` line on the boot splash, the READY screen, and the FINISHED screen
+- Skips the per-tick and entry caustic-temp checks in the `WASHING` phase
+- Compresses every stage timer to **5 sec**, so a full 10-stage cycle runs in **~50 sec** instead of the ≈ 4.4 min production default (validation bounds on SD-loaded values are unchanged)
+- Logs a loud `**  BENCH_MODE ACTIVE — DO NOT SHIP THIS  **` banner to USB Serial at every boot
 
 What's **not** bypassed even in bench mode:
 
 - `hardware_setCausticHeater()`'s level / overtemp interlocks (those are hardware-safety, not policy)
-- Per-state hard timeouts (DRAINING 10 min, WASHING 20 min, etc.)
-- E-STOP (both the ISR-immediate output kill and the main-loop ERROR transition)
+- Per-phase hard timeouts (most phases 10 min, WASHING 20 min) and the STOPPING evacuation cap (2 min)
+- E-STOP (both the ISR-immediate output kill and the main-loop ABORTED transition)
 - The hardware watchdog (8 s timeout, kicks every loop)
 
 **Before any production build**: open `KegConfig.h`, comment out the `#define BENCH_MODE` line, and verify with `grep BENCH_MODE *.h *.cpp` that the only remaining mentions are inside `#ifdef` guards. The shipped firmware in that state is byte-identical to a non-bench build.
@@ -89,14 +98,26 @@ What's **not** bypassed even in bench mode:
 
 Hold both DRAIN and START buttons at the same time to enter diagnostic mode. Each output is exercised in sequence (1 second each) and input states are reported on the display. Press START to exit.
 
+## Remote operation
+
+There is **no HTTP server on the controller** — all remote status and control flow through MQTT (broker handles auth; retained topics + LWT give "is it alive / what's it doing" for free). The firmware publishes change-detected, retained status (`kegwasher/state`, `.../phase`, timer, temps, sensors, error, plus a 5 s heartbeat) and subscribes to `kegwasher/cmd/+` (start, pause, resume, restart, stop, reset). Tail it with:
+
+```bash
+mosquitto_sub -h <broker> -u <user> -P <pass> -t 'kegwasher/#' -v
+```
+
+The on-device front panel (gen4-uLCD-43DT) shows per-phase screens with a mm:ss countdown, the START / PAUSE-RESUME / RESTART / STOP-DRAIN / SETTINGS touch controls, a footer with the device IP + MQTT indicator, and stacklight outputs (RED = fault/E-stop, GREEN = ready). Broker IP/credentials are configurable per device from `WASHER.CFG`, falling back to the compiled `KegSecrets.h`.
+
 ## Project Structure
 
 ```
 KegWasher/
 ├── KegWasher.ino        # Arduino sketch (entry point)
-├── Keg*.h / Keg*.cpp    # 8 firmware modules
-├── docs/                # State table, I/O table, reliability TODO
-├── config/              # Example SD config
+├── Keg*.h / Keg*.cpp    # firmware modules (config, hardware, state machine,
+│                        #   display + display-serial, timers, diagnostics, utils)
+├── KegSecrets.h         # gitignored — MQTT broker IP/user/pass/client/topic
+├── docs/                # state + I/O tables, state taxonomy, reliability TODO
+├── config/              # example SD config (washer.cfg.example)
 ├── README.md
 ├── LICENSE              # MIT
 └── .gitignore
@@ -106,23 +127,28 @@ The `.ino` and module sources live at the project root by Arduino sketch convent
 
 ## Status
 
-**v0.1-bench — works on a workbench, not yet on a real machine.**
+**Bench-verified, pre-production — moving from the bench to the prototype chassis.**
 
 What's verified end-to-end on the bench (no plumbing connected):
 
 - Firmware compiles and flashes via the [`teknic-clearcore-cli`](https://github.com/RobotBuzzard/teknic-clearcore-cli) `flash.sh` workflow
-- Boot reaches `STARTUP_READY` on the Goldelox 128x128 display
-- Full state-machine cycle runs in BENCH_MODE: `STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED`, with output relays toggling visibly and the display updating cleanly on each transition
+- Boot reaches `IDLE / READY` on the gen4-uLCD-43DT (Diablo16, 272×480) panel, with a Linux-style boot screen confirming the SD-config read
+- Full 10-stage cycle runs in BENCH_MODE (`DIRTY DRAIN → … → PRESSURE`, ~50 s), with output relays toggling visibly and per-phase screens updating cleanly on each transition
+- Two-axis PackML/ISA-88 state machine + operator controls (START, PAUSE/RESUME, RESTART, STOP-DRAIN) exercised on hardware
+- Ethernet/DHCP + MQTT status/command surface live to a Mosquitto broker (retained topics, heartbeat, LWT)
 - Hardware watchdog ([`ClearCoreWatchdog`](https://github.com/RobotBuzzard/ClearCoreWatchdog)) bench-validated; deliberate-hang test confirms ~8 s automatic reset
-- Display rendering pattern resolved (once-on-entry for STARTUP_READY, FINISHED, ERROR; 1 Hz refresh for operating states)
+- E-STOP verified for normally-closed wiring (ISR-immediate output kill + main-loop ABORTED transition)
+- Physical START button (active-high) + GREEN ready / RED fault stacklight indicators confirmed
+- **Caustic temperature probe calibrated** — ProSense ETS50N (4–20 mA on A10) reads true against a reference
 - Alarm UX split: DRAIN silences without resetting, long-press START resets
 
 What's **not** verified:
 
-- Anything involving real plumbing — water, air, CO2, caustic, sanitizer, the heater, the pump, the keg
-- Anything involving real sensors — the firmware currently can't even tell whether they're connected because `BENCH_MODE` bypasses the sensor gates entirely
+- Anything involving real plumbing — water, air, CO2, caustic, sanitizer, the heater, the pump, the keg (no wet test has been run)
+- The remaining sensors against real-world readings — only the A10 caustic-temp probe is calibrated so far; while `BENCH_MODE` is active the sensor gates are bypassed entirely
 - Anything that requires the system to run for hours or days (long-term-stability items in the reliability TODO)
-- Sensor calibration / drift / sanity ranges against real-world readings
+
+> The enclosure temperature input and cooling-fan output were removed from the controller — the cabinet fan is a standalone self-regulating unit, so the firmware no longer senses enclosure temp or drives a fan.
 
 See [`docs/reliability-todo.md`](docs/reliability-todo.md) for the remaining roadmap and priority order.
 
