@@ -102,9 +102,11 @@ The display is a **gen4-uLCD-43DT (Diablo16)** driven by **raw SPE serial graphi
 ### Reference docs (in `docs/`)
 
 - `io-table.md` — pin assignments, active states, error code → I/O mapping
-- `state-table.md` — per-state inputs/outputs/preconditions/error conditions
-- `display-guide.md` — LEGACY (Goldelox/genie-era); the current raw-serial path is in the Display section above + the `kegwasher_display_serial` memory
+- `state-taxonomy.md` — canonical two-axis model (PackML machineState × ISA-88 recipePhase)
+- `state-table.md` — as-built per-state/phase inputs/outputs/preconditions/error conditions
 - `reliability-todo.md` — prioritized hardening roadmap (referenced from TODO.md)
+
+(The display path is documented in the Display section above + the `kegwasher_display_serial` memory; the old Goldelox/genie `display-guide.md` was removed.)
 
 `TODO.md` at the root is the live roadmap (phases 0-5); `reliability-todo.md` has deeper per-item rationale.
 

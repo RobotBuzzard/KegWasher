@@ -38,10 +38,14 @@ docs/*.html
 docs/--help
 
 # Workshop4 / ViSi-Genie build artifacts. OBSOLETE: the display now uses the raw
-# SPE serial path (KegDisplaySerial), so the genie compiled outputs (4XE program +
-# GCI/DAT/TXF image/data/font resources) are dead and no longer committed.
+# SPE serial path (KegDisplaySerial), so the genie project files + compiled outputs
+# (4DGenie/4DGTX project, 4XE program, GCI/DAT/TXF image/data/font resources) are
+# dead and no longer committed.
 KegWasher.4DWork/
+*.4DGenie*
+*.4DGTX
 *.4XE
+KegWasher.cfg
 KEGW~UCD.gci
 KEGW~UCD.dat
 KEGW~UCD.txf
