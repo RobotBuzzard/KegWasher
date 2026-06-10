@@ -35,7 +35,7 @@ const char* display_currentScreen() { return g_screen; }
 // On-screen START button (READY + FINISHED screens). A touch in this rect sets
 // g_touchStart, which display_takeTouchStart() drains into isCycleStartPressed
 // (same one-tick-pulse path as the physical button / MQTT start command).
-static const int BTN_START_X = 46, BTN_START_Y = 300, BTN_START_W = 180, BTN_START_H = 90;
+static const int BTN_START_X = 18, BTN_START_Y = 180, BTN_START_W = 236, BTN_START_H = 150;
 static volatile bool g_touchStart = false;
 static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED screen
 
@@ -43,10 +43,10 @@ static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED s
 //  - Running: a single PAUSE button.
 //  - Paused : three stacked buttons RESUME / RESTART / STOP-DRAIN.
 // Touches arm the matching one-shot flags, drained in KegWasher.ino.
-static const int BTN_PAUSE_X = 46, BTN_PAUSE_Y = 330, BTN_PAUSE_W = 180, BTN_PAUSE_H = 55;
-static const int BTN_RESUME_X  = 8, BTN_RESUME_Y  = 262, BTN_BAND_W = 256, BTN_BAND_H = 42;
-static const int BTN_RESTART_Y = 310;
-static const int BTN_STOPDRN_Y = 358;
+static const int BTN_PAUSE_X = 18, BTN_PAUSE_Y = 348, BTN_PAUSE_W = 236, BTN_PAUSE_H = 50;
+static const int BTN_RESUME_X  = 18, BTN_RESUME_Y  = 288, BTN_BAND_W = 236, BTN_BAND_H = 44;
+static const int BTN_RESTART_Y = 340;
+static const int BTN_STOPDRN_Y = 392;
 static const word COL_PAUSE = 0xFD20;  // orange
 static volatile bool g_touchPause   = false;
 static volatile bool g_touchRestart = false;
@@ -86,13 +86,14 @@ static const unsigned long S_TMIN = 5000UL, S_TMAX = 1800000UL, S_TSTEP = 5000UL
 static const unsigned long S_PMIN = 60000UL, S_PMAX = 3600000UL, S_PSTEP = 60000UL;
 static const int S_TEMP_MIN = 0;
 
-// Layout (portrait 272x480).
-static const int S_ROW_Y0 = 52, S_ROW_H = 64;
-static const int S_MINUS_X = 150, S_PLUS_X = 210, S_BTN_W = 54, S_BTN_H = 50;
-static const int S_NAV_Y = 318, S_NAV_W = 76, S_NAV_H = 40, S_NEXT_X = 188;
-static const int S_ACT_Y = 404, S_ACT_W = 120, S_ACT_H = 44, S_CANCEL_X = 144;
+// Layout (portrait 272x480, direction-C grid: content x=18..256).
+static const int S_ROW_Y0 = 76, S_ROW_H = 58;
+static const int S_MINUS_X = 146, S_PLUS_X = 204, S_BTN_W = 52, S_BTN_H = 44;
+static const int S_NAV_Y = 330, S_NAV_W = 70, S_NAV_H = 40, S_NEXT_X = 186;
+static const int S_ACT_Y = 400, S_ACT_W = 110, S_ACT_H = 44, S_CANCEL_X = 146;
 // SETTINGS button on the READY screen.
-static const int S_OPEN_X = 66, S_OPEN_Y = 406, S_OPEN_W = 140, S_OPEN_H = 42;
+static const int S_OPEN_X = 18, S_OPEN_Y = 392, S_OPEN_W = 236, S_OPEN_H = 44;
+static const word S_SUBTX = 0x84B4;   // secondary text (palette SUB)
 
 static void sFmt(int idx, char* buf, size_t n) {
   if (idx < 10)  { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
@@ -109,16 +110,16 @@ static void sFmt(int idx, char* buf, size_t n) {
 static void sDrawValue(int slot, int idx) {
   int rowY = S_ROW_Y0 + slot * S_ROW_H;
   char v[12]; sFmt(idx, v, sizeof(v));
-  KDS::fillRect(8, rowY + 32, 144, rowY + 58, S_BLACK);   // clear old value first
-  KDS::text(10, rowY + 34, 2, AMBER, S_BLACK, v);
+  KDS::fillRect(16, rowY + 18, 140, rowY + 50, S_BLACK);   // clear old value first
+  KDS::label(18, rowY + 20, true, 1, 2, WHITE, S_BLACK, v);
 }
 
 static void sDrawRow(int slot, int idx) {
   int rowY = S_ROW_Y0 + slot * S_ROW_H;
-  KDS::text(8, rowY + 6, 2, WHITE, S_BLACK, sLabel[idx]);
+  KDS::label(18, rowY + 2, false, 1, 1, S_SUBTX, S_BLACK, sLabel[idx]);
   sDrawValue(slot, idx);
-  KDS::button(S_MINUS_X, rowY + 7, S_BTN_W, S_BTN_H, "-", BLUE);
-  KDS::button(S_PLUS_X,  rowY + 7, S_BTN_W, S_BTN_H, "+", BLUE);
+  KDS::button(S_MINUS_X, rowY + 4, S_BTN_W, S_BTN_H, "-", BLUE);
+  KDS::button(S_PLUS_X,  rowY + 4, S_BTN_W, S_BTN_H, "+", BLUE);
 }
 
 // Read-only INFO page (last settings page): build id, network, broker, config
@@ -127,21 +128,19 @@ static void sDrawRow(int slot, int idx) {
 static void sDrawInfo() {
   char b[40];
   int y = S_ROW_Y0;
-  KDS::text(8, y, 2, WHITE, S_BLACK, "FIRMWARE");
-  snprintf(b, sizeof(b), "%s %s", __DATE__, __TIME__);
-  KDS::text(10, y + 28, 1, AMBER, S_BLACK, b);
-  y += S_ROW_H;
-  KDS::text(8, y, 2, WHITE, S_BLACK, "NETWORK");
-  KDS::text(10, y + 28, 1, AMBER, S_BLACK, ipStr());
-  y += S_ROW_H;
-  KDS::text(8, y, 2, WHITE, S_BLACK, "BROKER");
-  snprintf(b, sizeof(b), "%s:%d %s", mqttBrokerIp, mqttBrokerPort,
+  const char* lab[4] = { "FIRMWARE", "NETWORK", "BROKER", "CONFIG" };
+  char v0[40], v2[40];
+  snprintf(v0, sizeof(v0), "%s %s", __DATE__, __TIME__);
+  snprintf(v2, sizeof(v2), "%s:%d %s", mqttBrokerIp, mqttBrokerPort,
            kwMqttReady ? "OK" : "OFFLINE");
-  KDS::text(10, y + 28, 1, AMBER, S_BLACK, b);
-  y += S_ROW_H;
-  KDS::text(8, y, 2, WHITE, S_BLACK, "CONFIG");
-  KDS::text(10, y + 28, 1, AMBER, S_BLACK,
-            cfgLoadedFromSD ? "SD WASHER.CFG" : "COMPILED DEFAULTS");
+  const char* val[4] = { v0, ipStr(), v2,
+                         cfgLoadedFromSD ? "SD WASHER.CFG" : "COMPILED DEFAULTS" };
+  (void)b;
+  for (int i = 0; i < 4; i++) {
+    KDS::label(18, y, false, 1, 1, S_SUBTX, S_BLACK, lab[i]);
+    KDS::label(18, y + 20, true, 1, 1, WHITE, S_BLACK, val[i]);
+    y += S_ROW_H;
+  }
 }
 
 static void sDraw() {
@@ -158,12 +157,12 @@ static void sDraw() {
       sDrawRow(slot, idx);
     }
   }
-  KDS::button(8,        S_NAV_Y, S_NAV_W, S_NAV_H, "PREV", sPage > 0 ? BLUE : S_GREY);
+  KDS::button(18,       S_NAV_Y, S_NAV_W, S_NAV_H, "PREV", sPage > 0 ? BLUE : S_GREY);
   KDS::button(S_NEXT_X, S_NAV_Y, S_NAV_W, S_NAV_H, "NEXT", sPage < S_PAGES - 1 ? BLUE : S_GREY);
-  char pg[8]; snprintf(pg, sizeof(pg), "P%d/%d", sPage + 1, S_PAGES);
-  KDS::text(112, S_NAV_Y + 12, 2, WHITE, S_BLACK, pg);
-  KDS::button(8,          S_ACT_Y, S_ACT_W, S_ACT_H, "SAVE",   GREEN);
-  KDS::button(S_CANCEL_X, S_ACT_Y, S_ACT_W, S_ACT_H, "CANCEL", RED);
+  char pg[8]; snprintf(pg, sizeof(pg), "%d/%d", sPage + 1, S_PAGES);
+  KDS::label(120, S_NAV_Y + 10, true, 1, 2, WHITE, S_BLACK, pg);
+  KDS::buttonPrimary(18,   S_ACT_Y, S_ACT_W, S_ACT_H, "SAVE",   GREEN);
+  KDS::button(S_CANCEL_X,  S_ACT_Y, S_ACT_W, S_ACT_H, "CANCEL", RED);
   KDS::footer(ipStr());
   reapplyMqtt();          // re-show live pub/sub dots (footer reset them to red)
 }
@@ -251,12 +250,12 @@ void display_showStartup() {
 // "KEGWASHER" frame; setup() calls display_bootStatus() to fill one status row in
 // as each subsystem comes up, then display_bootDone(). No splash chain.
 void display_bootStatus(int row, const char* label, const char* value, word color) {
-  int y = 74 + row * 34;
-  KDS::text(8,   y,     2, WHITE, 0x0000u, label);   // label (size 2)
-  KDS::text(158, y + 6, 1, color, 0x0000u, value);   // status (size 1)
+  int y = 84 + row * 30;
+  KDS::label(18,  y, false, 1, 1, WHITE, 0x0000u, label);
+  KDS::labelRight(256, y, true, 1, 1, color, 0x0000u, value);
 }
 void display_bootDone(bool ok) {
-  KDS::text(16, 300, 3, ok ? GREEN : AMBER, 0x0000u, ok ? "SYSTEMS GO" : "CHECK SYS");
+  KDS::label(18, 310, true, 2, 2, ok ? GREEN : AMBER, 0x0000u, ok ? "SYSTEMS GO" : "CHECK SYS");
   KDS::footer(ipStr());   // IP shown here, so the NETWORK row can just say OK/OFFLINE
   reapplyMqtt();
 }
@@ -271,14 +270,14 @@ void display_showReadyScreen() {
   g_screen = "READY";
   // Same unified screen, all-OK: green title + the live signal rows + START.
   KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive, true, ipStr());
-  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   KDS::button(S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H, "SETTINGS", BLUE);
   reapplyMqtt();
 }
 void display_showFinishedScreen() {
   g_screen = "COMPLETE";
   KDS::finished(ipStr());
-  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
 void display_showStopping() {
@@ -286,7 +285,7 @@ void display_showStopping() {
 void display_showHaltedScreen() {
   g_screen = "STOPPED";
   KDS::halted(ipStr());
-  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
 void display_showError(const char* m) {
@@ -295,7 +294,7 @@ void display_showError(const char* m) {
   // RECOVER button (blue = operator action). Touch is gated to MACH_ABORTED in
   // display_doEvents and drained → stateMachine_reset() (which refuses while the
   // fault condition is still active). The flashing banner shows the hint.
-  KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "RECOVER", BLUE);
+  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "RECOVER", BLUE);
   reapplyMqtt();
 }
 void display_showMessage(const char* m) {
@@ -337,10 +336,21 @@ static void drawCycleControls() {
   }
 }
 
+// One-line operator description per recipe phase (indexed like phaseNames).
+static const char* const phaseDescs[NUM_PHASES] = {
+  "",
+  "draining old product",  "pre-rinse to drain",     "air-purging rinse water",
+  "caustic recirculating", "caustic back to tank",
+  "rinsing to drain",      "air-purging rinse water",
+  "sanitizer recirculating", "sanitizer back to tank",
+  "CO2 charge - sealing keg"
+};
+
 void display_showOperatingScreen() {
   g_screen = (machineState == MACH_HELD) ? "PAUSED" : "OPERATING";
-  // Title bar: GREEN while running (IEC normal), AMBER while held (abnormal/hold).
-  KDS::operatingFrame(phaseNames[recipePhase], ipStr(),
+  // Edge strip: GREEN while running (IEC normal), AMBER while held.
+  KDS::operatingFrame(phaseNames[recipePhase], phaseDescs[recipePhase],
+                      (int)recipePhase, NUM_PHASES - 1, ipStr(),
                       (machineState == MACH_HELD) ? AMBER : GREEN);
   display_updateTimer(timers_getStateElapsed());
   display_updateStatus();
@@ -386,12 +396,12 @@ void display_doEvents() {
       int idx = first + slot;
       if (idx >= S_NUM) break;
       int rowY = S_ROW_Y0 + slot * S_ROW_H;
-      if (inRect(x, y, S_MINUS_X, rowY + 7, S_BTN_W, S_BTN_H)) { sAdjust(idx, -1); sDrawValue(slot, idx); return; }
-      if (inRect(x, y, S_PLUS_X,  rowY + 7, S_BTN_W, S_BTN_H)) { sAdjust(idx, +1); sDrawValue(slot, idx); return; }
+      if (inRect(x, y, S_MINUS_X, rowY + 4, S_BTN_W, S_BTN_H)) { sAdjust(idx, -1); sDrawValue(slot, idx); return; }
+      if (inRect(x, y, S_PLUS_X,  rowY + 4, S_BTN_W, S_BTN_H)) { sAdjust(idx, +1); sDrawValue(slot, idx); return; }
     }
-    if (inRect(x, y, 8,         S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage > 0)           { sPage--; sDraw(); } return; }
+    if (inRect(x, y, 18,        S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage > 0)           { sPage--; sDraw(); } return; }
     if (inRect(x, y, S_NEXT_X,  S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage < S_PAGES - 1) { sPage++; sDraw(); } return; }
-    if (inRect(x, y, 8,         S_ACT_Y, S_ACT_W, S_ACT_H)) { sSave();   return; }
+    if (inRect(x, y, 18,        S_ACT_Y, S_ACT_W, S_ACT_H)) { sSave();   return; }
     if (inRect(x, y, S_CANCEL_X, S_ACT_Y, S_ACT_W, S_ACT_H)) { sCancel(); return; }
     return;   // swallow stray touches while editing
   }
@@ -404,14 +414,14 @@ void display_doEvents() {
 
   if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchStart = true;
-    KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+    KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
   } else if (machineState == MACH_IDLE && idleSub == IDLE_READY &&
              inRect(x, y, S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H)) {
     display_openSettings();        // SETTINGS button on the READY screen
   } else if (machineState == MACH_ABORTED &&
              inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchRecover = true;   // RECOVER on the fault screen → stateMachine_reset()
-    KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "...", WHITE);
+    KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "...", WHITE);
   } else if (operating && !held) {
     if (inRect(x, y, BTN_PAUSE_X, BTN_PAUSE_Y, BTN_PAUSE_W, BTN_PAUSE_H)) {
       g_touchPause = true;

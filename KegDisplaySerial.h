@@ -22,7 +22,10 @@ void notReady(bool water, bool air, bool co2, bool estop, const char* ip);
 void ready(const char* ip);
 void heating(int curC, int tgtC, int pct, const char* ip);
 void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip);
-void operatingFrame(const char* stateName, const char* ip, word barColour);   // static chrome
+void operatingFrame(const char* phaseName, const char* desc,
+                    int phaseIdx, int phaseCount,
+                    const char* ip, word stateColour);                        // static chrome
+void operatingFrame(const char* stateName, const char* ip, word barColour);   // legacy 3-arg
 void finished(const char* ip);
 void error(const char* msg, const char* ip);
 void message(const char* msg, const char* ip);
@@ -46,11 +49,15 @@ void setTouchCalibration(float a, float b, float c, float d, float e, float f);
 void mqttIndicators(bool connected, bool pubActive, bool subActive);
 void footer(const char* ip);                                // redraw footer bar + IP + P/S labels
 void banner(const char* text, word colour, bool visible);   // flashing alert strip under the title
-void button(int x, int y, int w, int h, const char* label, word colour);  // tappable button
+void button(int x, int y, int w, int h, const char* label, word colour);         // secondary (card + coloured label)
+void buttonPrimary(int x, int y, int w, int h, const char* label, word colour);  // primary (solid fill, dark label)
 
 // ---- generic primitives (used by the settings editor in KegDisplay) ----
-void screen(const char* title, word barColour);              // title bar + cleared body + footer strip
-void text(int x, int y, int sz, word fg, word bg, const char* s);  // opaque text at pixel (x,y)
+void screen(const char* title, word barColour);              // edge strip + title + rule + footer strip
+void text(int x, int y, int sz, word fg, word bg, const char* s);  // legacy: FONT_7 at sz multiplier
+void label(int x, int y, bool bold, int sx, int sy, word fg, word bg, const char* s);  // DejaVu, pixel pos
+void labelRight(int x2, int y, bool bold, int sx, int sy, word fg, word bg, const char* s);
+void rule(int y);                                            // thin separator line, content width
 void fillRect(int x, int y, int x2, int y2, word col);       // filled rect (clear/refresh a field)
 
 } // namespace KDS
