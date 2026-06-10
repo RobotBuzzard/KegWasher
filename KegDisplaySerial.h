@@ -34,7 +34,8 @@ void halted(const char* ip);      // de-energized after a STOP/DRAIN; START reco
 
 // ---- partial updates for the operating screen (no full redraw → no flicker) ----
 void operatingTimer(int minutes, int seconds);
-void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool mqtt);
+void cycleProgress(unsigned long cycleElapsedMs, unsigned long cycleTotalMs);  // edge-strip countdown
+void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bool mqtt);  // temp in tenths C
 
 // ---- touch ----
 void touchEnable();

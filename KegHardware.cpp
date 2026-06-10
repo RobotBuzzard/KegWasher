@@ -238,6 +238,17 @@ void hardware_setSanitizer(bool state) { digitalWrite(sanitizerOut, state ? HIGH
 // GREEN cycle-start / ready indicator on IO5 — a dedicated output (no time-mux).
 void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : LOW); }
 
+// PAUSED indicator: both stacklight lamps (IO4 red + IO5 green, PWM-capable)
+// breathe on a ~1.6 s triangle so a held machine is visible across the room.
+// digitalWrite from the normal paths overrides PWM when the hold ends.
+void hardware_pulseLamps() {
+  unsigned long t = millis() % 1600UL;
+  int duty = (t < 800UL) ? (int)(t * 255UL / 800UL)
+                         : (int)((1600UL - t) * 255UL / 800UL);
+  analogWrite(alarmOut, duty);
+  analogWrite(readyLedOut, duty);
+}
+
 // ---------- Heater (interlocked) ----------
 void hardware_setCausticHeater(bool state) {
   if (state) {
@@ -345,14 +356,19 @@ static const float ETS_T_AT_4MA   = -50.0f;
 static const float ETS_T_AT_20MA  = 150.0f;
 static const float ETS_MA_FAULT   = 3.6f;
 
-int hardware_getCausticTemp() {
+int hardware_getCausticTempC10() {
   // A fully open/short loop (0V or >10V) is already flagged by the ADC rail-reject.
   if (causticTempSensorError) return (int)minCausticTemp - 10;
   float v  = (float)causticTempValue / (float)ADC_MAX * 10.0f;   // ClearCore 0-10V input
   float mA = v / ETS_SHUNT_OHMS * 1000.0f;                       // current through the shunt
   if (mA < ETS_MA_FAULT) return (int)minCausticTemp - 10;        // loop fault -> fail cold
   float t = ETS_T_AT_4MA + (mA - 4.0f) * (ETS_T_AT_20MA - ETS_T_AT_4MA) / 16.0f;
-  return (int)lroundf(t);
+  return (int)lroundf(t * 10.0f) + tempCalOffsetC10;   // tenths of a degree C
+}
+
+int hardware_getCausticTemp() {
+  int c10 = hardware_getCausticTempC10();
+  return (c10 >= 0) ? (c10 + 5) / 10 : (c10 - 5) / 10;   // round-to-nearest whole C
 }
 
 int hardware_getCausticLevel() {

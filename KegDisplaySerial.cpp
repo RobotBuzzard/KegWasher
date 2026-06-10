@@ -55,20 +55,20 @@ namespace {
   // ---- layout grid ----
   const int LX = 18, RX = DW - 14;          // content left / right edge
   const int STRIP_W   = 6;
-  const int TITLE_Y   = 10;
-  const int META_Y    = 46;
-  const int RULE1_Y   = 66;
-  const int BANNER_Y1 = 72, BANNER_Y2 = 104;
+  const int TITLE_Y   = 8;
+  const int META_Y    = 50;
+  const int RULE1_Y   = 84;
+  const int BANNER_Y1 = 90, BANNER_Y2 = 126;
   const int FOOT_Y    = DH - 18;
 
   // operating screen fields
-  const int TMR_Y = 112, TMR_CLR_Y2 = 182;
-  const int REM_Y = 188;
-  const int RULE2_Y = 210;
-  const int TMP_Y = 222, TMP_CLR_Y2 = 252;
-  const int TMPSUB_Y = 258;
-  const int RULE3_Y = 280;
-  const int SENS_Y = 292;                   // 2x2 grid, rows +24
+  const int TMR_Y = 134, TMR_CLR_Y2 = 204;
+  const int REM_Y = 210;
+  const int RULE2_Y = 244;
+  const int TMP_Y = 254, TMP_CLR_Y2 = 284;
+  const int TMPSUB_Y = 286;
+  const int RULE3_Y = 320;
+  const int SENS_Y = 330;                   // 2x2 grid, rows +34
   const int FOOT_DOT_PUB_X = 238, FOOT_DOT_SUB_X = 256, FOOT_DOT_Y = DH - 9;
 
   Diablo_Serial_4DLib* D = nullptr;
@@ -77,7 +77,17 @@ namespace {
 
   inline void drain() { while (Serial1.available()) Serial1.read(); }
   void bg(word c)                              { drain(); D->gfx_Set(BACKGROUND_COLOUR, c); }
-  void cls()                                   { drain(); D->gfx_Cls(); }
+  // forward decl — cls() must invalidate the text-state cache (defined below)
+  void textStateReset();
+  void cls() {
+    drain(); D->gfx_Cls();
+    // gfx_Cls resets the panel's text parameters (opacity back to OPAQUE,
+    // background to black) — camera-diagnosed 2026-06-10 as the black-box /
+    // "underline" artifact behind labels on coloured fills. Re-assert
+    // transparency and drop the host-side cache so attrs get re-issued.
+    drain(); D->txt_Set(TEXT_OPACITY, 0);
+    textStateReset();
+  }
   void rect(int a,int b,int c,int d,word col)  { drain(); D->gfx_RectangleFilled(a,b,c,d,col); }
   void hline(int x1,int x2,int y,word col)     { drain(); D->gfx_Line(x1,y,x2,y,col); }
   void disc(int x,int y,int r,word col)        { drain(); D->gfx_CircleFilled(x,y,r,col); }
@@ -100,6 +110,7 @@ namespace {
   // current text state — cached to skip redundant txt_Set spam
   word g_font = 0xFFFF, g_fg = 0xFFFF, g_bgc = 0xFFFF;
   int  g_sx = -1, g_sy = -1;
+  void textStateReset() { g_font = 0xFFFF; g_fg = g_bgc = 0xFFFF; g_sx = g_sy = -1; }
 
   void setFont(bool bold, int sx, int sy, word fg, word bgc) {
     word f = bold ? FONT_8 : FONT_7;
@@ -107,7 +118,7 @@ namespace {
     if (sx != g_sx)   { drain(); D->txt_Set(TEXT_WIDTH,  sx); g_sx = sx; }
     if (sy != g_sy)   { drain(); D->txt_Set(TEXT_HEIGHT, sy); g_sy = sy; }
     if (fg != g_fg)   { drain(); D->txt_Set(TEXT_COLOUR, fg); g_fg = fg; }
-    if (bgc != g_bgc) { drain(); D->txt_Set(TEXT_BACKGROUND, bgc); g_bgc = bgc; }
+    (void)bgc;   // transparent text — background colour unused
   }
 
   int strW(const char* s, bool bold, int sx) {
@@ -128,6 +139,9 @@ namespace {
     put(s);
   }
   void lbl(int x, int y, bool bold, int sx, int sy, word fg, word bgc, const char* s) {
+    // Vertically-stretched regular text reads as skinny strokes (height
+    // scales, stroke width doesn't) — compensate with the bold face.
+    if (sy > sx) bold = true;
     setFont(bold, sx, sy, fg, bgc);
     textAt(x, y, s);
   }
@@ -205,14 +219,21 @@ namespace {
     *sy = clampi((int)(g_d * rx + g_e * ry + g_f + 0.5f), 0, DH - 1);
   }
 
+  // partial-update caches for the operating screen
+  int  g_lastTemp = -999;
+  int  g_lastSens = -1;     // packed w|a|c|e bits
+  word g_stripCol = 0;      // current state colour of the edge strip
+  int  g_stripTop = 0;      // top y of the remaining (filled) strip portion
+
   // ---- shared chrome: edge strip + title (+ optional meta line) ----
   void chrome(const char* title, word stripColour, const char* meta) {
     word sc = remap(stripColour);
     bg(C_BG); cls();
-    g_font = 0xFFFF; g_fg = g_bgc = 0xFFFF; g_sx = g_sy = -1;   // panel state reset
     rect(0, 0, STRIP_W, DH - 1, sc);
-    lbl(LX, TITLE_Y, true, 2, 2, C_TXT, C_BG, title);
-    if (meta && *meta) lbl(LX, META_Y, false, 1, 1, C_SUB, C_BG, meta);
+    g_stripCol = sc; g_stripTop = 0;
+    int tsx = (strW(title, true, 3) <= RX - LX) ? 3 : 2;
+    lbl(LX, TITLE_Y, true, tsx, 3, C_TXT, C_BG, title);
+    if (meta && *meta) lbl(LX, META_Y, false, 1, 2, C_SUB, C_BG, meta);
     hline(LX, RX, RULE1_Y, C_TRACK);
     rect(0, FOOT_Y, DW - 1, DH - 1, C_CARD);
   }
@@ -225,22 +246,18 @@ namespace {
   // sensor grid (2 cols x 2 rows): dot + label. Used by readiness + operating.
   const char* SENS_LBL[4] = { "WATER", "AIR", "CO2", "E-STOP" };
   void sensorDot(int i, int y0, bool ok) {
-    int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 24;
-    disc(x + 4, y + 7, 4, ok ? C_GRN : C_RED);
+    int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 34;
+    disc(x + 6, y + 13, 6, ok ? C_GRN : C_RED);
   }
   void sensorGrid(int y0, bool w, bool a, bool c, bool e, bool emphasizeBad) {
     bool ok[4] = { w, a, c, e };
     for (int i = 0; i < 4; i++) {
-      int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 24;
+      int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 34;
       sensorDot(i, y0, ok[i]);
       word fg = (!ok[i] && emphasizeBad) ? C_TXT : C_SUB;
-      lbl(x + 15, y, false, 1, 1, fg, C_BG, SENS_LBL[i]);
+      lbl(x + 19, y, false, 2, 2, fg, C_BG, SENS_LBL[i]);
     }
   }
-
-  // partial-update caches for the operating screen
-  int  g_lastTemp = -999;
-  int  g_lastSens = -1;     // packed w|a|c|e bits
 
   // RTS-reset / baud-bump (unchanged, hardware-proven)
   void resetSync() {
@@ -284,7 +301,7 @@ void begin() {
   resetSync();                     // RTS-reset display -> SPE@9600, handshake, portrait
   changeBaud(BAUD_115200, 115200); // bump link to 115200 (~12x faster redraws; 9600 fallback)
   buildWidthCache();               // DejaVu glyph widths for centring (one-time, ~0.5 s)
-  drain(); D->txt_Set(TEXT_OPACITY, 1);   // opaque text everywhere (bg colour managed)
+  drain(); D->txt_Set(TEXT_OPACITY, 0);   // transparent text (re-asserted by every cls())
 }
 
 uint32_t ackErrors() { return g_err; }
@@ -299,9 +316,9 @@ void startup(const char* l1, const char* l2) {
 void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip) {
   chrome(allOk ? "READY" : "NOT READY",
          allOk ? C_GRN : C_AMB,
-         allOk ? "insert kegs - press start" : "waiting on systems below");
-  sensorGrid(84, water, air, co2, estop, true);
-  hline(LX, RX, 142, C_TRACK);
+         allOk ? "connect kegs - press start" : "waiting on systems below");
+  sensorGrid(94, water, air, co2, estop, true);
+  hline(LX, RX, 166, C_TRACK);
   footerIP(ip);
 }
 void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
@@ -311,16 +328,18 @@ void ready(const char* ip) { readiness(true, true, true, true, true, ip); }
 
 void heating(int curC, int tgtC, int pct, const char* ip) {
   chrome("HEATING", C_BLUE, "caustic warming to target");
-  char b[16];
-  snprintf(b, sizeof(b), "%dC", curC);
+  char b[24];
+  snprintf(b, sizeof(b), "%dF %dC", (curC * 9 + 2) / 5 + 32, curC);
   rect(LX - 2, TMR_Y, RX, TMR_CLR_Y2, C_BG);
   lbl(LX, TMR_Y, true, 3, 4, C_TXT, C_BG, b);
-  snprintf(b, sizeof(b), "target %dC", tgtC);
-  lbl(LX, REM_Y, false, 1, 1, C_SUB, C_BG, b);
+  snprintf(b, sizeof(b), "target %dF %dC", (tgtC * 9 + 2) / 5 + 32, tgtC);
+  rect(LX - 2, REM_Y, RX, REM_Y + 28, C_BG);
+  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, b);
   hline(LX, RX, RULE2_Y, C_TRACK);
   snprintf(b, sizeof(b), "%d%%", pct);
+  rect(LX - 2, TMP_Y, RX, TMP_CLR_Y2, C_BG);
   lbl(LX, TMP_Y, true, 2, 2, C_CYAN, C_BG, b);
-  lbl(LX, TMPSUB_Y, false, 1, 1, C_SUB, C_BG, "of heat-up window used");
+  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "of heat-up window used");
   footerIP(ip);
 }
 
@@ -332,9 +351,9 @@ void operatingFrame(const char* phaseName, const char* desc,
   char meta[40];
   snprintf(meta, sizeof(meta), "PHASE %d/%d - %s", phaseIdx, phaseCount, desc);
   chrome(phaseName, stateColour, meta);
-  lbl(LX, REM_Y, false, 1, 1, C_SUB, C_BG, "remaining");
+  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "remaining");
   hline(LX, RX, RULE2_Y, C_TRACK);
-  lbl(LX, TMPSUB_Y, false, 1, 1, C_SUB, C_BG, "caustic");
+  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "caustic");
   hline(LX, RX, RULE3_Y, C_TRACK);
   sensorGrid(SENS_Y, true, true, true, true, false);
   g_lastTemp = -999; g_lastSens = -1;       // force first partial update
@@ -345,6 +364,18 @@ void operatingFrame(const char* stateName, const char* ip, word barColour) {
   operatingFrame(stateName, "", 0, 0, ip, barColour);
 }
 
+// Edge strip as overall-cycle countdown: the state-coloured bar drains from
+// the top as total cycle time elapses (full = cycle start, empty = done).
+void cycleProgress(unsigned long cycleElapsedMs, unsigned long cycleTotalMs) {
+  if (cycleTotalMs == 0) return;
+  if (cycleElapsedMs > cycleTotalMs) cycleElapsedMs = cycleTotalMs;
+  int top = (int)((unsigned long long)DH * cycleElapsedMs / cycleTotalMs);
+  if (top == g_stripTop) return;
+  if (top > g_stripTop) rect(0, g_stripTop, STRIP_W, top, C_TRACK);
+  else                  rect(0, top, STRIP_W, g_stripTop, g_stripCol);
+  g_stripTop = top;
+}
+
 void operatingTimer(int minutes, int seconds) {
   char b[8];
   snprintf(b, sizeof(b), "%02d:%02d", minutes, seconds);
@@ -352,13 +383,17 @@ void operatingTimer(int minutes, int seconds) {
   lbl(LX, TMR_Y, true, 4, 5, C_TXT, C_BG, b);
 }
 
-void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool mqtt) {
+void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bool mqtt) {
   (void)mqtt;   // footer dots are driven by mqttIndicators()
-  if (tempC != g_lastTemp) {
-    g_lastTemp = tempC;
-    char b[8];
-    snprintf(b, sizeof(b), "%dC", tempC);
-    rect(LX - 2, TMP_Y, 150, TMP_CLR_Y2, C_BG);
+  if (tempC10 != g_lastTemp) {
+    g_lastTemp = tempC10;
+    // tenths-of-a-degree input so F gets real precision (1 C = 1.8 F steps)
+    int f10 = tempC10 * 9 / 5 + 320;
+    int f = (f10 >= 0) ? (f10 + 5) / 10 : (f10 - 5) / 10;
+    int c = (tempC10 >= 0) ? (tempC10 + 5) / 10 : (tempC10 - 5) / 10;
+    char b[16];
+    snprintf(b, sizeof(b), "%dF %dC", f, c);
+    rect(LX - 2, TMP_Y, RX, TMP_CLR_Y2, C_BG);
     lbl(LX, TMP_Y, true, 2, 2, C_GRN, C_BG, b);
   }
   int packed = (water << 3) | (air << 2) | (co2 << 1) | (int)estop;
@@ -371,7 +406,8 @@ void operatingStatus(int tempC, bool water, bool air, bool co2, bool estop, bool
 
 void finished(const char* ip) {
   chrome("COMPLETE", C_BLUE, "kegs done - remove and reload");
-  lbl(LX, TMR_Y, true, 3, 4, C_GRN, C_BG, "DONE");
+  // 3x3 (39 px) sits evenly in the banner(126)..START(180) gap
+  lbl(LX, 133, true, 3, 3, C_GRN, C_BG, "DONE");
   footerIP(ip);
 }
 
@@ -403,7 +439,7 @@ void stopping(const char* ip) {
 
 void halted(const char* ip) {
   chrome("STOPPED", C_AMB, "machine halted by operator");
-  lbl(LX, 150, false, 1, 1, C_SUB, C_BG, "START = return to ready");
+  lbl(LX, 150, false, 1, 2, C_SUB, C_BG, "GET READY = re-arm systems");
   footerIP(ip);
 }
 
@@ -431,9 +467,27 @@ void banner(const char* text, word colour, bool visible) {
   word c = remap(colour);
   if (visible) {
     rrect(16, BANNER_Y1, 256, BANNER_Y2, 8, c);
-    lblC(16, 256, BANNER_Y1 + 6, true, 1, 2, inkOn(c), c, text);
+    int sx = (strW(text, true, 2) <= 228) ? 2 : 1;
+    int ty = BANNER_Y1 + (BANNER_Y2 - BANNER_Y1 - g_h8 * 2) / 2;
+    lblC(16, 256, ty, true, sx, 2, inkOn(c), c, text);
   } else {
     rect(10, BANNER_Y1 - 2, 260, BANNER_Y2 + 2, C_BG);
+  }
+}
+
+// Shared label-fit: target multiplier by height, shrink width-mult to fit.
+static void buttonLabel(int x, int y, int w, int h, const char* label,
+                        word ink, word fill, bool heavy) {
+  // Balanced scales only (NxN) — mixed sx/sy stretching looks skinny/squat.
+  int s = (h >= 90) ? 4 : (h >= 40) ? 3 : 2;
+  while (s > 1 && strW(label, true, s) > w - 14) s--;
+  int tw = strW(label, true, s);
+  int tx = x + (w - tw) / 2; if (tx < x + 2) tx = x + 2;
+  int ty = y + (h - g_h8 * s) / 2; if (ty < y + 2) ty = y + 2;
+  lbl(tx, ty, true, s, s, ink, fill, label);
+  if (heavy) {                 // overstrike = extra weight for primary actions
+    lbl(tx + 1, ty, true, s, s, ink, fill, label);
+    if (s >= 3) lbl(tx + 2, ty, true, s, s, ink, fill, label);
   }
 }
 
@@ -442,21 +496,14 @@ void button(int x, int y, int w, int h, const char* label, word colour) {
   word accent = remap(colour);
   if (accent == C_TRACK || accent == 0x4208) accent = C_SUB;   // disabled nav
   rrect(x, y, x + w, y + h, 8, C_CARDHI);
-  int sy = (h >= 40) ? 2 : 1;
-  int sx = (h >= 40 && strW(label, true, 2) <= w - 12) ? 2 : 1;
-  int ty = y + (h - g_h8 * sy) / 2; if (ty < y + 2) ty = y + 2;
-  lblC(x, x + w, ty, true, sx, sy, accent, C_CARDHI, label);
+  buttonLabel(x, y, w, h, label, accent, C_CARDHI, false);
 }
 
 // Primary button: solid semantic fill, dark label. For THE action on a screen.
 void buttonPrimary(int x, int y, int w, int h, const char* label, word colour) {
   word fill = remap(colour);
   rrect(x, y, x + w, y + h, 10, fill);
-  int sy = (h >= 90) ? 3 : 2;
-  int sx = 2;
-  if (strW(label, true, sx) > w - 16) sx = 1;
-  int ty = y + (h - g_h8 * sy) / 2; if (ty < y + 2) ty = y + 2;
-  lblC(x, x + w, ty, true, sx, sy, inkOn(fill), fill, label);
+  buttonLabel(x, y, w, h, label, inkOn(fill), fill, true);
 }
 
 // ---- generic primitives (settings editor / boot screen in KegDisplay) ----

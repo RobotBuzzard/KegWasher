@@ -761,10 +761,21 @@ void loop() {
 
   stateMachine_process();
 
-  // GREEN cycle-start indicator (IO5, dedicated output): lit whenever a START press
-  // will begin/advance a cycle — READY, COMPLETE (next keg), STOPPED (recover).
-  hardware_setReadyLamp(machineState == MACH_COMPLETE || machineState == MACH_STOPPED ||
-                        (machineState == MACH_IDLE && idleSub == IDLE_READY));
+  // Indicators (IO4 red / IO5 green):
+  //  - HELD (paused): both lamps breathe via PWM — visible-from-across-the-room hold.
+  //  - otherwise GREEN = "START will act" states; RED is owned by the fault paths
+  //    (digitalWrite there overrides any leftover PWM). On resume specifically,
+  //    force RED back off — no fault path runs on HELD -> EXECUTE.
+  static bool kwWasHeld = false;
+  if (machineState == MACH_HELD) {
+    hardware_pulseLamps();
+    kwWasHeld = true;
+  } else {
+    if (kwWasHeld && machineState == MACH_EXECUTE) hardware_setAlarm(false);
+    kwWasHeld = false;
+    hardware_setReadyLamp(machineState == MACH_COMPLETE || machineState == MACH_STOPPED ||
+                          (machineState == MACH_IDLE && idleSub == IDLE_READY));
+  }
 
   // Operating display: the operating screen is shown while EXECUTE (running) or
   // HELD (paused). Full redraw on recipe-phase change (the title) or first entry;

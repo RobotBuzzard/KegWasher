@@ -202,6 +202,7 @@ extern bool   cfgLoadedFromSD;   // true if WASHER.CFG was read; false = compile
 // Consumers (KegHardware, KegStateMachine) read these, not the DEFAULT_* macros.
 extern int minCausticTemp;       // WASHING abort floor
 extern int optimalCausticTemp;   // STARTING heater target
+extern int tempCalOffsetC10;     // caustic probe calibration offset, tenths of a degree C (panel-tunable)
 extern int maxCausticTemp;       // caustic safety cutoff
 
 // ---------- Runtime MQTT broker config ----------

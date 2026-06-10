@@ -50,8 +50,10 @@ void hardware_setPump(bool state);
 void hardware_setSanitizer(bool state);
 void hardware_setCausticHeater(bool state);
 void hardware_setReadyLamp(bool on);   // GREEN cycle-start indicator on IO5 (dedicated output)
+void hardware_pulseLamps();            // HELD: breathe IO4+IO5 via PWM (call per loop tick)
 
-int  hardware_getCausticTemp();
+int  hardware_getCausticTemp();      // whole degrees C (rounded, calibrated)
+int  hardware_getCausticTempC10();   // tenths of a degree C (calibrated) — display precision
 int  hardware_getCausticLevel();
 
 bool hardware_monitorHeating();

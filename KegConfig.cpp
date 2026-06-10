@@ -59,6 +59,7 @@ unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phas
 int minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
 int optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
 int maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
+int tempCalOffsetC10   = 0;   // calibration trim vs a reference thermometer
 
 // MQTT broker config — seeded from KegSecrets.h; SD-overridable per device.
 char mqttBrokerIp[16]  = KW_STR(MQTT_BROKER_IP_0) "." KW_STR(MQTT_BROKER_IP_1) "."
@@ -184,6 +185,11 @@ bool config_loadFromSD() {
     else if (strcmp(key, "minCausticTemp")     == 0) applyTempKey(key, value, minCausticTemp);
     else if (strcmp(key, "optimalCausticTemp") == 0) applyTempKey(key, value, optimalCausticTemp);
     else if (strcmp(key, "maxCausticTemp")     == 0) applyTempKey(key, value, maxCausticTemp);
+    else if (strcmp(key, "tempCalOffsetC10") == 0) {
+      int v = atoi(value);
+      if (v < -100 || v > 100) logOutOfRange(key, value);   // +/-10.0 C max trim
+      else tempCalOffsetC10 = v;
+    }
     // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
     //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
     // MQTT broker config (override the KegSecrets.h compiled defaults)
@@ -235,6 +241,7 @@ void config_saveToSD() {
   settingsFile.print("minCausticTemp=");     settingsFile.println(minCausticTemp);
   settingsFile.print("optimalCausticTemp="); settingsFile.println(optimalCausticTemp);
   settingsFile.print("maxCausticTemp=");     settingsFile.println(maxCausticTemp);
+  settingsFile.print("tempCalOffsetC10=");   settingsFile.println(tempCalOffsetC10);
 
   // NOTE: the MQTT broker block is intentionally NOT written here. This save does
   // SD.remove + full rewrite, so it INTENTIONALLY drops any MQTT block from the
@@ -265,6 +272,7 @@ void config_setDefaults() {
   minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
   optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
   maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
+  tempCalOffsetC10   = 0;
 
   snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
            MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);

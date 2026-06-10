@@ -43,10 +43,10 @@ static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED s
 //  - Running: a single PAUSE button.
 //  - Paused : three stacked buttons RESUME / RESTART / STOP-DRAIN.
 // Touches arm the matching one-shot flags, drained in KegWasher.ino.
-static const int BTN_PAUSE_X = 18, BTN_PAUSE_Y = 348, BTN_PAUSE_W = 236, BTN_PAUSE_H = 50;
-static const int BTN_RESUME_X  = 18, BTN_RESUME_Y  = 288, BTN_BAND_W = 236, BTN_BAND_H = 44;
-static const int BTN_RESTART_Y = 340;
-static const int BTN_STOPDRN_Y = 392;
+static const int BTN_PAUSE_X = 18, BTN_PAUSE_Y = 400, BTN_PAUSE_W = 236, BTN_PAUSE_H = 50;
+static const int BTN_RESUME_X  = 18, BTN_RESUME_Y  = 300, BTN_BAND_W = 236, BTN_BAND_H = 44;
+static const int BTN_RESTART_Y = 352;
+static const int BTN_STOPDRN_Y = 404;
 static const word COL_PAUSE = 0xFD20;  // orange
 static volatile bool g_touchPause   = false;
 static volatile bool g_touchRestart = false;
@@ -60,7 +60,7 @@ static volatile bool g_touchStop    = false;
 // globals + WASHER.CFG.
 #define S_BLACK 0x0000u
 static const word S_GREY = 0x4208;          // disabled nav button
-static const int  S_NUM = 14, S_PER_PAGE = 4;
+static const int  S_NUM = 15, S_PER_PAGE = 4;
 static const int  S_ITEM_PAGES = 4;             // ceil(14/4)
 static const int  S_PAGES = S_ITEM_PAGES + 1;   // + trailing INFO page
 
@@ -68,6 +68,7 @@ static unsigned long sWkTimer[10];
 static double        sWkMod;
 static unsigned long sWkPauseMs;
 static int           sWkMinT, sWkOptT;
+static int           sWkCal10;          // probe trim, tenths of a degree C
 static int           sPage = 0;
 
 static unsigned long* const sTimerPtr[10] = {
@@ -77,7 +78,7 @@ static unsigned long* const sTimerPtr[10] = {
 static const char* const sLabel[S_NUM] = {
   "DIRTY DRN", "DIRTY RNS", "DIRTY PRG", "WASH", "CAUS RTN",
   "RINSE", "RNS PURGE", "SANITIZE", "SANI RTN", "PRESSURE", "LG KEG x",
-  "PAUSE MAX", "MIN TEMP", "HEAT TGT"
+  "PAUSE MAX", "MIN TEMP", "HEAT TGT", "TEMP CAL"
 };
 // Validation bounds — MUST match KegConfig.cpp (TIMER_MIN_MS/MAX, kegmod
 // 1.0-3.0, PAUSE_MIN_MS/PAUSE_LIMIT_MS, TEMP_MIN_C). Temps additionally
@@ -87,9 +88,9 @@ static const unsigned long S_PMIN = 60000UL, S_PMAX = 3600000UL, S_PSTEP = 60000
 static const int S_TEMP_MIN = 0;
 
 // Layout (portrait 272x480, direction-C grid: content x=18..256).
-static const int S_ROW_Y0 = 76, S_ROW_H = 58;
+static const int S_ROW_Y0 = 96, S_ROW_H = 58;
 static const int S_MINUS_X = 146, S_PLUS_X = 204, S_BTN_W = 52, S_BTN_H = 44;
-static const int S_NAV_Y = 330, S_NAV_W = 70, S_NAV_H = 40, S_NEXT_X = 186;
+static const int S_NAV_Y = 336, S_NAV_W = 70, S_NAV_H = 40, S_NEXT_X = 186;
 static const int S_ACT_Y = 400, S_ACT_W = 110, S_ACT_H = 44, S_CANCEL_X = 146;
 // SETTINGS button on the READY screen.
 static const int S_OPEN_X = 18, S_OPEN_Y = 392, S_OPEN_W = 236, S_OPEN_H = 44;
@@ -98,8 +99,10 @@ static const word S_SUBTX = 0x84B4;   // secondary text (palette SUB)
 static void sFmt(int idx, char* buf, size_t n) {
   if (idx < 10)  { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
   if (idx == 11) { snprintf(buf, n, "%lum", sWkPauseMs / 60000UL);   return; }
-  if (idx == 12) { snprintf(buf, n, "%dC",  sWkMinT);                return; }
-  if (idx == 13) { snprintf(buf, n, "%dC",  sWkOptT);                return; }
+  if (idx == 12) { snprintf(buf, n, "%dF %dC", (sWkMinT * 9 + 2) / 5 + 32, sWkMinT); return; }
+  if (idx == 13) { snprintf(buf, n, "%dF %dC", (sWkOptT * 9 + 2) / 5 + 32, sWkOptT); return; }
+  if (idx == 14) { int a = sWkCal10 < 0 ? -sWkCal10 : sWkCal10;
+                   snprintf(buf, n, "%c%d.%dC", sWkCal10 < 0 ? '-' : '+', a / 10, a % 10); return; }
   // largeKegMod, formatted without %f (newlib-nano printf may omit float support)
   int whole = (int)(sWkMod + 0.0001);
   int frac  = (int)((sWkMod - whole) * 10.0 + 0.5);
@@ -110,13 +113,14 @@ static void sFmt(int idx, char* buf, size_t n) {
 static void sDrawValue(int slot, int idx) {
   int rowY = S_ROW_Y0 + slot * S_ROW_H;
   char v[12]; sFmt(idx, v, sizeof(v));
-  KDS::fillRect(16, rowY + 18, 140, rowY + 50, S_BLACK);   // clear old value first
-  KDS::label(18, rowY + 20, true, 1, 2, WHITE, S_BLACK, v);
+  KDS::fillRect(16, rowY + 24, 142, rowY + 56, S_BLACK);   // clear old value first
+  // temp rows show dual units — narrower glyphs so they fit beside the buttons
+  KDS::label(18, rowY + 26, true, (idx >= 12) ? 1 : 2, 2, WHITE, S_BLACK, v);
 }
 
 static void sDrawRow(int slot, int idx) {
   int rowY = S_ROW_Y0 + slot * S_ROW_H;
-  KDS::label(18, rowY + 2, false, 1, 1, S_SUBTX, S_BLACK, sLabel[idx]);
+  KDS::label(18, rowY, false, 1, 2, S_SUBTX, S_BLACK, sLabel[idx]);
   sDrawValue(slot, idx);
   KDS::button(S_MINUS_X, rowY + 4, S_BTN_W, S_BTN_H, "-", BLUE);
   KDS::button(S_PLUS_X,  rowY + 4, S_BTN_W, S_BTN_H, "+", BLUE);
@@ -137,8 +141,8 @@ static void sDrawInfo() {
                          cfgLoadedFromSD ? "SD WASHER.CFG" : "COMPILED DEFAULTS" };
   (void)b;
   for (int i = 0; i < 4; i++) {
-    KDS::label(18, y, false, 1, 1, S_SUBTX, S_BLACK, lab[i]);
-    KDS::label(18, y + 20, true, 1, 1, WHITE, S_BLACK, val[i]);
+    KDS::label(18, y, false, 1, 2, S_SUBTX, S_BLACK, lab[i]);
+    KDS::label(18, y + 28, true, 1, 2, WHITE, S_BLACK, val[i]);
     y += S_ROW_H;
   }
 }
@@ -188,11 +192,16 @@ static void sAdjust(int idx, int dir) {
     if (v < S_TEMP_MIN) v = S_TEMP_MIN;
     if (v > sWkOptT)    v = sWkOptT;
     sWkMinT = v;
-  } else {                                 // idx == 13
+  } else if (idx == 13) {
     int v = sWkOptT + dir;                 // heater target: floor..safety cutoff
     if (v < sWkMinT)         v = sWkMinT;
     if (v > maxCausticTemp)  v = maxCausticTemp;
     sWkOptT = v;
+  } else {                                 // idx == 14: probe trim, 0.1 C steps
+    int v = sWkCal10 + dir;
+    if (v < -100) v = -100;
+    if (v >  100) v =  100;
+    sWkCal10 = v;
   }
 }
 
@@ -207,6 +216,7 @@ static void sSave() {
   pauseMaxMs         = sWkPauseMs;
   minCausticTemp     = sWkMinT;
   optimalCausticTemp = sWkOptT;
+  tempCalOffsetC10   = sWkCal10;
   config_saveToSD();             // persists the full config (incl. these) to WASHER.CFG
   diagnostics_logEvent("Settings saved");
   sExitToReady();
@@ -223,6 +233,7 @@ void display_openSettings() {
   sWkPauseMs = pauseMaxMs;
   sWkMinT    = minCausticTemp;
   sWkOptT    = optimalCausticTemp;
+  sWkCal10   = tempCalOffsetC10;
   sPage  = 0;
   idleSub = IDLE_SETTINGS;       // state_idle no-ops; this screen owns the panel
   diagnostics_logEvent("Settings opened");
@@ -250,9 +261,9 @@ void display_showStartup() {
 // "KEGWASHER" frame; setup() calls display_bootStatus() to fill one status row in
 // as each subsystem comes up, then display_bootDone(). No splash chain.
 void display_bootStatus(int row, const char* label, const char* value, word color) {
-  int y = 84 + row * 30;
-  KDS::label(18,  y, false, 1, 1, WHITE, 0x0000u, label);
-  KDS::labelRight(256, y, true, 1, 1, color, 0x0000u, value);
+  int y = 96 + row * 32;
+  KDS::label(18,  y, false, 1, 2, WHITE, 0x0000u, label);
+  KDS::labelRight(256, y, true, 1, 2, color, 0x0000u, value);
 }
 void display_bootDone(bool ok) {
   KDS::label(18, 310, true, 2, 2, ok ? GREEN : AMBER, 0x0000u, ok ? "SYSTEMS GO" : "CHECK SYS");
@@ -285,7 +296,7 @@ void display_showStopping() {
 void display_showHaltedScreen() {
   g_screen = "STOPPED";
   KDS::halted(ipStr());
-  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "GET READY", GREEN);
   reapplyMqtt();
 }
 void display_showError(const char* m) {
@@ -315,10 +326,20 @@ void display_updateTimer(unsigned long elapsedMs) {
   // skip a value (e.g. 5,3,2,1,0). Rounding up makes it tick every second.
   unsigned long remainingSec = (remaining + 999UL) / 1000UL;
   KDS::operatingTimer((int)(remainingSec / 60UL), (int)(remainingSec % 60UL));
+
+  // Edge strip = whole-cycle countdown: sum all phase durations (latched keg
+  // size via stageTimerFor), elapsed = completed phases + current phase time.
+  unsigned long total = 0, done = 0;
+  for (byte p = PHASE_FIRST; p <= PHASE_LAST; p++) {
+    unsigned long d = stageTimerFor(p);
+    total += d;
+    if (p < recipePhase) done += d;
+  }
+  KDS::cycleProgress(done + elapsedMs, total);
 }
 
 void display_updateStatus() {
-  KDS::operatingStatus((int)hardware_getCausticTemp(),
+  KDS::operatingStatus(hardware_getCausticTempC10(),
                        isWaterOk, isAirOk, isCo2Ok, isEstopActive, kwMqttReady);
 }
 
