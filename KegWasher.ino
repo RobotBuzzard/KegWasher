@@ -367,6 +367,7 @@ struct MqttStatusCache {
   int           causticLevel  = -999;
   unsigned long elapsedSec    = 0xFFFFFFFFUL;
   unsigned long remainingSec  = 0xFFFFFFFFUL;
+  char          screen[16]    = "";    // panel screen id (display_currentScreen)
 };
 static MqttStatusCache kwMqttCache;
 
@@ -469,6 +470,13 @@ static void mqtt_publishStatus() {
     kwMqttCache.paused = held;
     kwMqttCache.pausedInit = true;
     kwMqtt.publish(kwTopic("paused"), held ? "YES" : "NO", true);
+  }
+
+  // ----- Panel screen id (the dashboard's display replica follows this) -----
+  const char* scr = display_currentScreen();
+  if (strcmp(scr, kwMqttCache.screen) != 0) {
+    snprintf(kwMqttCache.screen, sizeof(kwMqttCache.screen), "%s", scr);
+    kwMqtt.publish(kwTopic("screen"), scr, true);
   }
 
   // ----- Keg size -----

@@ -26,6 +26,12 @@ static const char* ipStr() {
 static bool g_mqttUp = false, g_pub = false, g_sub = false;
 static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
 
+// Current screen id — mirrored to the retained MQTT topic kegwasher/screen
+// (change-detected in mqtt_publishStatus) so the dashboard's panel replica
+// follows what the panel actually shows instead of re-deriving it from state.
+static const char* g_screen = "BOOT";
+const char* display_currentScreen() { return g_screen; }
+
 // On-screen START button (READY + FINISHED screens). A touch in this rect sets
 // g_touchStart, which display_takeTouchStart() drains into isCycleStartPressed
 // (same one-tick-pulse path as the physical button / MQTT start command).
@@ -47,14 +53,21 @@ static volatile bool g_touchRestart = false;
 static volatile bool g_touchStop    = false;
 
 // ── Settings editor (Phase 5) ─────────────────────────────────────────
-// 11 editable params: the 10 stage timers + largeKegMod, paginated 4/page.
-// Working copies are edited live; SAVE commits to the globals + WASHER.CFG.
+// 14 editable params over 4 pages, plus a read-only INFO page: the 10 stage
+// timers, largeKegMod, pauseMaxMs, and the two process temps (wash floor +
+// heater target). maxCausticTemp is a safety limit — SD-only, deliberately
+// NOT panel-editable. Working copies are edited live; SAVE commits to the
+// globals + WASHER.CFG.
 #define S_BLACK 0x0000u
 static const word S_GREY = 0x4208;          // disabled nav button
-static const int  S_NUM = 11, S_PER_PAGE = 4, S_PAGES = 3;   // ceil(11/4)=3
+static const int  S_NUM = 14, S_PER_PAGE = 4;
+static const int  S_ITEM_PAGES = 4;             // ceil(14/4)
+static const int  S_PAGES = S_ITEM_PAGES + 1;   // + trailing INFO page
 
 static unsigned long sWkTimer[10];
 static double        sWkMod;
+static unsigned long sWkPauseMs;
+static int           sWkMinT, sWkOptT;
 static int           sPage = 0;
 
 static unsigned long* const sTimerPtr[10] = {
@@ -63,10 +76,15 @@ static unsigned long* const sTimerPtr[10] = {
 };
 static const char* const sLabel[S_NUM] = {
   "DIRTY DRN", "DIRTY RNS", "DIRTY PRG", "WASH", "CAUS RTN",
-  "RINSE", "RNS PURGE", "SANITIZE", "SANI RTN", "PRESSURE", "LG KEG x"
+  "RINSE", "RNS PURGE", "SANITIZE", "SANI RTN", "PRESSURE", "LG KEG x",
+  "PAUSE MAX", "MIN TEMP", "HEAT TGT"
 };
-// Validation bounds — MUST match KegConfig.cpp (TIMER_MIN_MS/MAX, kegmod 1.0-3.0).
+// Validation bounds — MUST match KegConfig.cpp (TIMER_MIN_MS/MAX, kegmod
+// 1.0-3.0, PAUSE_MIN_MS/PAUSE_LIMIT_MS, TEMP_MIN_C). Temps additionally
+// cross-clamp: MIN TEMP <= HEAT TGT <= maxCausticTemp (the SD-only cutoff).
 static const unsigned long S_TMIN = 5000UL, S_TMAX = 1800000UL, S_TSTEP = 5000UL;
+static const unsigned long S_PMIN = 60000UL, S_PMAX = 3600000UL, S_PSTEP = 60000UL;
+static const int S_TEMP_MIN = 0;
 
 // Layout (portrait 272x480).
 static const int S_ROW_Y0 = 52, S_ROW_H = 64;
@@ -77,7 +95,10 @@ static const int S_ACT_Y = 404, S_ACT_W = 120, S_ACT_H = 44, S_CANCEL_X = 144;
 static const int S_OPEN_X = 66, S_OPEN_Y = 406, S_OPEN_W = 140, S_OPEN_H = 42;
 
 static void sFmt(int idx, char* buf, size_t n) {
-  if (idx < 10) { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
+  if (idx < 10)  { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
+  if (idx == 11) { snprintf(buf, n, "%lum", sWkPauseMs / 60000UL);   return; }
+  if (idx == 12) { snprintf(buf, n, "%dC",  sWkMinT);                return; }
+  if (idx == 13) { snprintf(buf, n, "%dC",  sWkOptT);                return; }
   // largeKegMod, formatted without %f (newlib-nano printf may omit float support)
   int whole = (int)(sWkMod + 0.0001);
   int frac  = (int)((sWkMod - whole) * 10.0 + 0.5);
@@ -100,13 +121,42 @@ static void sDrawRow(int slot, int idx) {
   KDS::button(S_PLUS_X,  rowY + 7, S_BTN_W, S_BTN_H, "+", BLUE);
 }
 
+// Read-only INFO page (last settings page): build id, network, broker, config
+// source. Pure text — no +/- rows, so the touch handler's row loop naturally
+// skips it (first item index is past S_NUM).
+static void sDrawInfo() {
+  char b[40];
+  int y = S_ROW_Y0;
+  KDS::text(8, y, 2, WHITE, S_BLACK, "FIRMWARE");
+  snprintf(b, sizeof(b), "%s %s", __DATE__, __TIME__);
+  KDS::text(10, y + 28, 1, AMBER, S_BLACK, b);
+  y += S_ROW_H;
+  KDS::text(8, y, 2, WHITE, S_BLACK, "NETWORK");
+  KDS::text(10, y + 28, 1, AMBER, S_BLACK, ipStr());
+  y += S_ROW_H;
+  KDS::text(8, y, 2, WHITE, S_BLACK, "BROKER");
+  snprintf(b, sizeof(b), "%s:%d %s", mqttBrokerIp, mqttBrokerPort,
+           kwMqttReady ? "OK" : "OFFLINE");
+  KDS::text(10, y + 28, 1, AMBER, S_BLACK, b);
+  y += S_ROW_H;
+  KDS::text(8, y, 2, WHITE, S_BLACK, "CONFIG");
+  KDS::text(10, y + 28, 1, AMBER, S_BLACK,
+            cfgLoadedFromSD ? "SD WASHER.CFG" : "COMPILED DEFAULTS");
+}
+
 static void sDraw() {
-  KDS::screen("SETTINGS", AMBER);
-  int first = sPage * S_PER_PAGE;
-  for (int slot = 0; slot < S_PER_PAGE; slot++) {
-    int idx = first + slot;
-    if (idx >= S_NUM) break;
-    sDrawRow(slot, idx);
+  bool info = (sPage == S_ITEM_PAGES);
+  g_screen = info ? "INFO" : "SETTINGS";
+  KDS::screen(info ? "INFO" : "SETTINGS", AMBER);
+  if (info) {
+    sDrawInfo();
+  } else {
+    int first = sPage * S_PER_PAGE;
+    for (int slot = 0; slot < S_PER_PAGE; slot++) {
+      int idx = first + slot;
+      if (idx >= S_NUM) break;
+      sDrawRow(slot, idx);
+    }
   }
   KDS::button(8,        S_NAV_Y, S_NAV_W, S_NAV_H, "PREV", sPage > 0 ? BLUE : S_GREY);
   KDS::button(S_NEXT_X, S_NAV_Y, S_NAV_W, S_NAV_H, "NEXT", sPage < S_PAGES - 1 ? BLUE : S_GREY);
@@ -124,11 +174,26 @@ static void sAdjust(int idx, int dir) {
     if (v < (long)S_TMIN) v = (long)S_TMIN;
     if (v > (long)S_TMAX) v = (long)S_TMAX;
     sWkTimer[idx] = (unsigned long)v;
-  } else {
+  } else if (idx == 10) {
     double m = sWkMod + dir * 0.1;
     if (m < 1.0) m = 1.0;
     if (m > 3.0) m = 3.0;
     sWkMod = m;
+  } else if (idx == 11) {
+    long v = (long)sWkPauseMs + dir * (long)S_PSTEP;
+    if (v < (long)S_PMIN) v = (long)S_PMIN;
+    if (v > (long)S_PMAX) v = (long)S_PMAX;
+    sWkPauseMs = (unsigned long)v;
+  } else if (idx == 12) {
+    int v = sWkMinT + dir;                 // wash floor: never above the target
+    if (v < S_TEMP_MIN) v = S_TEMP_MIN;
+    if (v > sWkOptT)    v = sWkOptT;
+    sWkMinT = v;
+  } else {                                 // idx == 13
+    int v = sWkOptT + dir;                 // heater target: floor..safety cutoff
+    if (v < sWkMinT)         v = sWkMinT;
+    if (v > maxCausticTemp)  v = maxCausticTemp;
+    sWkOptT = v;
   }
 }
 
@@ -140,6 +205,9 @@ static void sExitToReady() {
 static void sSave() {
   for (int i = 0; i < 10; i++) *sTimerPtr[i] = sWkTimer[i];
   largeKegMod = sWkMod;
+  pauseMaxMs         = sWkPauseMs;
+  minCausticTemp     = sWkMinT;
+  optimalCausticTemp = sWkOptT;
   config_saveToSD();             // persists the full config (incl. these) to WASHER.CFG
   diagnostics_logEvent("Settings saved");
   sExitToReady();
@@ -152,7 +220,10 @@ static void sCancel() {
 
 void display_openSettings() {
   for (int i = 0; i < 10; i++) sWkTimer[i] = *sTimerPtr[i];
-  sWkMod = largeKegMod;
+  sWkMod     = largeKegMod;
+  sWkPauseMs = pauseMaxMs;
+  sWkMinT    = minCausticTemp;
+  sWkOptT    = optimalCausticTemp;
   sPage  = 0;
   idleSub = IDLE_SETTINGS;       // state_idle no-ops; this screen owns the panel
   diagnostics_logEvent("Settings opened");
@@ -171,6 +242,7 @@ void display_init() {
 }
 
 void display_showStartup() {
+  g_screen = "BOOT";
   KDS::startup("KegWasher", "starting up...");
   delay(2000);   // let the operator see the splash
 }
@@ -190,11 +262,13 @@ void display_bootDone(bool ok) {
 }
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
+  g_screen = "NOT_READY";
   KDS::readiness(waterOk, airOk, co2Ok, estopOk, false, ipStr());  // amber, no START
   reapplyMqtt();
 }
 
 void display_showReadyScreen() {
+  g_screen = "READY";
   // Same unified screen, all-OK: green title + the live signal rows + START.
   KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive, true, ipStr());
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
@@ -202,17 +276,21 @@ void display_showReadyScreen() {
   reapplyMqtt();
 }
 void display_showFinishedScreen() {
+  g_screen = "COMPLETE";
   KDS::finished(ipStr());
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
-void display_showStopping() { KDS::stopping(ipStr()); reapplyMqtt(); }
+void display_showStopping() {
+  g_screen = "STOPPING"; KDS::stopping(ipStr()); reapplyMqtt(); }
 void display_showHaltedScreen() {
+  g_screen = "STOPPED";
   KDS::halted(ipStr());
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
 void display_showError(const char* m) {
+  g_screen = "ABORTED";
   KDS::error(m, ipStr());
   // RECOVER button (blue = operator action). Touch is gated to MACH_ABORTED in
   // display_doEvents and drained → stateMachine_reset() (which refuses while the
@@ -220,10 +298,12 @@ void display_showError(const char* m) {
   KDS::button(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "RECOVER", BLUE);
   reapplyMqtt();
 }
-void display_showMessage(const char* m) { KDS::message(m, ipStr()); reapplyMqtt(); }
+void display_showMessage(const char* m) {
+  g_screen = "MESSAGE"; KDS::message(m, ipStr()); reapplyMqtt(); }
 
 void display_showProgress(const char* /*label*/, int percentage,
                           int currentValue, int targetValue, int /*remainingMinutes*/) {
+  g_screen = "HEATING";
   KDS::heating(currentValue, targetValue, percentage, ipStr());
   reapplyMqtt();
 }
@@ -258,6 +338,7 @@ static void drawCycleControls() {
 }
 
 void display_showOperatingScreen() {
+  g_screen = (machineState == MACH_HELD) ? "PAUSED" : "OPERATING";
   // Title bar: GREEN while running (IEC normal), AMBER while held (abnormal/hold).
   KDS::operatingFrame(phaseNames[recipePhase], ipStr(),
                       (machineState == MACH_HELD) ? AMBER : GREEN);

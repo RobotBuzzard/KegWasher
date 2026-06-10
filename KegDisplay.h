@@ -84,6 +84,11 @@ void display_setPaused(bool paused);
 // state machine no-ops while it's open and READY repaints on exit.
 void display_openSettings();
 
+// Id of the screen the panel is currently showing (BOOT/NOT_READY/READY/
+// SETTINGS/INFO/HEATING/OPERATING/PAUSED/STOPPING/STOPPED/COMPLETE/ABORTED/
+// MESSAGE) — mirrored to the retained kegwasher/screen topic.
+const char* display_currentScreen();
+
 // ── Network state (defined in KegWasher.ino) ───────────────────────────
 extern uint8_t kwLocalIP[4];
 extern bool    kwEthernetReady;
