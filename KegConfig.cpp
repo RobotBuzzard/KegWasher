@@ -17,18 +17,6 @@
 // Production defaults total ≈ 4.4 min/cycle; tune per process via WASHER.CFG or
 // the on-screen settings editor. BENCH_MODE compresses every stage to 5 s so a
 // cardless bench cycle runs in ~50 s. (5 s multiples → clean ±5 s editor steps.)
-#ifdef BENCH_MODE
-  #define DEF_DIRTY_DRAIN_MS  5000UL
-  #define DEF_DIRTY_RINSE_MS  5000UL
-  #define DEF_DIRTY_PURGE_MS  5000UL
-  #define DEF_WASH_MS         5000UL
-  #define DEF_CAUSTIC_RTN_MS  5000UL
-  #define DEF_RINSE_MS        5000UL
-  #define DEF_RINSE_PURGE_MS  5000UL
-  #define DEF_SANI_MS         5000UL
-  #define DEF_SANI_RTN_MS     5000UL
-  #define DEF_PRESSURE_MS     5000UL
-#else
   #define DEF_DIRTY_DRAIN_MS  20000UL   // drain old beer (+5 s air burst)
   #define DEF_DIRTY_RINSE_MS  20000UL   // pre-rinse
   #define DEF_DIRTY_PURGE_MS  10000UL   // air blow to drain
@@ -39,7 +27,6 @@
   #define DEF_SANI_MS         45000UL   // sanitizer recirc
   #define DEF_SANI_RTN_MS     15000UL   // CO2-blow sani back to tank
   #define DEF_PRESSURE_MS     15000UL   // CO2 charge / seal
-#endif
 
 // Stage durations, in cycle order. See KegConfig.h for the stage each drives.
 unsigned long dirtyDrainTimer = DEF_DIRTY_DRAIN_MS;
@@ -60,6 +47,10 @@ int minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
 int optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
 int maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
 int tempCalOffsetC10   = 0;   // calibration trim vs a reference thermometer
+
+// Runtime bench mode — set in config_init(): no SD config -> bench (gates
+// bypassed + 5 s stages); card present -> production gates. See KegConfig.h.
+bool kwBenchMode = false;
 
 // MQTT broker config — seeded from KegSecrets.h; SD-overridable per device.
 char mqttBrokerIp[16]  = KW_STR(MQTT_BROKER_IP_0) "." KW_STR(MQTT_BROKER_IP_1) "."
@@ -120,10 +111,16 @@ void config_init() {
 
   if (config_loadFromSD()) {
     cfgLoadedFromSD = true;
+    kwBenchMode = false;            // card present -> production gates
   } else {
     cfgLoadedFromSD = false;
     config_setDefaults();
-    // The boot summary screen reports "SD CONFIG: DEFAULT"; no separate banner.
+    // No card -> BENCH MODE: sensor gates bypassed and every stage
+    // compressed to 5 s so a cardless bench cycle runs in ~50 s.
+    kwBenchMode = true;
+    dirtyDrainTimer = dirtyRinseTimer = dirtyPurgeTimer = washTimer =
+      causticRtnTimer = rinseTimer = rinsePurgeTimer = saniTimer =
+      saniRtnTimer = purgeTimer = 5000UL;
   }
 }
 

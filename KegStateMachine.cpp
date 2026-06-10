@@ -154,16 +154,12 @@ static inline bool smFalling(bool now, bool prev) { return !now && prev; }
 // code, shows it, aborts (→ MACH_ABORTED), and returns false. Sensor checks are
 // skipped in BENCH_MODE (no plumbing wired), like the legacy WASHING check.
 static bool requireResource(bool ok, byte err) {
-#ifndef BENCH_MODE
-  if (!ok) {
+  if (!kwBenchMode && !ok) {
     errorCode = err;
     display_showError(diagnostics_getErrorMessage(err));
     stateMachine_abort();
     return false;
   }
-#else
-  (void)ok; (void)err;
-#endif
   return true;
 }
 
@@ -199,8 +195,8 @@ static void checkStateTimeout() {
 // standalone self-regulating unit, off the controller.)
 static void monitorActiveResources() {
   if (machineState != MACH_EXECUTE) return;
+  if (kwBenchMode) return;   // no plumbing wired — per-phase resource gates off
 
-#ifndef BENCH_MODE
   bool needAir = false, needWater = false, needCo2 = false, needCaustic = false;
   switch (recipePhase) {
     case PHASE_DIRTY_DRAIN:    needAir   = (timers_getStateElapsed() < AIR_BURST_DURATION); break;
@@ -226,7 +222,6 @@ static void monitorActiveResources() {
     display_showError(diagnostics_getErrorMessage(err));
     stateMachine_abort();
   }
-#endif
 }
 
 void stateMachine_process() {
@@ -616,14 +611,17 @@ static void state_idle() {
       bool estopOk = !isEstopActive;
 
       static bool prevWater = false, prevAir = false, prevCo2 = false, prevEstop = false;
+      static bool prevLevel = false;
       static bool drawn = false;
+      bool levelOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
 
       bool changed = (!drawn || waterOk != prevWater || airOk != prevAir ||
-                      co2Ok != prevCo2 || estopOk != prevEstop);
+                      co2Ok != prevCo2 || estopOk != prevEstop || levelOk != prevLevel);
       if (changed) {
         display_showNotReady(waterOk, airOk, co2Ok, estopOk);
         drawn = true;
         prevWater = waterOk; prevAir = airOk; prevCo2 = co2Ok; prevEstop = estopOk;
+        prevLevel = levelOk;
       }
       // No flashing banner here — the amber title + signal rows convey readiness
       // (banner is reserved for action/attention states).
@@ -647,7 +645,9 @@ static void state_idle() {
       // allSystemsGo() is forced true so the READY->NOT_READY transition
       // below never fires — without this the screen showed stale green
       // dots after a sensor dropped.)
-      byte sig = (byte)((isWaterOk << 3) | (isAirOk << 2) | (isCo2Ok << 1) | (byte)isEstopActive);
+      bool lvlOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
+      byte sig = (byte)((lvlOk << 4) | (isWaterOk << 3) | (isAirOk << 2) |
+                        (isCo2Ok << 1) | (byte)isEstopActive);
       if (sig != lastSig) { lastSig = sig; drawn = false; }
 
       if (!drawn) {
@@ -667,16 +667,12 @@ static void state_idle() {
         kegSizeLatched = isLargeKeg;
         diagnostics_logEvent(kegSizeLatched ? "Cycle start (LARGE)" : "Cycle start (SMALL)");
         drawn = false;
-#ifdef BENCH_MODE
-        startRecipe();
-#else
-        if (hardware_getCausticTemp() >= optimalCausticTemp) {
-          startRecipe();
+        if (kwBenchMode || hardware_getCausticTemp() >= optimalCausticTemp) {
+          startRecipe();          // bench: no heater plumbed — skip STARTING
         } else {
           diagnostics_logEvent("Startup: heating");
           changeMachineState(MACH_STARTING);
         }
-#endif
       }
       break;
     }

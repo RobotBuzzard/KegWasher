@@ -39,8 +39,12 @@
 // "BENCH MODE" notice on the boot splash. Grep the .ino for
 // "BENCH_MODE" before any release to confirm it's commented out.
 //
-// Uncomment for dev builds; leave commented for production:
-#define BENCH_MODE
+// 2026-06-10: BENCH MODE IS NOW RUNTIME, decided by SD-card presence at
+// boot (operator request): no readable WASHER.CFG -> kwBenchMode = true
+// (gates bypassed, stages compressed to 5 s). Card present -> production
+// behaviour. The compile-time flag is gone; kwBenchMode lives in
+// KegConfig.cpp and is set in config_init().
+extern bool kwBenchMode;
 // ======================================================================
 
 // ---------- Pin map (mirrors docs/io-table.md) ----------

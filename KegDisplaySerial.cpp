@@ -119,6 +119,12 @@ namespace {
   void setGap(int gap) {
     if (gap != g_gap) { drain(); D->txt_Set(TEXT_XGAP, gap); g_gap = gap; }
   }
+  void setFontRaw(word f, int sx, int sy, word fg) {
+    if (f != g_font)  { drain(); D->txt_FontID(f);            g_font = f; }
+    if (sx != g_sx)   { drain(); D->txt_Set(TEXT_WIDTH,  sx); g_sx = sx; }
+    if (sy != g_sy)   { drain(); D->txt_Set(TEXT_HEIGHT, sy); g_sy = sy; }
+    if (fg != g_fg)   { drain(); D->txt_Set(TEXT_COLOUR, fg); g_fg = fg; }
+  }
   void setFont(bool bold, int sx, int sy, word fg, word bgc) {
     word f = bold ? FONT_8 : FONT_7;
     if (f != g_font)  { drain(); D->txt_FontID(f);            g_font = f; }
@@ -150,6 +156,13 @@ namespace {
     // scales, stroke width doesn't) — compensate with the bold face.
     if (sy > sx) bold = true;
     setFont(bold, sx, sy, fg, bgc);
+    textAt(x, y, s);
+  }
+  // Subtitle face: FONT_4 (12x16 system) — wide, uniform, no scaling needed.
+  // Operator-preferred over stretched DejaVu for the minor words. Budget:
+  // 12 px/char -> max ~20 chars across the content width.
+  void lbl4(int x, int y, word fg, const char* s) {
+    setFontRaw(FONT_4, 1, 1, fg);
     textAt(x, y, s);
   }
   // centred within [x1,x2]
@@ -218,21 +231,25 @@ namespace {
   }
 
   void measureCapMetrics() {
+    // Render an 'E' and scan a window ABOVE and below the MoveTo point —
+    // if the engine positions glyphs baseline-relative the ink sits above,
+    // and capTop comes out negative. The centring math handles any sign.
+    const int PX = 12, PY = 40;
     setFont(true, 1, 1, 0xFFFF, 0x0000);
-    drain(); D->gfx_MoveTo(4, 4);
+    drain(); D->gfx_MoveTo(PX, PY);
     drain(); D->putCH('E');
-    int top = -1, bot = -1;
-    for (int dy = 0; dy < g_h8 + 4; dy++) {
-      for (int dx = 0; dx < 10; dx++) {
-        if (rawCmdResp2(F_gfx_GetPixel, 4 + dx, 4 + dy) != 0x0000) {
-          if (top < 0) top = dy;
-          bot = dy;
+    int top = 9999, bot = -9999;
+    for (int y = PY - 20; y < PY + g_h8 + 8; y++) {
+      for (int x = PX; x < PX + 12; x++) {
+        if (rawCmdResp2(F_gfx_GetPixel, x, y) != 0x0000) {
+          if (y < top) top = y;
+          if (y > bot) bot = y;
           break;
         }
       }
     }
-    if (top >= 0 && bot > top) { g_capTop8 = top; g_capH8 = bot - top + 1; }
-    drain(); D->gfx_RectangleFilled(0, 0, 20, g_h8 + 10, 0x0000);   // erase probe
+    if (bot >= top) { g_capTop8 = top - PY; g_capH8 = bot - top + 1; }
+    drain(); D->gfx_RectangleFilled(0, PY - 22, 30, PY + g_h8 + 10, 0x0000);
   }
 
   void buildWidthCache() {
@@ -274,7 +291,7 @@ namespace {
     g_stripCol = sc; g_stripTop = 0;
     int tsx = (strW(title, true, 3) <= RX - LX) ? 3 : 2;
     lbl(LX, TITLE_Y, true, tsx, 3, C_TXT, C_BG, title);
-    if (meta && *meta) { setGap(1); lbl(LX, META_Y, false, 1, 2, C_SUB, C_BG, meta); setGap(0); }
+    if (meta && *meta) lbl4(LX, META_Y, C_SUB, meta);
     hline(LX, RX, RULE1_Y, C_TRACK);
     rect(0, FOOT_Y, DW - 1, DH - 1, C_CARD);
   }
@@ -355,33 +372,39 @@ void startup(const char* l1, const char* l2) {
 
 // Unified readiness screen. Title + strip reflect overall readiness; failing
 // inputs get a red dot + bright label. The caller adds START when allOk.
-void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip) {
+void readiness(bool water, bool air, bool co2, bool estop, bool level,
+               bool allOk, const char* ip) {
   chrome(allOk ? "READY" : "NOT READY",
          allOk ? C_GRN : C_AMB,
-         allOk ? "CONNECT KEGS - PRESS START" : "WAITING ON SYSTEMS BELOW");
+         allOk ? "CONNECT KEGS" : "CHECK SYSTEMS");
   sensorGrid(94, water, air, co2, estop, true);
-  hline(LX, RX, 166, C_TRACK);
+  // 5th gate — caustic LEVEL (this is in allSystemsGo but had no row, so a
+  // low reservoir produced 'NOT READY but everything is green')
+  int y5 = 94 + 2 * 34;
+  disc(LX + 6, y5 + 13, 6, level ? C_GRN : C_RED);
+  lbl(LX + 19, y5, false, 2, 2, (!level) ? C_TXT : C_SUB, C_BG, "LEVEL");
+  hline(LX, RX, 198, C_TRACK);
   footerIP(ip);
 }
 void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
-  readiness(water, air, co2, estop, false, ip);
+  readiness(water, air, co2, estop, true, false, ip);
 }
-void ready(const char* ip) { readiness(true, true, true, true, true, ip); }
+void ready(const char* ip) { readiness(true, true, true, true, true, true, ip); }
 
 void heating(int curC, int tgtC, int pct, const char* ip) {
-  chrome("HEATING", C_BLUE, "CAUSTIC WARMING TO TARGET");
+  chrome("HEATING", C_BLUE, "HEATING CAUSTIC");
   char b[24];
   snprintf(b, sizeof(b), "%dF %dC", (curC * 9 + 2) / 5 + 32, curC);
   rect(LX - 2, TMR_Y, RX, TMR_CLR_Y2, C_BG);
   lbl(LX, TMR_Y, true, 3, 4, C_TXT, C_BG, b);
   snprintf(b, sizeof(b), "TARGET %dF %dC", (tgtC * 9 + 2) / 5 + 32, tgtC);
   rect(LX - 2, REM_Y, RX, REM_Y + 28, C_BG);
-  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, b);
+  lbl4(LX, REM_Y, C_SUB, b);
   hline(LX, RX, RULE2_Y, C_TRACK);
   snprintf(b, sizeof(b), "%d%%", pct);
   rect(LX - 2, TMP_Y, RX, TMP_CLR_Y2, C_BG);
   lbl(LX, TMP_Y, true, 2, 2, C_CYAN, C_BG, b);
-  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "OF HEAT-UP WINDOW USED");
+  lbl4(LX, TMPSUB_Y, C_SUB, "OF HEAT WINDOW USED");
   footerIP(ip);
 }
 
@@ -390,12 +413,12 @@ void heating(int curC, int tgtC, int pct, const char* ip) {
 void operatingFrame(const char* phaseName, const char* desc,
                     int phaseIdx, int phaseCount,
                     const char* ip, word stateColour) {
-  char meta[40];
-  snprintf(meta, sizeof(meta), "PHASE %d/%d - %s", phaseIdx, phaseCount, desc);
+  char meta[24];
+  snprintf(meta, sizeof(meta), "%d/%d %s", phaseIdx, phaseCount, desc);
   chrome(phaseName, stateColour, meta);
-  lbl(LX, REM_Y, false, 2, 2, C_SUB, C_BG, "REMAINING");
+  lbl4(LX, REM_Y, C_SUB, "REMAINING");
   hline(LX, RX, RULE2_Y, C_TRACK);
-  lbl(LX, TMPSUB_Y, false, 2, 2, C_SUB, C_BG, "CAUSTIC");
+  lbl4(LX, TMPSUB_Y, C_SUB, "CAUSTIC");
   hline(LX, RX, RULE3_Y, C_TRACK);
   sensorGrid(SENS_Y, true, true, true, true, false);
   g_lastTemp = -999; g_lastSens = -1;       // force first partial update
@@ -447,7 +470,7 @@ void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bo
 }
 
 void finished(const char* ip) {
-  chrome("COMPLETE", C_BLUE, "KEGS DONE - REMOVE AND RELOAD");
+  chrome("COMPLETE", C_BLUE, "KEGS DONE - SWAP");
   // 3x3 (39 px) sits evenly in the banner(126)..START(180) gap
   lbl(LX, 133, true, 3, 3, C_GRN, C_BG, "DONE");
   footerIP(ip);
@@ -457,37 +480,37 @@ void error(const char* msg, const char* ip) {
   chrome("FAULT", C_RED, "MACHINE MADE SAFE");
   // wrap the message manually at ~28 chars (F7 is proportional but this is
   // a safe budget for 240 px)
-  char line[32];
-  int y = 84;
+  char line[24];
+  int y = 92;
   const char* p = msg;
-  while (*p && y < 180) {
+  while (*p && y < 200) {
     int n = 0;
     int lastSp = -1;
-    while (p[n] && n < 28) { if (p[n] == ' ') lastSp = n; n++; }
+    while (p[n] && n < 20) { if (p[n] == ' ') lastSp = n; n++; }
     if (p[n] && lastSp > 0) n = lastSp;
     memcpy(line, p, n); line[n] = 0;
-    lbl(LX, y, false, 1, 1, C_TXT, C_BG, line);
-    y += 22;
+    lbl4(LX, y, C_TXT, line);
+    y += 20;
     p += n; while (*p == ' ') p++;
   }
   footerIP(ip);
 }
 
 void stopping(const char* ip) {
-  chrome("STOPPING", C_AMB, "PURGING KEG - PLEASE WAIT");
-  lbl(LX, REM_Y, false, 2, 2, C_SUB, C_BG, "TIME LEFT");
+  chrome("STOPPING", C_AMB, "PURGING KEG");
+  lbl4(LX, REM_Y, C_SUB, "TIME LEFT");
   footerIP(ip);
 }
 
 void halted(const char* ip) {
-  chrome("STOPPED", C_AMB, "MACHINE HALTED BY OPERATOR");
-  lbl(LX, 150, false, 1, 2, C_SUB, C_BG, "GET READY = RE-ARM SYSTEMS");
+  chrome("STOPPED", C_AMB, "HALTED BY OPERATOR");
+  lbl4(LX, 150, C_SUB, "GET READY = RE-ARM");
   footerIP(ip);
 }
 
 void message(const char* msg, const char* ip) {
   chrome("MESSAGE", C_BLUE, "");
-  lbl(LX, 84, false, 1, 1, C_TXT, C_BG, msg);
+  lbl4(LX, 84, C_TXT, msg);
   footerIP(ip);
 }
 
@@ -528,6 +551,7 @@ static void buttonLabel(int x, int y, int w, int h, const char* label,
   // Centre the measured CAPS block (panel-measured metrics, not the cell):
   // caps span ty + capTop*s .. ty + (capTop+capH)*s.
   int ty = y + h / 2 - s * (2 * g_capTop8 + g_capH8) / 2;
+  if (heavy) ty -= s / 4;        // overstrike adds ink below; re-balance
   if (ty < y + 2) ty = y + 2;
   lbl(tx, ty, true, s, s, ink, fill, label);
   if (heavy) {
@@ -563,6 +587,15 @@ void text(int x, int y, int sz, word fg, word bg, const char* s) {
 }
 void label(int x, int y, bool bold, int sx, int sy, word fg, word bg, const char* s) {
   lbl(x, y, bold, sx, sy, remap(fg), bg, s);
+}
+void label4(int x, int y, word fg, word bg, const char* s) {
+  (void)bg;
+  lbl4(x, y, remap(fg), s);
+}
+void fontMetrics(int* cell, int* capTop, int* capH) {
+  if (cell)   *cell   = g_h8;
+  if (capTop) *capTop = g_capTop8;
+  if (capH)   *capH   = g_capH8;
 }
 void labelRight(int x2, int y, bool bold, int sx, int sy, word fg, word bg, const char* s) {
   lblR(x2, y, bold, sx, sy, remap(fg), bg, s);

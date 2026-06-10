@@ -120,7 +120,7 @@ static void sDrawValue(int slot, int idx) {
 
 static void sDrawRow(int slot, int idx) {
   int rowY = S_ROW_Y0 + slot * S_ROW_H;
-  KDS::label(18, rowY, false, 1, 2, S_SUBTX, S_BLACK, sLabel[idx]);
+  KDS::label4(18, rowY, S_SUBTX, S_BLACK, sLabel[idx]);
   sDrawValue(slot, idx);
   KDS::button(S_MINUS_X, rowY + 4, S_BTN_W, S_BTN_H, "-", BLUE);
   KDS::button(S_PLUS_X,  rowY + 4, S_BTN_W, S_BTN_H, "+", BLUE);
@@ -141,7 +141,7 @@ static void sDrawInfo() {
                          cfgLoadedFromSD ? "SD WASHER.CFG" : "COMPILED DEFAULTS" };
   (void)b;
   for (int i = 0; i < 4; i++) {
-    KDS::label(18, y, false, 1, 2, S_SUBTX, S_BLACK, lab[i]);
+    KDS::label4(18, y, S_SUBTX, S_BLACK, lab[i]);
     KDS::label(18, y + 28, true, 1, 2, WHITE, S_BLACK, val[i]);
     y += S_ROW_H;
   }
@@ -273,14 +273,16 @@ void display_bootDone(bool ok) {
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
   g_screen = "NOT_READY";
-  KDS::readiness(waterOk, airOk, co2Ok, estopOk, false, ipStr());  // amber, no START
+  bool levelOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
+  KDS::readiness(waterOk, airOk, co2Ok, estopOk, levelOk, false, ipStr());  // amber, no START
   reapplyMqtt();
 }
 
 void display_showReadyScreen() {
   g_screen = "READY";
   // Same unified screen, all-OK: green title + the live signal rows + START.
-  KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive, true, ipStr());
+  KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive,
+                 hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL, true, ipStr());
   KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   KDS::button(S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H, "SETTINGS", BLUE);
   reapplyMqtt();
@@ -366,11 +368,11 @@ static void drawCycleControls() {
 // One-line operator description per recipe phase (indexed like phaseNames).
 static const char* const phaseDescs[NUM_PHASES] = {
   "",
-  "DRAINING OLD PRODUCT",  "PRE-RINSE TO DRAIN",     "AIR-PURGING RINSE WATER",
-  "CAUSTIC RECIRCULATING", "CAUSTIC BACK TO TANK",
-  "RINSING TO DRAIN",      "AIR-PURGING RINSE WATER",
-  "SANITIZER RECIRCULATING", "SANITIZER BACK TO TANK",
-  "CO2 CHARGE - SEALING KEG"
+  "DRAIN OLD BEER", "PRE-RINSE",      "AIR PURGE",
+  "CAUSTIC RECIRC", "CAUSTIC RETURN",
+  "RINSE",          "AIR PURGE",
+  "SANI RECIRC",    "SANI RETURN",
+  "CO2 SEAL"
 };
 
 void display_showOperatingScreen() {

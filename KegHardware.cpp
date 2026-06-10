@@ -194,12 +194,10 @@ void hardware_readInputs() {
 
 // ---------- System-go check ----------
 bool hardware_allSystemsGo() {
-#ifdef BENCH_MODE
-  // Bench-mode: bypass operating-policy gates so the state machine can
-  // progress without real plumbing. Hardware-safety paths (heater
-  // interlocks, ESTOP ISR, watchdog) remain untouched.
-  return true;
-#else
+  // Bench mode (runtime: no SD card at boot): bypass operating-policy gates
+  // so the state machine can progress without real plumbing. Hardware-safety
+  // paths (heater interlocks, ESTOP ISR, watchdog) remain untouched.
+  if (kwBenchMode) return true;
   if (isEstopActive)                              { errorCode = ERR_ESTOP;          return false; }
   if (!isAirOk)                                   { errorCode = ERR_AIR_PRESSURE;   return false; }
   if (!isCo2Ok)                                   { errorCode = ERR_CO2_PRESSURE;   return false; }
@@ -208,7 +206,6 @@ bool hardware_allSystemsGo() {
   if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
                                                     errorCode = ERR_CAUSTIC_LEVEL;  return false; }
   return true;
-#endif
 }
 
 // ---------- All-stop (main-loop only) ----------

@@ -8,6 +8,7 @@
 #include "KegHardware.h"
 #include "KegStateMachine.h"
 #include "KegDisplay.h"
+#include "KegDisplaySerial.h"   // KDS::fontMetrics (boot diagnostics)
 #include "KegTimers.h"
 #include "KegDiagnostics.h"
 #include "KegUtils.h"
@@ -660,22 +661,29 @@ void setup() {
   // Diagnostics first so any later init failure can be logged.
   Serial.begin(DIAG_SERIAL_BAUD);
 
-#ifdef BENCH_MODE
-  // Loud, unmissable warning on the wire so a bench-mode build can
-  // never silently end up running a real cleaner. See KegConfig.h.
-  Serial.println();
-  Serial.println(F("=============================================="));
-  Serial.println(F("**  BENCH_MODE ACTIVE — DO NOT SHIP THIS  **"));
-  Serial.println(F("=============================================="));
-#endif
+
 
   // Display before config, hardware, etc. — failures in those modules
   // call display_showError() and need somewhere to render. Goldelox boot
   // sequence is the longest single step in setup (~4 s).
   display_init();          // panel up + the single "KEGWASHER" boot screen
+  {
+    int fcell, ftop, fh;
+    KDS::fontMetrics(&fcell, &ftop, &fh);
+    char fb[48];
+    snprintf(fb, sizeof(fb), "Font metrics: cell=%d capTop=%d capH=%d", fcell, ftop, fh);
+    diagnostics_logEvent(fb);
+  }
 
   config_init();
-  display_bootStatus(0, "SD CONFIG", cfgLoadedFromSD ? "READ OK" : "DEFAULT",
+  if (kwBenchMode) {
+    // Runtime bench mode (no SD card found): loud on the wire so a cardless
+    // boot can never silently run a real cleaner.
+    Serial.println(F("=============================================="));
+    Serial.println(F("**  BENCH MODE (no SD card) — gates bypassed **"));
+    Serial.println(F("=============================================="));
+  }
+  display_bootStatus(0, "SD CONFIG", cfgLoadedFromSD ? "READ OK" : "NONE (BENCH)",
                      cfgLoadedFromSD ? GREEN : AMBER);
   hardware_init();
   display_bootStatus(1, "HARDWARE", "OK", GREEN);

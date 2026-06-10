@@ -24,16 +24,16 @@ Tests live under `tests/DisplayTest/` as a separate sketch — only run when wor
 
 `KegSecrets.h` is gitignored and must exist for the firmware to compile. Copy `KegSecrets.h.example` → `KegSecrets.h` and fill in MQTT broker IP / user / pass / client id / topic root. Broker credentials for this dev environment live in `~/mosquitto-credentials.txt`.
 
-## BENCH_MODE — read before changing safety code
+## Bench mode — read before changing safety code
 
-`KegConfig.h` defines `#define BENCH_MODE` (currently active). When defined the firmware:
+Bench mode is **runtime**, decided by SD-card presence at boot (since 2026-06-10; the old compile-time `#define BENCH_MODE` is gone): no readable `WASHER.CFG` → `kwBenchMode = true`. When true the firmware:
 
-- skips `STARTUP_HEATING` (INIT → READY directly)
-- `hardware_allSystemsGo()` returns true unconditionally
-- skips per-tick + entry caustic-temp checks in `STATE_WASHING`
-- compresses every stage timer to 5 s so a full cycle runs in ~25 s
+- `hardware_allSystemsGo()` returns true unconditionally (gates incl. caustic LEVEL bypassed)
+- skips `STARTING` (heating) — START goes straight to the recipe
+- skips per-phase resource monitors + entry preconditions
+- compresses every stage timer to 5 s (~50 s full cycle)
 
-What is **not** bypassed even in bench mode: heater level/overtemp interlocks, per-state hard timeouts, ESTOP (ISR + main-loop paths), and the hardware watchdog. Don't gate new safety checks behind `BENCH_MODE` — interlocks should be unconditional. Before any production build, comment the `#define` out and `grep BENCH_MODE *.h *.cpp` should show only `#ifdef` references.
+Card present → production behaviour: all gates live (the readiness screen shows a 5th LEVEL row — it's part of `allSystemsGo`). For a cold/dry bench run **with** a card: lower `HEAT TGT` on the settings panel to skip heating, and satisfy the level input. What is **never** bypassed: heater level/overtemp interlocks, per-state hard timeouts, ESTOP (ISR + main-loop), watchdog. Don't gate new safety checks behind `kwBenchMode` — interlocks should be unconditional.
 
 ## Architecture
 
