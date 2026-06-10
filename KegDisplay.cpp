@@ -291,6 +291,12 @@ void display_showFinishedScreen() {
   KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   reapplyMqtt();
 }
+// 1 Hz countdown on the STOPPING screen (same field as the operating timer)
+void display_updateStoppingTimer(unsigned long remainingMs) {
+  unsigned long sec = (remainingMs + 999UL) / 1000UL;
+  KDS::operatingTimer((int)(sec / 60UL), (int)(sec % 60UL));
+}
+
 void display_showStopping() {
   g_screen = "STOPPING"; KDS::stopping(ipStr()); reapplyMqtt(); }
 void display_showHaltedScreen() {
@@ -360,11 +366,11 @@ static void drawCycleControls() {
 // One-line operator description per recipe phase (indexed like phaseNames).
 static const char* const phaseDescs[NUM_PHASES] = {
   "",
-  "draining old product",  "pre-rinse to drain",     "air-purging rinse water",
-  "caustic recirculating", "caustic back to tank",
-  "rinsing to drain",      "air-purging rinse water",
-  "sanitizer recirculating", "sanitizer back to tank",
-  "CO2 charge - sealing keg"
+  "DRAINING OLD PRODUCT",  "PRE-RINSE TO DRAIN",     "AIR-PURGING RINSE WATER",
+  "CAUSTIC RECIRCULATING", "CAUSTIC BACK TO TANK",
+  "RINSING TO DRAIN",      "AIR-PURGING RINSE WATER",
+  "SANITIZER RECIRCULATING", "SANITIZER BACK TO TANK",
+  "CO2 CHARGE - SEALING KEG"
 };
 
 void display_showOperatingScreen() {

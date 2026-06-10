@@ -316,7 +316,7 @@ void startup(const char* l1, const char* l2) {
 void readiness(bool water, bool air, bool co2, bool estop, bool allOk, const char* ip) {
   chrome(allOk ? "READY" : "NOT READY",
          allOk ? C_GRN : C_AMB,
-         allOk ? "connect kegs - press start" : "waiting on systems below");
+         allOk ? "CONNECT KEGS - PRESS START" : "WAITING ON SYSTEMS BELOW");
   sensorGrid(94, water, air, co2, estop, true);
   hline(LX, RX, 166, C_TRACK);
   footerIP(ip);
@@ -327,19 +327,19 @@ void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
 void ready(const char* ip) { readiness(true, true, true, true, true, ip); }
 
 void heating(int curC, int tgtC, int pct, const char* ip) {
-  chrome("HEATING", C_BLUE, "caustic warming to target");
+  chrome("HEATING", C_BLUE, "CAUSTIC WARMING TO TARGET");
   char b[24];
   snprintf(b, sizeof(b), "%dF %dC", (curC * 9 + 2) / 5 + 32, curC);
   rect(LX - 2, TMR_Y, RX, TMR_CLR_Y2, C_BG);
   lbl(LX, TMR_Y, true, 3, 4, C_TXT, C_BG, b);
-  snprintf(b, sizeof(b), "target %dF %dC", (tgtC * 9 + 2) / 5 + 32, tgtC);
+  snprintf(b, sizeof(b), "TARGET %dF %dC", (tgtC * 9 + 2) / 5 + 32, tgtC);
   rect(LX - 2, REM_Y, RX, REM_Y + 28, C_BG);
   lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, b);
   hline(LX, RX, RULE2_Y, C_TRACK);
   snprintf(b, sizeof(b), "%d%%", pct);
   rect(LX - 2, TMP_Y, RX, TMP_CLR_Y2, C_BG);
   lbl(LX, TMP_Y, true, 2, 2, C_CYAN, C_BG, b);
-  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "of heat-up window used");
+  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "OF HEAT-UP WINDOW USED");
   footerIP(ip);
 }
 
@@ -351,9 +351,9 @@ void operatingFrame(const char* phaseName, const char* desc,
   char meta[40];
   snprintf(meta, sizeof(meta), "PHASE %d/%d - %s", phaseIdx, phaseCount, desc);
   chrome(phaseName, stateColour, meta);
-  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "remaining");
+  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "REMAINING");
   hline(LX, RX, RULE2_Y, C_TRACK);
-  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "caustic");
+  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "CAUSTIC");
   hline(LX, RX, RULE3_Y, C_TRACK);
   sensorGrid(SENS_Y, true, true, true, true, false);
   g_lastTemp = -999; g_lastSens = -1;       // force first partial update
@@ -405,14 +405,14 @@ void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bo
 }
 
 void finished(const char* ip) {
-  chrome("COMPLETE", C_BLUE, "kegs done - remove and reload");
+  chrome("COMPLETE", C_BLUE, "KEGS DONE - REMOVE AND RELOAD");
   // 3x3 (39 px) sits evenly in the banner(126)..START(180) gap
   lbl(LX, 133, true, 3, 3, C_GRN, C_BG, "DONE");
   footerIP(ip);
 }
 
 void error(const char* msg, const char* ip) {
-  chrome("FAULT", C_RED, "machine made safe");
+  chrome("FAULT", C_RED, "MACHINE MADE SAFE");
   // wrap the message manually at ~28 chars (F7 is proportional but this is
   // a safe budget for 240 px)
   char line[32];
@@ -432,14 +432,14 @@ void error(const char* msg, const char* ip) {
 }
 
 void stopping(const char* ip) {
-  chrome("STOPPING", C_AMB, "clearing keg - please wait");
-  lbl(LX, TMR_Y, true, 2, 2, C_AMB, C_BG, "DRAINING");
+  chrome("STOPPING", C_AMB, "CLEARING KEG - PLEASE WAIT");
+  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "DRAIN TIME LEFT");
   footerIP(ip);
 }
 
 void halted(const char* ip) {
-  chrome("STOPPED", C_AMB, "machine halted by operator");
-  lbl(LX, 150, false, 1, 2, C_SUB, C_BG, "GET READY = re-arm systems");
+  chrome("STOPPED", C_AMB, "MACHINE HALTED BY OPERATOR");
+  lbl(LX, 150, false, 1, 2, C_SUB, C_BG, "GET READY = RE-ARM SYSTEMS");
   footerIP(ip);
 }
 
@@ -468,7 +468,7 @@ void banner(const char* text, word colour, bool visible) {
   if (visible) {
     rrect(16, BANNER_Y1, 256, BANNER_Y2, 8, c);
     int sx = (strW(text, true, 2) <= 228) ? 2 : 1;
-    int ty = BANNER_Y1 + (BANNER_Y2 - BANNER_Y1 - g_h8 * 2) / 2;
+    int ty = BANNER_Y1 + (BANNER_Y2 - BANNER_Y1 - g_h8 * 2) / 2 + 8;
     lblC(16, 256, ty, true, sx, 2, inkOn(c), c, text);
   } else {
     rect(10, BANNER_Y1 - 2, 260, BANNER_Y2 + 2, C_BG);
@@ -483,11 +483,20 @@ static void buttonLabel(int x, int y, int w, int h, const char* label,
   while (s > 1 && strW(label, true, s) > w - 14) s--;
   int tw = strW(label, true, s);
   int tx = x + (w - tw) / 2; if (tx < x + 2) tx = x + 2;
-  int ty = y + (h - g_h8 * s) / 2; if (ty < y + 2) ty = y + 2;
+  // +4px/scale: caps sit high of the glyph-cell centre (camera-calibrated
+  // 2026-06-10: +2/scale still measured ~5px high at s=2..3)
+  int ty = y + (h - g_h8 * s) / 2 + 4 * s; if (ty < y + 2) ty = y + 2;
   lbl(tx, ty, true, s, s, ink, fill, label);
-  if (heavy) {                 // overstrike = extra weight for primary actions
-    lbl(tx + 1, ty, true, s, s, ink, fill, label);
-    if (s >= 3) lbl(tx + 2, ty, true, s, s, ink, fill, label);
+  if (heavy) {
+    // dense overstrike grid: thickens strokes in both axes — heavier weight
+    // and fills the NN-scaling stairsteps that read as "8-bit"
+    lbl(tx + 1, ty,     true, s, s, ink, fill, label);
+    lbl(tx,     ty + 1, true, s, s, ink, fill, label);
+    lbl(tx + 1, ty + 1, true, s, s, ink, fill, label);
+    if (s >= 3) {
+      lbl(tx + 2, ty,     true, s, s, ink, fill, label);
+      lbl(tx + 2, ty + 1, true, s, s, ink, fill, label);
+    }
   }
 }
 

@@ -943,8 +943,14 @@ static void state_stopping() {
   static bool drawn = false;
   unsigned long evac = evacDuration();   // 0 = nothing to evacuate (e.g. PRESSURE)
 
+  static unsigned long lastTickMs = 0;
   if (evac > 0) {
-    if (!drawn) { display_showStopping(); drawn = true; }
+    if (!drawn) { display_showStopping(); drawn = true; lastTickMs = 0; }
+    if (millis() - lastTickMs >= 1000UL) {   // 1 Hz countdown — the operator
+      lastTickMs = millis();                 // can see the evacuation moving
+      unsigned long el = timers_getStateElapsed();
+      display_updateStoppingTimer(el < evac ? evac - el : 0UL);
+    }
     if (!timers_isStateDone(evac)) return;   // still evacuating
   }
 

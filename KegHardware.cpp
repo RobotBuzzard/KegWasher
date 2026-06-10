@@ -242,11 +242,11 @@ void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : L
 // breathe on a ~1.6 s triangle so a held machine is visible across the room.
 // digitalWrite from the normal paths overrides PWM when the hold ends.
 void hardware_pulseLamps() {
-  unsigned long t = millis() % 1600UL;
-  int duty = (t < 800UL) ? (int)(t * 255UL / 800UL)
-                         : (int)((1600UL - t) * 255UL / 800UL);
+  unsigned long t = millis() % 1066UL;     // ~1.07 s (was 1.6 s; -33%)
+  int duty = (t < 533UL) ? (int)(t * 255UL / 533UL)
+                         : (int)((1066UL - t) * 255UL / 533UL);
   analogWrite(alarmOut, duty);
-  analogWrite(readyLedOut, duty);
+  analogWrite(readyLedOut, 255 - duty);    // alternate: green peaks as red dips
 }
 
 // ---------- Heater (interlocked) ----------

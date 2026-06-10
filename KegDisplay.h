@@ -83,6 +83,7 @@ void display_setPaused(bool paused);
 // discards. Lives entirely in the display layer (idleSub = IDLE_SETTINGS); the
 // state machine no-ops while it's open and READY repaints on exit.
 void display_openSettings();
+void display_updateStoppingTimer(unsigned long remainingMs);
 
 // Id of the screen the panel is currently showing (BOOT/NOT_READY/READY/
 // SETTINGS/INFO/HEATING/OPERATING/PAUSED/STOPPING/STOPPED/COMPLETE/ABORTED/
