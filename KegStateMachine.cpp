@@ -641,6 +641,14 @@ static void state_idle() {
 
     case IDLE_READY: {
       static bool drawn = false;
+      static byte lastSig = 0xFF;
+
+      // Live sensor dots: redraw when any input changes. (In BENCH_MODE
+      // allSystemsGo() is forced true so the READY->NOT_READY transition
+      // below never fires — without this the screen showed stale green
+      // dots after a sensor dropped.)
+      byte sig = (byte)((isWaterOk << 3) | (isAirOk << 2) | (isCo2Ok << 1) | (byte)isEstopActive);
+      if (sig != lastSig) { lastSig = sig; drawn = false; }
 
       if (!drawn) {
         display_showReadyScreen();

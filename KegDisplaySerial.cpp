@@ -105,13 +105,20 @@ namespace {
   // Glyph widths are queried once at begin() (charwidth is per current font)
   // so labels can be centred / right-aligned without GetAckResp at draw time.
   byte g_w7[95], g_w8[95];                  // widths for ASCII 32..126
-  int  g_h7 = 13, g_h8 = 13;                // line heights (measured at begin)
+  int  g_h7 = 13, g_h8 = 13;                // cell heights (queried at begin)
+  // Visual metrics of CAPS within the FONT_8 cell, measured at begin() by
+  // rendering an 'E' and reading it back (gfx_GetPixel) — the engine's own
+  // truth, replacing camera-calibrated fudge constants.
+  int  g_capTop8 = 0, g_capH8 = 13;
 
   // current text state — cached to skip redundant txt_Set spam
   word g_font = 0xFFFF, g_fg = 0xFFFF, g_bgc = 0xFFFF;
-  int  g_sx = -1, g_sy = -1;
-  void textStateReset() { g_font = 0xFFFF; g_fg = g_bgc = 0xFFFF; g_sx = g_sy = -1; }
+  int  g_sx = -1, g_sy = -1, g_gap = -1;
+  void textStateReset() { g_font = 0xFFFF; g_fg = g_bgc = 0xFFFF; g_sx = g_sy = -1; g_gap = -1; }
 
+  void setGap(int gap) {
+    if (gap != g_gap) { drain(); D->txt_Set(TEXT_XGAP, gap); g_gap = gap; }
+  }
   void setFont(bool bold, int sx, int sy, word fg, word bgc) {
     word f = bold ? FONT_8 : FONT_7;
     if (f != g_font)  { drain(); D->txt_FontID(f);            g_font = f; }
@@ -179,6 +186,22 @@ namespace {
     if (ack != 0x06 || hi < 0 || lo < 0) { g_err++; return 0xFFFF; }
     return (word)((hi << 8) | lo);
   }
+  // two-word-arg framed read (gfx_GetPixel x,y)
+  word rawCmdResp2(word opcode, word a, word b) {
+    drainQuiet(2);
+    uint16_t op = (uint16_t)opcode;
+    Serial1.write((uint8_t)(op >> 8)); Serial1.write((uint8_t)(op & 0xFF));
+    Serial1.write((uint8_t)(a >> 8));  Serial1.write((uint8_t)(a & 0xFF));
+    Serial1.write((uint8_t)(b >> 8));  Serial1.write((uint8_t)(b & 0xFF));
+    Serial1.flush();
+    int ack = readByteTO(300);
+    int hi  = readByteTO(300);
+    int lo  = readByteTO(300);
+    drainQuiet(3);
+    if (ack != 0x06 || hi < 0 || lo < 0) { g_err++; return 0xFFFF; }
+    return (word)((hi << 8) | lo);
+  }
+
   // charwidth/charheight take a single raw byte argument (lib source-verified)
   word rawCmdResp8(word opcode, byte arg) {
     drainQuiet(2);
@@ -192,6 +215,24 @@ namespace {
     drainQuiet(3);
     if (ack != 0x06 || hi < 0 || lo < 0) { g_err++; return 0xFFFF; }
     return (word)((hi << 8) | lo);
+  }
+
+  void measureCapMetrics() {
+    setFont(true, 1, 1, 0xFFFF, 0x0000);
+    drain(); D->gfx_MoveTo(4, 4);
+    drain(); D->putCH('E');
+    int top = -1, bot = -1;
+    for (int dy = 0; dy < g_h8 + 4; dy++) {
+      for (int dx = 0; dx < 10; dx++) {
+        if (rawCmdResp2(F_gfx_GetPixel, 4 + dx, 4 + dy) != 0x0000) {
+          if (top < 0) top = dy;
+          bot = dy;
+          break;
+        }
+      }
+    }
+    if (top >= 0 && bot > top) { g_capTop8 = top; g_capH8 = bot - top + 1; }
+    drain(); D->gfx_RectangleFilled(0, 0, 20, g_h8 + 10, 0x0000);   // erase probe
   }
 
   void buildWidthCache() {
@@ -233,7 +274,7 @@ namespace {
     g_stripCol = sc; g_stripTop = 0;
     int tsx = (strW(title, true, 3) <= RX - LX) ? 3 : 2;
     lbl(LX, TITLE_Y, true, tsx, 3, C_TXT, C_BG, title);
-    if (meta && *meta) lbl(LX, META_Y, false, 1, 2, C_SUB, C_BG, meta);
+    if (meta && *meta) { setGap(1); lbl(LX, META_Y, false, 1, 2, C_SUB, C_BG, meta); setGap(0); }
     hline(LX, RX, RULE1_Y, C_TRACK);
     rect(0, FOOT_Y, DW - 1, DH - 1, C_CARD);
   }
@@ -301,6 +342,7 @@ void begin() {
   resetSync();                     // RTS-reset display -> SPE@9600, handshake, portrait
   changeBaud(BAUD_115200, 115200); // bump link to 115200 (~12x faster redraws; 9600 fallback)
   buildWidthCache();               // DejaVu glyph widths for centring (one-time, ~0.5 s)
+  measureCapMetrics();             // render+readback: where caps sit in the cell
   drain(); D->txt_Set(TEXT_OPACITY, 0);   // transparent text (re-asserted by every cls())
 }
 
@@ -351,9 +393,9 @@ void operatingFrame(const char* phaseName, const char* desc,
   char meta[40];
   snprintf(meta, sizeof(meta), "PHASE %d/%d - %s", phaseIdx, phaseCount, desc);
   chrome(phaseName, stateColour, meta);
-  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "REMAINING");
+  lbl(LX, REM_Y, false, 2, 2, C_SUB, C_BG, "REMAINING");
   hline(LX, RX, RULE2_Y, C_TRACK);
-  lbl(LX, TMPSUB_Y, false, 1, 2, C_SUB, C_BG, "CAUSTIC");
+  lbl(LX, TMPSUB_Y, false, 2, 2, C_SUB, C_BG, "CAUSTIC");
   hline(LX, RX, RULE3_Y, C_TRACK);
   sensorGrid(SENS_Y, true, true, true, true, false);
   g_lastTemp = -999; g_lastSens = -1;       // force first partial update
@@ -432,8 +474,8 @@ void error(const char* msg, const char* ip) {
 }
 
 void stopping(const char* ip) {
-  chrome("STOPPING", C_AMB, "CLEARING KEG - PLEASE WAIT");
-  lbl(LX, REM_Y, false, 1, 2, C_SUB, C_BG, "DRAIN TIME LEFT");
+  chrome("STOPPING", C_AMB, "PURGING KEG - PLEASE WAIT");
+  lbl(LX, REM_Y, false, 2, 2, C_SUB, C_BG, "TIME LEFT");
   footerIP(ip);
 }
 
@@ -468,7 +510,7 @@ void banner(const char* text, word colour, bool visible) {
   if (visible) {
     rrect(16, BANNER_Y1, 256, BANNER_Y2, 8, c);
     int sx = (strW(text, true, 2) <= 228) ? 2 : 1;
-    int ty = BANNER_Y1 + (BANNER_Y2 - BANNER_Y1 - g_h8 * 2) / 2 + 8;
+    int ty = (BANNER_Y1 + BANNER_Y2) / 2 - 2 * (2 * g_capTop8 + g_capH8) / 2;
     lblC(16, 256, ty, true, sx, 2, inkOn(c), c, text);
   } else {
     rect(10, BANNER_Y1 - 2, 260, BANNER_Y2 + 2, C_BG);
@@ -483,19 +525,18 @@ static void buttonLabel(int x, int y, int w, int h, const char* label,
   while (s > 1 && strW(label, true, s) > w - 14) s--;
   int tw = strW(label, true, s);
   int tx = x + (w - tw) / 2; if (tx < x + 2) tx = x + 2;
-  // +4px/scale: caps sit high of the glyph-cell centre (camera-calibrated
-  // 2026-06-10: +2/scale still measured ~5px high at s=2..3)
-  int ty = y + (h - g_h8 * s) / 2 + 4 * s; if (ty < y + 2) ty = y + 2;
+  // Centre the measured CAPS block (panel-measured metrics, not the cell):
+  // caps span ty + capTop*s .. ty + (capTop+capH)*s.
+  int ty = y + h / 2 - s * (2 * g_capTop8 + g_capH8) / 2;
+  if (ty < y + 2) ty = y + 2;
   lbl(tx, ty, true, s, s, ink, fill, label);
   if (heavy) {
-    // dense overstrike grid: thickens strokes in both axes — heavier weight
-    // and fills the NN-scaling stairsteps that read as "8-bit"
-    lbl(tx + 1, ty,     true, s, s, ink, fill, label);
-    lbl(tx,     ty + 1, true, s, s, ink, fill, label);
-    lbl(tx + 1, ty + 1, true, s, s, ink, fill, label);
-    if (s >= 3) {
-      lbl(tx + 2, ty,     true, s, s, ink, fill, label);
-      lbl(tx + 2, ty + 1, true, s, s, ink, fill, label);
+    // overstrike grid scales with size: meaningfully heavier strokes that
+    // also fill the NN-scaling stairsteps
+    for (int dx = 1; dx < s; dx++)       lbl(tx + dx, ty, true, s, s, ink, fill, label);
+    for (int dy = 1; dy <= s / 2; dy++) {
+      lbl(tx, ty + dy, true, s, s, ink, fill, label);
+      for (int dx = 1; dx < s; dx++)     lbl(tx + dx, ty + dy, true, s, s, ink, fill, label);
     }
   }
 }
