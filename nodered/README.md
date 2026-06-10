@@ -23,31 +23,38 @@ Credentials are in Node-RED's encrypted credential store (`~/.node-red/flows_cre
 
 ## Dashboard layout
 
+**Monitor + alert only** (decided 2026-06-10): the dashboard publishes nothing to
+`kegwasher/cmd/*`; all control happens at the machine. The old Commands group and the
+old text-line "Screen mirror" (which simulated the pre-PackML Goldelox display) were
+removed. A graphical replica of the panel, driven by the retained `kegwasher/screen`
+topic, is planned **after** the panel screen redesign settles.
+
 **KegWasher tab**
 
 | Group | Widgets |
 |---|---|
-| Status | State, Connection, Remaining timer, Elapsed timer, Error message |
+| Status | State badge (PackML `machineState`, with IDLE sub-state, e.g. `IDLE · READY`), Recipe phase, Panel screen id, Connection, Remaining timer, Elapsed timer, Error message |
 | Sensors | Water / Air / CO2 / E-Stop OK LEDs |
-| Temperatures | Caustic °C, Enclosure °C |
-| Commands | Start (green), Silence (amber), Reset (red) buttons |
-| Heartbeat | Uptime, Free RAM (KB), Loop max (µs), 5-min alert if error persists |
+| Temperatures | Caustic °C (enclosure temp removed from the controller 2026-06-08) |
+| Heartbeat | Uptime, Free RAM (KB), Loop max (µs), ALERT row |
+
+Alerting: if `kegwasher/state` sits in `ABORTED` for >5 min, the ALERT row fills in and
+a red toast pops every minute until recovery (a 60 s inject re-checks the latch, since
+the firmware's MQTT publishes are change-detected and won't re-fire on their own).
 
 **Vision tab**
 
 | Group | Widgets |
 |---|---|
-| Camera | MJPEG stream from `http://192.168.1.91:8080/stream.mjpg` |
+| Camera | MJPEG stream from `http://192.168.1.96:8080/stream.mjpg` (snapshot at `/snapshot.jpg`) |
 | Vision Stats | Camera OK LED, FPS, Frame age, Uptime |
 
 ## Topic subscriptions
 
 | Topic | Source |
 |---|---|
-| `kegwasher/#` | ClearCore firmware (rr1) |
+| `kegwasher/{state,state/sub,phase,screen,online,timer/±,temp/caustic,sensors/±,error/±,heartbeat/±}` | ClearCore firmware (rr1) |
 | `vision/#` | Jetson bench-vision (rr20) |
-
-Commands published to `kegwasher/cmd/{start,silence,reset}` (QoS 1, not retained).
 
 ## Importing the flow
 
