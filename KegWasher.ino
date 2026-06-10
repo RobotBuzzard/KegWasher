@@ -524,11 +524,6 @@ static void mqtt_publishStatus() {
     kwMqtt.publish(kwTopic("level/caustic"), buf, true);
   }
 
-  // --- TEMP DEBUG (temporary): raw filtered ADC counts for the A10 caustic
-  // probe. Remove once the ETS50N 4-20mA conversion is calibrated. ---
-  snprintf(buf, sizeof(buf), "%d", causticTempValue);
-  kwMqtt.publish(kwTopic("debug/cau_adc"), buf, true);
-
   // ----- Timers (operating states only) -----
   unsigned long elapsedMs = timers_getStateElapsed();
   // stageTimerFor() uses the LATCHED keg size and returns 0 for non-operating
