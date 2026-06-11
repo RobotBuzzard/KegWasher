@@ -15,7 +15,7 @@ bool isCycleStartPressed = false;
 bool isManualDrainPressed = false;
 
 int  causticTempValue = 0;
-int  causticLevelValue = 0;
+bool isCausticLevelOk  = false;   // NC float switch on A-12 (debounced)
 
 bool causticTempSensorError = false;
 
@@ -37,11 +37,12 @@ enum DigitalIdx {
   DI_LARGE_KEG,
   DI_CYCLE_START,
   DI_MANUAL_DRAIN,
+  DI_CAUSTIC_LEVEL,
   DI_COUNT
 };
 
 static const uint8_t debouncedPins[DI_COUNT] = {
-  airOk, co2Ok, waterOk, largeKeg, cycleStart, manualDrain
+  airOk, co2Ok, waterOk, largeKeg, cycleStart, manualDrain, causticLevelSensor
 };
 
 static bool          db_lastReading[DI_COUNT] = {false};
@@ -85,18 +86,12 @@ static int filterAdc(int prev, int raw) {
 
 static void readTemperatureSensors() {
   int rawCau = analogRead(causticTemp);
-  int rawLvl = analogRead(causticLevelSensor);
 
   if (validateAdc(rawCau)) {
     causticTempValue = filterAdc(causticTempValue, rawCau);
     causticTempSensorError = false;
   } else {
     causticTempSensorError = true;
-  }
-
-  // Level sensor is non-safety-critical: hold last good value silently.
-  if (validateAdc(rawLvl)) {
-    causticLevelValue = filterAdc(causticLevelValue, rawLvl);
   }
 }
 
@@ -135,6 +130,12 @@ void hardware_init() {
   pinMode(largeKeg, INPUT);
   pinMode(cycleStart, INPUT);   // NO momentary switch S<->G; IO0-5 inputs are negative-true
   pinMode(manualDrain, INPUT);
+  // Caustic level: NC float switch S<->G on A-12 used as a sinking DIGITAL
+  // input (was misread as a 0-10V analog level sensor). NC = closed while
+  // the level is OK -> sunk to GND -> digitalRead HIGH (negative-true, same
+  // as the DI8 e-stop chain below). Open (low level OR broken wire) -> LOW
+  // -> fail. Fail-safe by construction.
+  pinMode(causticLevelSensor, INPUT);
 
   pinMode(co2Out, OUTPUT);
   pinMode(readyLedOut, OUTPUT);   // GREEN cycle-start indicator (was the fan on IO5)
@@ -159,15 +160,15 @@ void hardware_init() {
   // ClearCore — the pull-up is fixed in hardware regardless of pinMode.)
   attachInterrupt(digitalPinToInterrupt(ESTOP), hardware_estopIsr, FALLING);
 
-  // Seed analog filters with one valid sample so the first cycle isn't
+  // Seed the analog filter with one valid sample so the first cycle isn't
   // smeared by the zero-initialised previous value.
   causticTempValue   = analogRead(causticTemp);
-  causticLevelValue  = analogRead(causticLevelSensor);
 }
 
 // ---------- Per-loop input read ----------
 void hardware_readInputs() {
   isAirOk              = debounceRead(DI_AIR_OK);
+  isCausticLevelOk     = debounceRead(DI_CAUSTIC_LEVEL);
   isCo2Ok              = debounceRead(DI_CO2_OK);
   isWaterOk            = debounceRead(DI_WATER_OK);
   isLargeKeg           = debounceRead(DI_LARGE_KEG);
@@ -369,5 +370,8 @@ int hardware_getCausticTemp() {
 }
 
 int hardware_getCausticLevel() {
-  return map(causticLevelValue, 0, ADC_MAX, 0, 100);
+  // Level is a switch now: report 100/0 so existing percent-threshold
+  // consumers (MIN_CAUSTIC_LEVEL gates, heater interlock, MQTT topic)
+  // keep working unchanged.
+  return isCausticLevelOk ? 100 : 0;
 }

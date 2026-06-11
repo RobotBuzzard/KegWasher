@@ -35,7 +35,7 @@ const char* display_currentScreen() { return g_screen; }
 // On-screen START button (READY + FINISHED screens). A touch in this rect sets
 // g_touchStart, which display_takeTouchStart() drains into isCycleStartPressed
 // (same one-tick-pulse path as the physical button / MQTT start command).
-static const int BTN_START_X = 18, BTN_START_Y = 180, BTN_START_W = 236, BTN_START_H = 150;
+static const int BTN_START_X = 18, BTN_START_Y = 210, BTN_START_W = 236, BTN_START_H = 120;
 static volatile bool g_touchStart = false;
 static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED screen
 

@@ -19,7 +19,7 @@ extern bool isManualDrainPressed;
 
 // Filtered analog readings (raw ADC counts; convert via getters).
 extern int  causticTempValue;
-extern int  causticLevelValue;
+extern bool isCausticLevelOk;   // NC float switch, debounced (true = level OK)
 
 // Sensor health flags. True when reading is out of range.
 extern bool causticTempSensorError;

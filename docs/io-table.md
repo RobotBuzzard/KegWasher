@@ -21,7 +21,7 @@
 | *(free)* | A9 | — | — | — | — | enclosure temp moved off-controller (self-regulating fan w/ own thermometer); A9 unused |
 | `causticTemp` | A10 | Caustic solution temp | 12 | 0–100 °C | low-pass | ProSense ETS50N 4–20 mA across a 470 Ω shunt; wash gate ≥ 50 °C; heater target 60 °C |
 | `waterOk` | A11 | Water pressure (threshold) | 12 | — | low-pass | analog pin read as a water-available gate |
-| `causticLevelSensor` | A12 | Caustic reservoir level | 12 | 0–100 % | low-pass | heating refused below `MIN_CAUSTIC_LEVEL` (25 %) |
+| `causticLevelSensor` | A12 | Caustic reservoir level — NC float switch S↔G, sinking digital read (closed/HIGH = level OK; open = low/broken wire, fail-safe) | 12 | OK / LOW | debounced 50 ms | heating + readiness refused when LOW |
 
 > **Was missing from the prior table:** `causticLevelSensor` (A12).
 
@@ -113,7 +113,7 @@ hardware interrupts** (`InterruptHandlerSet()`, RISING/FALLING via
 | *(free)* | A9 | ✅ (pin) | unused — enclosure temp moved off-controller |
 | `causticTemp` | A10 | ✅ (pin) | analog read |
 | `waterOk` | A11 | ✅ | currently polled |
-| `causticLevelSensor` | A12 | ✅ (pin) | analog read |
+| `causticLevelSensor` | A12 | ✅ (pin) | digital read (debounced) |
 | `largeKeg` | IO0 | ❌ | poll-only |
 | `cycleStart` | IO1 | ❌ | poll-only |
 | `manualDrain` | IO2 | ❌ | poll-only |
