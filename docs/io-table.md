@@ -8,7 +8,7 @@
 | Name | Pin | Description | Active | Debounced | Critical | Notes |
 |------|-----|-------------|--------|-----------|----------|-------|
 | `airOk` | DI6 | Air pressure switch | HIGH | Yes | Yes | compressed-air availability |
-| `co2Ok` | DI7 | CO₂ pressure switch | HIGH | Yes | Yes | CO₂ availability |
+| `co2Ok` | DI7 | Keg/line pressure switch (**downstream** of `co2Out`) | HIGH | Yes | Yes | reads keg-side pressure, NOT CO₂ supply (supply unmonitored/assumed connected). Ends the PRESSURE charge on trip; never tripping before `purgeTimer` → `ERR_CO2_PRESSURE`. Not a readiness gate (always open at rest). Display label `PRES`, grey when open |
 | `ESTOP` | DI8 | Emergency stop / safety chain | LOW=tripped | **No** | Yes | Negative-true SINKING input (internal 3.3V/10k pull-up). NC chain from GND through drive-OK contacts + E-stop → DI8: healthy(closed)=GND=`digitalRead` HIGH=OK; open(trip/break)=pull-up=`digitalRead` LOW=ACTIVE. Not debounced. FALLING-edge ISR + polled backstop → PackML `Abort`. |
 | `largeKeg` | IO0 | Keg-size selector | HIGH | Yes | No | small (20 L) vs large (50 L); latched at cycle start |
 | `cycleStart` | IO1 | START button | HIGH | Yes | No | PackML `Start`/`Reset` (overloaded) |
@@ -31,7 +31,7 @@
 |------|-----|-------------|--------|-------|
 | `co2Out` | IO3 | CO₂ solenoid | HIGH | SANI_RETURN push-gas + PRESSURE charge |
 | `alarmOut` | IO4 | RED fault / E-stop stacklight | HIGH | fault / E-stop indicator |
-| `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | lit in IDLE-READY, COMPLETE, STOPPED (a START press will act) |
+| `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | solid in IDLE-READY + STOPPED; **breathes (PWM) in COMPLETE** ("swap kegs, START for next"); breathes alternating with red in HELD |
 | `drainOut` | CCIO‑A0 | Drain valve | HIGH | **forced OFF during RETURN phases — chem never to drain** |
 | `waterOut` | CCIO‑A1 | Water valve | HIGH | FLOW phases |
 | `airOut` | CCIO‑A2 | Air valve | HIGH | DRAIN burst, PURGE, CAUSTIC_RETURN push-gas |
@@ -39,6 +39,7 @@
 | `pumpOut` | CCIO‑A4 | Recirc pump | HIGH | RECIRC phases; **forced OFF during RETURN (no dry run)** |
 | `sanitizerOut` | CCIO‑A5 | Sanitizer valve | HIGH | SANITIZE + SANI_RETURN |
 | `causticHeaterOut` | CCIO‑A6 | Caustic heater | HIGH | STARTUP heating; level/overtemp interlocked |
+| `kegsDoneOut` | CCIO‑A7 | COMPLETE / swap-kegs signal | HIGH | high while `MACH_COMPLETE` for an external done-indicator; cleared on COMPLETE exit + all-stop (pin was freed when the fan moved off-controller) |
 
 > **Was missing from the prior table:** `causticHeaterOut` (CCIO‑A6).
 
@@ -86,7 +87,7 @@ standalone self-regulating unit with its own thermometer — not driven by the c
 | 2 | CONFIG_FILE | SD interface |
 | 3 | WATER_PRESSURE | `waterOk` |
 | 4 | AIR_PRESSURE | `airOk` |
-| 5 | CO2_PRESSURE | `co2Ok` |
+| 5 | CO2_PRESSURE | `co2Ok` — keg failed to reach pressure before `purgeTimer` (no CO₂ / unsealed keg / leak) |
 | 6 | CAUSTIC_TEMP | `causticTemp` |
 | 7 | *(retired)* | was ENCLOSURE_TEMP — enclosure temp off-controller; code not reused |
 | 8 | ESTOP | `ESTOP` |
@@ -128,7 +129,7 @@ hardware interrupts** (`InterruptHandlerSet()`, RISING/FALLING via
 
 - Solenoid valves include flyback diodes for inductive-spike protection.
 - **ESTOP / safety chain (fail-safe):** DI6–DI8 are **negative-true SINKING** inputs with an internal **3.3 V / 10 kΩ pull-up** (`INPUT_PULLUP` ≡ `INPUT` on ClearCore — the pull-up is fixed, not software-selectable). The E-stop is a **normally-closed loop from GND** through the drive-OK contacts (pump, etc.) and the E-stop switch into DI8. Healthy → DI8 sunk to GND → `digitalRead` **HIGH** = OK. Any break (E-stop pressed, drive fault, severed wire) → internal pull-up → `digitalRead` **LOW** = TRIP. Firmware: `isEstopActive = (digitalRead(ESTOP)==LOW)`, FALLING-edge ISR + polled backstop. The firmware read is supervisory — the NC loop also hard-cuts the drives directly.
-- `airOk` (DI6), `co2Ok` (DI7), `ESTOP` (DI8) are all **negative-true sinking inputs wired NC** (healthy/present = closed = sunk to GND = `digitalRead` HIGH). For the "OK" inputs the variable means *good*, so `isAirOk`/`isCo2Ok` = `debounceRead` (HIGH=true=OK) is **already correct** for NC — a break/loss opens the loop → LOW → FAIL (fail-safe). Only `ESTOP` (variable means *tripped*, the inverse) needed the active-low flip. Verified on hardware: healthy chain → air/co2 OK, estop INACTIVE.
+- `airOk` (DI6), `co2Ok` (DI7), `ESTOP` (DI8) are all **negative-true sinking inputs** (closed = sunk to GND = `digitalRead` HIGH). For the "OK" inputs the variable means *closed*, so `isAirOk`/`isCo2Ok` = `debounceRead` (HIGH=true) is **already correct** — a break/loss opens the loop → LOW (fail-safe). For `airOk` LOW = supply FAIL; for `co2Ok` (keg-side, closes on pressure) LOW just means *unpressurized* — a broken wire surfaces as a spurious "Keg not at pressure" timeout at end of cycle, never a false pass. Only `ESTOP` (variable means *tripped*, the inverse) needed the active-low flip. Verified on hardware: healthy chain → air/co2 OK, estop INACTIVE.
 - IO0/IO1/IO2 (largeKeg/cycleStart/manualDrain): ClearCore IO pins have no internal pull — wire SPDT so the pin is actively driven in both positions, never floating.
 - **Chem-to-drain interlock:** caustic/sanitizer valve enables are ganged so a chemical can never be routed to the drain; firmware mirrors this (drain+pump OFF in RETURN phases).
 - All low-voltage control optically isolated from main power.

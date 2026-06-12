@@ -107,7 +107,7 @@ Items that don't block first wet test but should land before a customer ever see
 - [ ] **SD card cycle logging** ([`reliability-todo.md` P6](docs/reliability-todo.md)) — append-only log of completed cycles (timestamp, keg size, duration per stage, peak/min temps). Mind the SD wear budget — daily file rotation, not per-event flush.
 - [ ] **Heap + loop-time monitoring** ([`reliability-todo.md` P6](docs/reliability-todo.md)) — periodic `diagnostics_logEvent` with free RAM and longest recent loop iteration. Visible in network log + status JSON.
 - [ ] **`docs/clearcore-reference.md`** ([`reliability-todo.md` P0](docs/reliability-todo.md)) — index of permalinks to ClearCore datasheet, CCIO-8 protocol, SAME53 datasheet, Goldelox library docs; inline `// See: <ref> §<section>` comments at every hardware-specific touch point.
-- [ ] **Enhanced state validation** ([`reliability-todo.md` P4](docs/reliability-todo.md)) — preconditions on every state entry, not just WASHING (e.g. CO2 OK before PRESSURE, water OK before RINSING).
+- [ ] **Enhanced state validation** ([`reliability-todo.md` P4](docs/reliability-todo.md)) — preconditions on every state entry, not just WASHING (e.g. water OK before RINSING). *(Not CO₂ — the only CO₂ sensor is keg-side, downstream of the solenoid; PRESSURE verifies it in-cycle instead. See 2026-06-12 closed-loop PRESSURE change.)*
 
 ## Phase 4 — Long-term stability (continuous)
 
@@ -149,6 +149,8 @@ Operator-facing materials. Distinct from the developer docs in `docs/`; these sh
 
 ## Recently done (last ~2 weeks)
 
+- ✅ **Closed-loop PRESSURE + CO₂ semantics fix (2026-06-12)** — `co2Ok` (DI7) is the keg-side switch *downstream* of the CO₂ solenoid, so it was removed from readiness/entry/per-tick gates (it read 0 with the valve closed — those gates could never pass in production). PRESSURE now charges until the switch trips (regulator runs high for sanitizer blowback; solenoid shuts on trip), with `purgeTimer` as the fail timeout → "Keg not at pressure" (no CO₂ / unsealed keg / leak — also retroactive proof SANI_RETURN had push-gas). Display label `CO2` → `PRES`, grey when open. Bench-verified.
+- ✅ **COMPLETE swap-keg indicators (2026-06-12)** — green START button breathes (PWM) on the KEGS DONE screen; new `kegsDoneOut` on CCIO-A7 goes high while COMPLETE for an external done-indicator. Operator-verified on the bench.
 - ✅ **Design-C screen redesign** — DejaVu typography w/ self-measuring font metrics, pixel grid, primary/secondary buttons, live READY sensor dots, STOPPING countdown, alternating pause lamps, FONT_4 subtitles; plus settings page 2 (pause max, process temps), INFO page, retained `kegwasher/screen` topic. Three polish rounds, bench-verified.
 - ✅ **Runtime bench mode** — SD-card presence at boot decides bench vs production; `#define BENCH_MODE` removed; LEVEL readiness row added (caustic level is part of `allSystemsGo`).
 - ✅ **A12 caustic level fix** — it's an NC float switch; read digital, not analog.

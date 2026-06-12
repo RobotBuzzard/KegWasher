@@ -147,6 +147,7 @@ void hardware_init() {
   pinMode(pumpOut, OUTPUT);
   pinMode(sanitizerOut, OUTPUT);
   pinMode(causticHeaterOut, OUTPUT);
+  pinMode(kegsDoneOut, OUTPUT);   // COMPLETE / swap-kegs signal
 
   hardware_allStop();
   hardware_setAlarm(false);   // boot is not a fault: allStop lights IO4, clear it
@@ -201,7 +202,10 @@ bool hardware_allSystemsGo() {
   if (kwBenchMode) return true;
   if (isEstopActive)                              { errorCode = ERR_ESTOP;          return false; }
   if (!isAirOk)                                   { errorCode = ERR_AIR_PRESSURE;   return false; }
-  if (!isCo2Ok)                                   { errorCode = ERR_CO2_PRESSURE;   return false; }
+  // isCo2Ok is NOT a readiness gate: the switch is downstream of the co2Out
+  // solenoid, so it reads keg/line pressure — necessarily 0 while the valve is
+  // closed. CO2 supply is unmonitored (assumed connected); the PRESSURE phase
+  // verifies it in-cycle by requiring the switch to trip before its timer.
   if (!isWaterOk)                                 { errorCode = ERR_WATER_PRESSURE; return false; }
   if (causticTempSensorError)                     { errorCode = ERR_SENSOR_FAULT;   return false; }
   if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
@@ -221,6 +225,7 @@ void hardware_allStop() {
   digitalWrite(pumpOut, LOW);
   digitalWrite(sanitizerOut, LOW);
   digitalWrite(causticHeaterOut, LOW);
+  digitalWrite(kegsDoneOut, LOW);
   isHeaterActive = false;
 }
 
@@ -235,6 +240,18 @@ void hardware_setPump(bool state)      { digitalWrite(pumpOut, state ? HIGH : LO
 void hardware_setSanitizer(bool state) { digitalWrite(sanitizerOut, state ? HIGH : LOW); }
 // GREEN cycle-start / ready indicator on IO5 — a dedicated output (no time-mux).
 void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : LOW); }
+
+// COMPLETE / swap-kegs signal on CCIO-A7 (external indicator).
+void hardware_setKegsDone(bool on)     { digitalWrite(kegsDoneOut, on ? HIGH : LOW); }
+
+// COMPLETE: breathe the GREEN alone (same triangle as the HELD pulse) —
+// "kegs done, press START for the next pair". RED stays with the fault paths.
+void hardware_pulseReadyLamp() {
+  unsigned long t = millis() % 1066UL;
+  int duty = (t < 533UL) ? (int)(t * 255UL / 533UL)
+                         : (int)((1066UL - t) * 255UL / 533UL);
+  analogWrite(readyLedOut, duty);
+}
 
 // PAUSED indicator: both stacklight lamps (IO4 red + IO5 green, PWM-capable)
 // breathe on a ~1.6 s triangle so a held machine is visible across the room.

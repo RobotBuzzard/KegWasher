@@ -72,8 +72,10 @@ extern bool kwBenchMode;
 #define pumpOut                CLEARCORE_PIN_CCIOA4
 #define sanitizerOut           CLEARCORE_PIN_CCIOA5
 #define causticHeaterOut       CLEARCORE_PIN_CCIOA6
-// CCIO-A7 is free — the enclosure fan is a standalone self-regulating unit
-// (built-in thermometer), not switched by the controller.
+#define kegsDoneOut            CLEARCORE_PIN_CCIOA7  // HIGH while COMPLETE (swap-kegs
+                                                     // signal for an external indicator);
+                                                     // was free after the fan moved
+                                                     // off-controller
 
 // Serial ports
 #define CcioPort               ConnectorCOM0

@@ -302,17 +302,20 @@ namespace {
   }
 
   // sensor grid (2 cols x 2 rows): dot + label. Used by readiness + operating.
-  const char* SENS_LBL[4] = { "WATER", "AIR", "CO2", "E-STOP" };
+  // Slot 2 (PRES) is the keg-side pressure switch downstream of the CO2
+  // solenoid: open = unpressurized, which is NORMAL outside the PRESSURE
+  // charge — so it renders grey, never red, and never gets fault emphasis.
+  const char* SENS_LBL[4] = { "WATER", "AIR", "PRES", "E-STOP" };
   void sensorDot(int i, int y0, bool ok) {
     int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 34;
-    disc(x + 6, y + 13, 6, ok ? C_GRN : C_RED);
+    disc(x + 6, y + 13, 6, ok ? C_GRN : (i == 2 ? C_TRACK : C_RED));
   }
   void sensorGrid(int y0, bool w, bool a, bool c, bool e, bool emphasizeBad) {
     bool ok[4] = { w, a, c, e };
     for (int i = 0; i < 4; i++) {
       int x = LX + (i % 2) * 124, y = y0 + (i / 2) * 34;
       sensorDot(i, y0, ok[i]);
-      word fg = (!ok[i] && emphasizeBad) ? C_TXT : C_SUB;
+      word fg = (!ok[i] && emphasizeBad && i != 2) ? C_TXT : C_SUB;
       lbl(x + 19, y, false, 2, 2, fg, C_BG, SENS_LBL[i]);
     }
   }

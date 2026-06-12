@@ -771,17 +771,21 @@ void loop() {
 
   // Indicators (IO4 red / IO5 green):
   //  - HELD (paused): both lamps breathe via PWM — visible-from-across-the-room hold.
-  //  - otherwise GREEN = "START will act" states; RED is owned by the fault paths
-  //    (digitalWrite there overrides any leftover PWM). On resume specifically,
+  //  - COMPLETE (swap kegs): GREEN alone breathes — "press START for the next pair".
+  //  - otherwise GREEN solid = "START will act" states; RED is owned by the fault
+  //    paths (digitalWrite there overrides any leftover PWM). On resume specifically,
   //    force RED back off — no fault path runs on HELD -> EXECUTE.
   static bool kwWasHeld = false;
   if (machineState == MACH_HELD) {
     hardware_pulseLamps();
     kwWasHeld = true;
+  } else if (machineState == MACH_COMPLETE) {
+    kwWasHeld = false;
+    hardware_pulseReadyLamp();
   } else {
     if (kwWasHeld && machineState == MACH_EXECUTE) hardware_setAlarm(false);
     kwWasHeld = false;
-    hardware_setReadyLamp(machineState == MACH_COMPLETE || machineState == MACH_STOPPED ||
+    hardware_setReadyLamp(machineState == MACH_STOPPED ||
                           (machineState == MACH_IDLE && idleSub == IDLE_READY));
   }
 

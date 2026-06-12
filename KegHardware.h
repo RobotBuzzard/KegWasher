@@ -50,7 +50,9 @@ void hardware_setPump(bool state);
 void hardware_setSanitizer(bool state);
 void hardware_setCausticHeater(bool state);
 void hardware_setReadyLamp(bool on);   // GREEN cycle-start indicator on IO5 (dedicated output)
+void hardware_setKegsDone(bool on);    // COMPLETE / swap-kegs signal on CCIO-A7
 void hardware_pulseLamps();            // HELD: breathe IO4+IO5 via PWM (call per loop tick)
+void hardware_pulseReadyLamp();        // COMPLETE: breathe IO5 green alone (call per loop tick)
 
 int  hardware_getCausticTemp();      // whole degrees C (rounded, calibrated)
 int  hardware_getCausticTempC10();   // tenths of a degree C (calibrated) — display precision

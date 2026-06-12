@@ -55,6 +55,11 @@ static byte abortResumePhase = PHASE_NONE;
 
 static const unsigned long AIR_BURST_DURATION = 5000UL;
 
+// PRESSURE phase: minimum time after the return path closes before the keg
+// pressure switch is trusted — lets residual SANI_RETURN backpressure bleed
+// so a still-settling line can't end the charge instantly.
+static const unsigned long PRESSURE_SETTLE_MS = 2000UL;
+
 // ── Forward declarations (statics) ─────────────────────────────────────
 static bool canMachTransition(byte from, byte to);
 static void changeMachineState(byte newMach);
@@ -197,7 +202,11 @@ static void monitorActiveResources() {
   if (machineState != MACH_EXECUTE) return;
   if (kwBenchMode) return;   // no plumbing wired — per-phase resource gates off
 
-  bool needAir = false, needWater = false, needCo2 = false, needCaustic = false;
+  // CO2 phases (SANI_RETURN/PRESSURE) are not monitored here: the only CO2
+  // sensor is the keg-side switch downstream of co2Out, whose state during an
+  // open-circuit blowback is indeterminate. PRESSURE verifies CO2 end-to-end
+  // in its own handler (switch must trip before the stage timer).
+  bool needAir = false, needWater = false, needCaustic = false;
   switch (recipePhase) {
     case PHASE_DIRTY_DRAIN:    needAir   = (timers_getStateElapsed() < AIR_BURST_DURATION); break;
     case PHASE_DIRTY_PURGE:
@@ -206,15 +215,12 @@ static void monitorActiveResources() {
     case PHASE_DIRTY_RINSE:
     case PHASE_RINSING:        needWater = true; break;
     case PHASE_WASHING:        needCaustic = true; break;
-    case PHASE_SANI_RETURN:
-    case PHASE_PRESSURE:       needCo2   = true; break;
     default: break;  // SANITIZE recirculates only — nothing pressurized to lose
   }
 
   byte err = ERR_NONE;
   if      (needAir   && !isAirOk)                                       err = ERR_AIR_PRESSURE;
   else if (needWater && !isWaterOk)                                     err = ERR_WATER_PRESSURE;
-  else if (needCo2   && !isCo2Ok)                                       err = ERR_CO2_PRESSURE;
   else if (needCaustic && hardware_getCausticTemp() < minCausticTemp) err = ERR_CAUSTIC_TEMP;
 
   if (err != ERR_NONE) {
@@ -342,15 +348,16 @@ static bool enterPhase(byte phase) {
     case PHASE_SANI_RETURN:
       // CO2 pushes sanitizer back to its reservoir via the sanitizer valve.
       // Chem must NEVER reach the drain — drain + pump stay OFF.
-      if (!requireResource(isCo2Ok, ERR_CO2_PRESSURE)) return false;
+      // No CO2 precondition: the only switch is downstream of co2Out (reads
+      // keg/line pressure, 0 until the valve opens). Supply is assumed; a
+      // missing bottle surfaces as the PRESSURE phase timing out.
       hardware_setDrain(false);
       hardware_setPump(false);
       hardware_setSanitizer(true);
       hardware_setCo2(true);
       return true;
     case PHASE_PRESSURE:
-      if (!requireResource(isCo2Ok, ERR_CO2_PRESSURE)) return false;
-      hardware_setCo2(true);
+      hardware_setCo2(true);   // closed-loop: handler shuts it on switch trip
       return true;
     default:
       return true;
@@ -373,6 +380,9 @@ static void machineExit(byte s) {
       hardware_setPump(false);
       break;
     case MACH_COMPLETE:
+      hardware_setKegsDone(false);
+      hardware_setAlarm(false);
+      break;
     case MACH_ABORTED:
       hardware_setAlarm(false);
       break;
@@ -418,8 +428,9 @@ static bool machineEnter(byte s) {
     case MACH_COMPLETE:
       // Cycle complete is a SUCCESS — do NOT light the red stacklight (IO4 =
       // alarmOut is reserved for fault / E-stop only; red should never mean "done").
-      // Completion is shown on-screen (blinking COMPLETE banner). No green tier or
-      // buzzer is wired; add a positive indicator here if one is added later.
+      // Positive indicators: green START button breathes (loop() lamp policy) and
+      // the swap-kegs signal on CCIO-A7 goes high for any external indicator.
+      hardware_setKegsDone(true);
       return true;
     case MACH_ABORTED:
       hardware_setAlarm(true);
@@ -759,7 +770,22 @@ static void dispatchPhase() {
       if (timers_isStateDone(stageTimerFor(PHASE_SANI_RETURN)))    advancePhase(PHASE_PRESSURE);
       break;
     case PHASE_PRESSURE:
-      if (timers_isStateDone(stageTimerFor(PHASE_PRESSURE)))       changeMachineState(MACH_COMPLETE);
+      // Closed-loop charge. The regulator runs well above the keg target (it
+      // also blows sanitizer back), so the keg must NOT equilibrate to it:
+      // shut the solenoid the moment the downstream switch trips (= keg at
+      // setpoint; exitPhase closes co2Out on the COMPLETE transition). The
+      // stage timer is a fail timeout — switch never tripping means no CO2,
+      // an unsealed keg, or a leak. Bench (no plumbing): timer = duration.
+      if (kwBenchMode) {
+        if (timers_isStateDone(stageTimerFor(PHASE_PRESSURE)))     changeMachineState(MACH_COMPLETE);
+      } else if (isCo2Ok && timers_getStateElapsed() >= PRESSURE_SETTLE_MS) {
+        diagnostics_logEvent("Keg at pressure");
+        changeMachineState(MACH_COMPLETE);
+      } else if (timers_isStateDone(stageTimerFor(PHASE_PRESSURE))) {
+        errorCode = ERR_CO2_PRESSURE;
+        display_showError(diagnostics_getErrorMessage(ERR_CO2_PRESSURE));
+        stateMachine_abort();
+      }
       break;
     default:
       break;
@@ -840,7 +866,10 @@ static bool faultConditionActive(byte code) {
     case ERR_ESTOP:           return isEstopActive;
     case ERR_WATER_PRESSURE:  return !isWaterOk;
     case ERR_AIR_PRESSURE:    return !isAirOk;
-    case ERR_CO2_PRESSURE:    return !isCo2Ok;
+    // ERR_CO2_PRESSURE is a charge-timeout fault. Its sensor reads keg-side
+    // pressure, which is legitimately 0 once outputs are safe — there is no
+    // standing condition to wait out, so it's operator-clearable immediately.
+    case ERR_CO2_PRESSURE:    return false;
     case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  minCausticTemp;
     case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= maxCausticTemp;
     case ERR_CAUSTIC_LEVEL:   return hardware_getCausticLevel() <  MIN_CAUSTIC_LEVEL;

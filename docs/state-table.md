@@ -53,8 +53,19 @@ two RETURN phases force `drainOut` + `pumpOut` LOW (firmware *and* relay wiring)
 | 6 | RINSING | `RINSING` | water, drain | water, drain | water | `rinseTimer` | 10 min | RINSE_PURGE |
 | 7 | RINSE_PURGE | `RINSE PURGE` | air, drain | air, drain | air | `rinsePurgeTimer` | 10 min | SANITIZE |
 | 8 | SANITIZE | `SANITIZE` | sanitizer, pump | sanitizer, pump | — (recirc only) | `saniTimer` | 10 min | SANI_RETURN |
-| 9 | SANI_RETURN | `SANI RTN` | sanitizer, CO₂ *(drain/pump forced OFF)* | CO₂, sanitizer | CO₂ | `saniRtnTimer` | 10 min | PRESSURE |
-| 10 | PRESSURE | `PRESSURE` | CO₂ (valves closed) | CO₂ | CO₂ | `purgeTimer` | 10 min | → COMPLETE |
+| 9 | SANI_RETURN | `SANI RTN` | sanitizer, CO₂ *(drain/pump forced OFF)* | CO₂, sanitizer | — (see note) | `saniRtnTimer` | 10 min | PRESSURE |
+| 10 | PRESSURE | `PRESSURE` | CO₂ (valves closed) | CO₂ | — (see note) | `purgeTimer` = **fail timeout** | 10 min | → COMPLETE **on `co2Ok` trip** |
+
+> **CO₂ sensing (changed 2026-06-12):** the only CO₂ sensor is the keg-side pressure switch
+> (`co2Ok`, DI7) **downstream of the `co2Out` solenoid** — it reads keg/line pressure, not supply,
+> so it is **not** a readiness gate, entry precondition, or per-tick monitored resource (it reads 0
+> whenever the valve is closed, and is indeterminate during SANI_RETURN's open-circuit blowback).
+> CO₂ supply is assumed connected. PRESSURE is **closed-loop**: the regulator runs well above the
+> keg target (it also drives the sanitizer blowback), and the phase ends — solenoid shut, →
+> COMPLETE — the moment the switch trips (≥2 s settle floor). If the switch never trips before
+> `purgeTimer` expires → `ERR_CO2_PRESSURE` ("Keg not at pressure"): no CO₂, unsealed keg, or leak.
+> This is also the retroactive proof that SANI_RETURN had push-gas. Bench mode keeps the plain
+> timed phase.
 
 `PHASE_FIRST = DIRTY_DRAIN (1)`, `PHASE_LAST = PRESSURE (10)`, `NUM_PHASES = 11`
 (index 0 = `PHASE_NONE`). Per-phase timers are keg-size scaled

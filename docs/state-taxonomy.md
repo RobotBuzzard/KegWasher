@@ -180,8 +180,15 @@ off-controller, so the controller has no enclosure-temp input.)
 |-----------|--------|-------|
 | `!isAirOk` | DIRTY_DRAIN (≤5 s), DIRTY_PURGE, CAUSTIC_RETURN, RINSE_PURGE | `ERR_AIR_PRESSURE` |
 | `!isWaterOk` | DIRTY_RINSE, RINSING | `ERR_WATER_PRESSURE` |
-| `!isCo2Ok` | SANI_RETURN, PRESSURE | `ERR_CO2_PRESSURE` |
 | caustic temp < `MIN_CAUSTIC_TEMP` | WASHING | `ERR_CAUSTIC_TEMP` |
+
+CO₂ is **not** per-tick monitored (changed 2026-06-12): the only sensor (`co2Ok`,
+DI7) sits downstream of the `co2Out` solenoid and reads keg/line pressure, which
+is indeterminate during SANI_RETURN blowback and 0 whenever the valve is closed.
+Instead the PRESSURE phase is closed-loop — it ends the moment the switch trips
+(keg at setpoint; solenoid shut), and raises `ERR_CO2_PRESSURE` ("Keg not at
+pressure") if the switch hasn't tripped when `purgeTimer` expires. That timeout
+is the cycle's CO₂-supply + keg-seal verification.
 
 Hard timeouts (`stateMaxDuration[]`): phases 10 min (WASHING 20), STOPPING 2 min;
 Idle/Complete/Aborted/Stopped have none (operator-paced).

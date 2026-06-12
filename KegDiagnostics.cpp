@@ -149,7 +149,7 @@ const char* diagnostics_getErrorMessage(byte code) {
     case ERR_CONFIG_FILE:     return "Config file error";
     case ERR_WATER_PRESSURE:  return "Water pressure low";
     case ERR_AIR_PRESSURE:    return "Air pressure low";
-    case ERR_CO2_PRESSURE:    return "CO2 pressure low";
+    case ERR_CO2_PRESSURE:    return "Keg not at pressure";
     case ERR_CAUSTIC_TEMP:    return "Caustic temp low";
     case ERR_ESTOP:           return "Emergency stop";
     case ERR_INVALID_STATE:   return "Invalid state";

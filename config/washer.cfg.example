@@ -31,7 +31,9 @@ rinsePurgeTimer=10000      # air-blow the rinse water out (to drain)
 # --- Sanitize + seal ---
 saniTimer=45000            # recirculate sanitizer
 saniRtnTimer=15000         # CO2-blow sanitizer back to its reservoir (NOT drain)
-purgeTimer=15000           # CO2 charge / pressurize + seal the keg
+purgeTimer=15000           # CO2 charge FAIL TIMEOUT — phase normally ends early,
+                           # when the keg-side pressure switch trips; expiry with
+                           # no trip = "Keg not at pressure" fault
 
 # ============================================================
 # KEG SIZE MODIFIER  (valid range 1.0..3.0)
