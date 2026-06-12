@@ -203,7 +203,7 @@ KegWasher's existing mode-like concepts map as:
 | KegWasher | PackML mode | Notes |
 |-----------|-------------|-------|
 | normal run (`BENCH_MODE` off) | **Production** | full automation, all interlocks live |
-| diagnostics output-exercise (DRAIN+START) | **Manual** | step/jog individual outputs |
+| diagnostics output-exercise (INFO-page DIAG button) | **Manual** | step/jog individual outputs |
 | *(none yet)* | **Maintenance** | candidate: relaxed interlocks for service |
 | `BENCH_MODE` (compile-time) | ≈ commissioning/test | **not** a clean runtime mode — a build flag that bypasses sensor gates; flagged as tech-debt to convert into a real Manual/Maintenance runtime mode |
 

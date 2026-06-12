@@ -34,6 +34,12 @@ const char* phaseNames[NUM_PHASES] = {
 
 bool kegSizeLatched = false;  // set at START press; used by all timer calcs
 
+// Full-drain mode (the latching DRAIN switch, IO2), latched at START like keg
+// size so a mid-cycle flip can't change a running phase's duration. When set,
+// DIRTY_DRAIN runs fullDrainTimer (minutes — empty a spoiled/full keg) instead
+// of dirtyDrainTimer (seconds — clear dregs).
+bool drainModeLatched = false;
+
 // One-time pre-check latch. The systems-go pre-check (NOT_READY screen) + caustic
 // heat-up are an init ceremony, not per-cycle: once the washer reaches IDLE_READY
 // we don't make the operator repeat them between kegs. Cleared on any abort so
@@ -117,7 +123,8 @@ static const unsigned long phaseMaxDuration[NUM_PHASES] = {
 unsigned long stageTimerFor(byte phase) {
   unsigned long base;
   switch (phase) {
-    case PHASE_DIRTY_DRAIN:    base = dirtyDrainTimer; break;
+    case PHASE_DIRTY_DRAIN:    base = drainModeLatched ? fullDrainTimer
+                                                       : dirtyDrainTimer; break;
     case PHASE_DIRTY_RINSE:    base = dirtyRinseTimer; break;
     case PHASE_DIRTY_PURGE:    base = dirtyPurgeTimer; break;
     case PHASE_WASHING:        base = washTimer;       break;
@@ -675,10 +682,16 @@ static void state_idle() {
       }
 
       if (isCycleStartPressed) {
-        kegSizeLatched = isLargeKeg;
+        kegSizeLatched   = isLargeKeg;
+        drainModeLatched = isFullDrainOn;
         diagnostics_logEvent(kegSizeLatched ? "Cycle start (LARGE)" : "Cycle start (SMALL)");
+        if (drainModeLatched) diagnostics_logEvent("Full-drain mode (DRAIN latched)");
         drawn = false;
-        if (kwBenchMode || hardware_getCausticTemp() >= optimalCausticTemp) {
+        // Washable threshold: fw mode heats to the operator target before the
+        // first cycle; ext mode (probe thermostat keeps the tank hot) only
+        // needs the wash floor — the thermostat keeps climbing regardless.
+        if (kwBenchMode || hardware_getCausticTemp() >=
+              (heaterExternal ? minCausticTemp : optimalCausticTemp)) {
           startRecipe();          // bench: no heater plumbed — skip STARTING
         } else {
           diagnostics_logEvent("Startup: heating");
@@ -700,15 +713,27 @@ static void state_starting() {
   static bool heatingDrawn = false;
   static unsigned long lastHeatDisplayMs = 0;
 
-  if (hardware_getCausticTemp() >= optimalCausticTemp) {
-    hardware_setCausticHeater(false);
+  // fw: heat to the operator target. ext: the probe thermostat owns the burn;
+  // we only wait until the tank is washable (wash floor) and move on.
+  if (hardware_getCausticTemp() >=
+        (heaterExternal ? minCausticTemp : optimalCausticTemp)) {
+    hardware_setCausticHeater(false);   // no-op in ext mode (permit persists)
     heatingDrawn = false;
     diagnostics_logEvent("Heating complete");
     startRecipe();
     return;
   }
 
-  if (!isHeaterActive) {
+  if (heaterExternal) {
+    // Permit logic runs every tick from hardware_readInputs(); a dropped
+    // permit for low level is a fault here (we're waiting on that heat).
+    if (!isCausticLevelOk) {
+      errorCode = ERR_CAUSTIC_LEVEL;
+      display_showError(diagnostics_getErrorMessage(ERR_CAUSTIC_LEVEL));
+      stateMachine_abort();
+      return;
+    }
+  } else if (!isHeaterActive) {
     if (!isCausticLevelOk) {
       errorCode = ERR_CAUSTIC_LEVEL;
       display_showError(diagnostics_getErrorMessage(ERR_CAUSTIC_LEVEL));
@@ -809,16 +834,19 @@ static void state_complete() {
   // One-shot throughput: a single START silences the alarm AND launches the next
   // cycle. Goes straight to EXECUTE@DIRTY_DRAIN — no pre-check, no re-heat.
   if (smRising(nowPressed, prevPress)) {
-    kegSizeLatched = isLargeKeg;  // re-latch in case the size switch moved
+    kegSizeLatched   = isLargeKeg;     // re-latch in case the switches moved
+    drainModeLatched = isFullDrainOn;
     diagnostics_logEvent(kegSizeLatched ? "Next cycle (LARGE)" : "Next cycle (SMALL)");
+    if (drainModeLatched) diagnostics_logEvent("Full-drain mode (DRAIN latched)");
     drawn = false;
     prevPress = nowPressed;
     startRecipe();   // alarm off via machineExit(COMPLETE)
     return;
   }
 
-  // DRAIN = stop: silence the alarm and park at IDLE (Reset; no new cycle).
-  if (isManualDrainPressed) {
+  // SILENCE (touch button / MQTT cmd/silence): park at IDLE, no new cycle.
+  // (Was the DRAIN press — IO2 is the latching full-drain switch now.)
+  if (display_takeTouchSilence()) {
     drawn = false;
     prevPress = nowPressed;
     changeMachineState(MACH_IDLE);   // washerInitialized → READY, no pre-check

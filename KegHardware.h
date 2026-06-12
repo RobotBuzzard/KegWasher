@@ -15,7 +15,7 @@ extern volatile bool isEstopActive;       // ISR + polled
 extern bool isWaterOk;
 extern bool isLargeKeg;
 extern bool isCycleStartPressed;
-extern bool isManualDrainPressed;
+extern bool isFullDrainOn;
 
 // Filtered analog readings (raw ADC counts; convert via getters).
 extern int  causticTempValue;
@@ -63,5 +63,6 @@ int  hardware_getCausticTempC10();   // tenths of a degree C (calibrated) — di
 
 bool hardware_monitorHeating();
 bool hardware_checkHeatingRate();
+void hardware_manageHeaterPermit();  // heaterMode=ext: drive the heat PERMIT each tick
 
 #endif // KEG_HARDWARE_H

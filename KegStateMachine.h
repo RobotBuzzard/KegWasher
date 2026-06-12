@@ -25,6 +25,9 @@ extern byte idleSub;
 // this so flipping the selector mid-cycle has no effect. isLargeKeg
 // (KegHardware.h) still reflects the live pin state for display/MQTT.
 extern bool kegSizeLatched;
+// Full-drain mode (latching DRAIN switch, IO2) — same latch-at-START pattern.
+// When set, DIRTY_DRAIN runs fullDrainTimer instead of dirtyDrainTimer.
+extern bool drainModeLatched;
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 void stateMachine_init();

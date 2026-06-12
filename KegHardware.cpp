@@ -3,6 +3,7 @@
 // ======================================================================
 #include "KegHardware.h"
 #include "KegDiagnostics.h"
+#include "KegStateMachine.h"   // machineState — heater permit drops while ABORTED
 #include <math.h>
 
 // ---------- Public state ----------
@@ -12,7 +13,7 @@ volatile bool isEstopActive = false;
 bool isWaterOk = false;
 bool isLargeKeg = false;
 bool isCycleStartPressed = false;
-bool isManualDrainPressed = false;
+bool isFullDrainOn = false;
 
 int  causticTempValue = 0;
 bool isCausticLevelOk  = false;   // NC float switch on A-12 (debounced)
@@ -178,7 +179,7 @@ void hardware_readInputs() {
   // (released). So the press reads HIGH -> ACTIVE-HIGH. (Verified vs the manual +
   // libClearCore DigitalIn::UpdateFilterState; see clearcore_io_input_behavior memo.)
   isCycleStartPressed  = debounceRead(DI_CYCLE_START);
-  isManualDrainPressed = debounceRead(DI_MANUAL_DRAIN);
+  isFullDrainOn = debounceRead(DI_MANUAL_DRAIN);
 
   // ESTOP is intentionally not debounced — fastest possible response.
   // Fail-safe NC safety chain to GND on a negative-true sinking input:
@@ -191,7 +192,12 @@ void hardware_readInputs() {
 
   readTemperatureSensors();
 
-  if (isHeaterActive) hardware_monitorHeating();
+  // fw mode: rate/timeout/overtemp monitoring of a firmware-driven burn.
+  // ext mode: the probe's thermostat owns regulation — the rate/timeout checks
+  // are meaningless (an idle element looks "too slow"); the permit below
+  // carries the overtemp + level backstops instead.
+  if (isHeaterActive && !heaterExternal) hardware_monitorHeating();
+  hardware_manageHeaterPermit();   // no-op unless heaterMode=ext
 }
 
 // ---------- System-go check ----------
@@ -222,6 +228,25 @@ static inline void outBit(byte bit, bool on) {
   if (on) g_outBits |= (byte)(1 << bit); else g_outBits &= (byte)~(1 << bit);
 }
 byte hardware_getOutputBits() { return g_outBits; }
+
+// External-thermostat heater mode (heaterMode=ext): the ETS50N's PNP switch
+// output regulates the tank (two-point SP/RSP set on the probe) and
+// causticHeaterOut is a safety PERMIT in series with it (+ the hardware E-stop
+// chain). Asserted whenever heat is *allowed*; the probe decides when to heat —
+// this is what keeps the tank always hot between kegs and across IDLE/COMPLETE.
+// Overtemp re-permits 2 °C below the cutoff so the permit can't chatter.
+void hardware_manageHeaterPermit() {
+  if (!heaterExternal) return;
+  static bool overLatch = false;
+  int t = hardware_getCausticTemp();
+  if (t >= maxCausticTemp)          overLatch = true;
+  else if (t <= maxCausticTemp - 2) overLatch = false;
+  bool permit = isCausticLevelOk && !isEstopActive && !causticTempSensorError &&
+                machineState != MACH_ABORTED && !overLatch;
+  outBit(7, permit);
+  digitalWrite(causticHeaterOut, permit ? HIGH : LOW);
+  isHeaterActive = permit;   // OUT-grid HTR dot = permit in ext mode
+}
 
 // ---------- All-stop (main-loop only) ----------
 void hardware_allStop() {
@@ -277,6 +302,9 @@ void hardware_pulseLamps() {
 
 // ---------- Heater (interlocked) ----------
 void hardware_setCausticHeater(bool state) {
+  // ext mode: the permit logic (hardware_manageHeaterPermit) owns the pin; the
+  // state machine's fw-mode on/off calls must not fight it.
+  if (heaterExternal) return;
   if (state) {
     if (!isCausticLevelOk) {
       outBit(7, false);

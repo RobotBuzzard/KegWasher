@@ -47,7 +47,7 @@ KegStateMachine.*   Two-axis FSM — PackML machineState (IDLE→STARTING→EXEC
 KegDisplay.{h,cpp}  gen4-uLCD-43DT (Diablo16) wrapper — raw SPE serial via KegDisplaySerial (KDS::*), NOT genie
 KegDisplaySerial.{h,cpp} Firmware-independent serial draw module (screens, partial updates, touch+cal, footer)
 KegTimers.*         State-elapsed timing + keg-size duration scaling (`largeKegMod`)
-KegDiagnostics.*    Event logging, output-exercise diag mode (DRAIN + START to enter), error strings
+KegDiagnostics.*    Event logging, output-exercise diag mode (DIAG button on the settings INFO page), error strings
 KegUtils.*          Small helpers
 KegSecrets.h        gitignored — MQTT broker IP/user/pass/client_id/topic root
 ```
@@ -95,6 +95,8 @@ The display is a **gen4-uLCD-43DT (Diablo16)** driven by **raw SPE serial graphi
 ### Hardware specifics
 
 - Inputs: `airOk`, `co2Ok`, `waterOk` are software-debounced. `ESTOP` is **not** debounced (NC wiring, fastest response wins). The ESTOP ISR is bare-metal — no Serial, no CCIO writes, no display calls; it sets `estopFlag` + kills outputs and that's it. Main loop drains the flag via `hardware_consumeEstopFlag()`.
+- `manualDrain` (IO2) is a **latching illuminated switch = full-drain mode** (not a momentary button since 2026-06-12): latched ON → DIRTY_DRAIN runs `fullDrainTimer` (minutes; spoiled/undersold kegs arrive full) instead of `dirtyDrainTimer`; captured at cycle start as `drainModeLatched`. Park/silence on COMPLETE is the touch SILENCE button / `cmd/silence`; diag mode is entered from the settings INFO page DIAG button (the old DRAIN+START chord would hijack a legitimate drain-latched START).
+- Heater: `heaterMode` SD key. `fw` (default) = firmware bang-bang during STARTING only. `ext` = the ETS50N's PNP switch output is the tank thermostat (two-point SP/RSP on the probe — always-hot) and `causticHeaterOut` is just a safety **permit** in series (`hardware_manageHeaterPermit()`, per tick). NEVER set `ext` before the probe→contactor chain is wired — a permit with no thermostat holds heat on, bounded only by the overtemp backstop. In ext mode the rate/timeout heating monitors are skipped (meaningless when the element idles at setpoint) and STARTING exits at the wash floor, not the heat target.
 - `co2Ok` (DI7) is the **keg-side** pressure switch, **downstream of the `co2Out` solenoid** — it reads keg/line pressure, not CO2 supply (supply is unmonitored/assumed). It is deliberately NOT a readiness gate, entry precondition, or per-tick monitor (it reads 0 with the valve closed). Its one job: end the closed-loop PRESSURE charge (regulator runs well above the keg target because it also drives sanitizer blowback — solenoid shuts on switch trip), with `purgeTimer` as the fail timeout → `ERR_CO2_PRESSURE` ("Keg not at pressure"). Display label is `PRES` (grey when open = normal). Don't "fix" this back into the readiness checks.
 - CCIO-8 expansion module is on COM0; the display is on COM1. USB Serial is diagnostics only.
 - SD card holds `WASHER.CFG` (timer/threshold/MQTT overrides). **Filename must be 8.3/UPPERCASE** — the classic Arduino SD library has no long-filename support, so a name like `washer.config` silently fails to open (this was a real bug). Schema is the `KEY=VALUE` format under `config/washer.cfg.example`. If the SD is missing/corrupt, compiled defaults from `KegConfig.cpp` are used and a banner is shown.

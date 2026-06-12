@@ -157,6 +157,17 @@ extern bool kwBenchMode;
 // (MIN_CAUSTIC_LEVEL is gone — the caustic "level" is the NC float switch on
 // A-12, read directly as the isCausticLevelOk bool.)
 
+// Heater control mode (SD key `heaterMode`, deliberately NOT panel-editable):
+//   fw  (default) — firmware bang-bang during STARTING only (today's wiring:
+//                   causticHeaterOut drives the contactor directly).
+//   ext           — the ETS50N's PNP switch output regulates the tank
+//                   (two-point SP/RSP thermostat) and causticHeaterOut becomes
+//                   a safety PERMIT in series with it. DO NOT set ext until the
+//                   probe→contactor chain is physically wired — a permit with
+//                   no thermostat holds the contactor closed, bounded only by
+//                   the firmware overtemp backstop.
+extern bool heaterExternal;
+
 // ---------- Error codes (canonical home) ----------
 #define ERR_NONE              0
 #define ERR_SD_INIT           1
@@ -196,6 +207,10 @@ extern unsigned long rinsePurgeTimer;   // RINSE_PURGE (air-blow rinse water →
 extern unsigned long saniTimer;         // SANITIZE
 extern unsigned long saniRtnTimer;      // SANI_RETURN (CO2-blow sanitizer → reservoir)
 extern unsigned long purgeTimer;        // PRESSURE (CO2 charge / seal)
+// DIRTY_DRAIN replacement duration while the latching DRAIN switch (IO2) is on:
+// full/spoiled kegs need minutes of air-push to empty, not the dregs-clearing
+// seconds of dirtyDrainTimer. Latched at cycle start (drainModeLatched).
+extern unsigned long fullDrainTimer;
 extern double largeKegMod;
 // Max time a cycle may sit PAUSED (HELD) before it aborts (chem may be sitting in
 // the keg). Runtime var, seeded from PAUSE_MAX_MS; SD-config-overridable (Phase 3).

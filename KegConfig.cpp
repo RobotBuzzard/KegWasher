@@ -27,6 +27,7 @@
   #define DEF_SANI_MS         45000UL   // sanitizer recirc
   #define DEF_SANI_RTN_MS     15000UL   // CO2-blow sani back to tank
   #define DEF_PRESSURE_MS     15000UL   // CO2 charge / seal
+  #define DEF_FULL_DRAIN_MS   180000UL  // DIRTY_DRAIN w/ DRAIN switch latched (full kegs)
 
 // Stage durations, in cycle order. See KegConfig.h for the stage each drives.
 unsigned long dirtyDrainTimer = DEF_DIRTY_DRAIN_MS;
@@ -39,6 +40,7 @@ unsigned long rinsePurgeTimer = DEF_RINSE_PURGE_MS;
 unsigned long saniTimer       = DEF_SANI_MS;
 unsigned long saniRtnTimer    = DEF_SANI_RTN_MS;
 unsigned long purgeTimer      = DEF_PRESSURE_MS;
+unsigned long fullDrainTimer  = DEF_FULL_DRAIN_MS;
 double        largeKegMod     = 1.5;
 unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phase 3)
 
@@ -47,6 +49,9 @@ int minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
 int optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
 int maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
 int tempCalOffsetC10   = 0;   // calibration trim vs a reference thermometer
+
+// Heater control mode — see KegConfig.h. Default fw (safe on direct wiring).
+bool heaterExternal = false;
 
 // Runtime bench mode — set in config_init(): no SD config -> bench (gates
 // bypassed + 5 s stages); card present -> production gates. See KegConfig.h.
@@ -121,6 +126,7 @@ void config_init() {
     dirtyDrainTimer = dirtyRinseTimer = dirtyPurgeTimer = washTimer =
       causticRtnTimer = rinseTimer = rinsePurgeTimer = saniTimer =
       saniRtnTimer = purgeTimer = 5000UL;
+    fullDrainTimer = 10000UL;   // bench: distinguishable from the 5 s stages
   }
 }
 
@@ -155,7 +161,8 @@ bool config_loadFromSD() {
 
     if (!utils_parseConfigLine(line, key, value)) continue;
 
-    if      (strcmp(key, "dirtyDrainTimer") == 0) applyTimerKey(key, value, dirtyDrainTimer);
+    if      (strcmp(key, "fullDrainTimer") == 0)  applyTimerKey(key, value, fullDrainTimer);
+    else if (strcmp(key, "dirtyDrainTimer") == 0) applyTimerKey(key, value, dirtyDrainTimer);
     else if (strcmp(key, "dirtyRinseTimer") == 0) applyTimerKey(key, value, dirtyRinseTimer);
     else if (strcmp(key, "dirtyPurgeTimer") == 0) applyTimerKey(key, value, dirtyPurgeTimer);
     else if (strcmp(key, "washTimer")       == 0) applyTimerKey(key, value, washTimer);
@@ -186,6 +193,11 @@ bool config_loadFromSD() {
       int v = atoi(value);
       if (v < -100 || v > 100) logOutOfRange(key, value);   // +/-10.0 C max trim
       else tempCalOffsetC10 = v;
+    }
+    else if (strcmp(key, "heaterMode")      == 0) {
+      if      (strcmp(value, "ext") == 0) heaterExternal = true;
+      else if (strcmp(value, "fw")  == 0) heaterExternal = false;
+      else logOutOfRange(key, value);
     }
     // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
     //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
@@ -231,6 +243,7 @@ void config_saveToSD() {
   settingsFile.print("saniTimer=");       settingsFile.println(saniTimer);
   settingsFile.print("saniRtnTimer=");    settingsFile.println(saniRtnTimer);
   settingsFile.print("purgeTimer=");      settingsFile.println(purgeTimer);
+  settingsFile.print("fullDrainTimer=");  settingsFile.println(fullDrainTimer);
   settingsFile.print("largeKegMod=");     settingsFile.println(largeKegMod);
   settingsFile.print("pauseMaxMs=");      settingsFile.println(pauseMaxMs);
 
@@ -239,6 +252,9 @@ void config_saveToSD() {
   settingsFile.print("optimalCausticTemp="); settingsFile.println(optimalCausticTemp);
   settingsFile.print("maxCausticTemp=");     settingsFile.println(maxCausticTemp);
   settingsFile.print("tempCalOffsetC10=");   settingsFile.println(tempCalOffsetC10);
+  // heaterMode is SD-only but MUST survive a panel save (this writer does a
+  // full rewrite — omitting the key would silently flip a unit back to fw).
+  settingsFile.print("heaterMode=");         settingsFile.println(heaterExternal ? "ext" : "fw");
 
   // NOTE: the MQTT broker block is intentionally NOT written here. This save does
   // SD.remove + full rewrite, so it INTENTIONALLY drops any MQTT block from the
@@ -263,6 +279,7 @@ void config_setDefaults() {
   saniTimer       = DEF_SANI_MS;
   saniRtnTimer    = DEF_SANI_RTN_MS;
   purgeTimer      = DEF_PRESSURE_MS;
+  fullDrainTimer  = DEF_FULL_DRAIN_MS;
   largeKegMod     = 1.5;
   pauseMaxMs      = PAUSE_MAX_MS;
 
@@ -270,6 +287,7 @@ void config_setDefaults() {
   optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
   maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
   tempCalOffsetC10   = 0;
+  heaterExternal     = false;
 
   snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
            MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);

@@ -12,7 +12,7 @@
 | `ESTOP` | DI8 | Emergency stop / safety chain | LOW=tripped | **No** | Yes | Negative-true SINKING input (internal 3.3V/10k pull-up). NC chain from GND through drive-OK contacts + E-stop → DI8: healthy(closed)=GND=`digitalRead` HIGH=OK; open(trip/break)=pull-up=`digitalRead` LOW=ACTIVE. Not debounced. FALLING-edge ISR + polled backstop → PackML `Abort`. |
 | `largeKeg` | IO0 | Keg-size selector | HIGH | Yes | No | small (20 L) vs large (50 L); latched at cycle start |
 | `cycleStart` | IO1 | START button | HIGH | Yes | No | PackML `Start`/`Reset` (overloaded) |
-| `manualDrain` | IO2 | DRAIN/ACK button | HIGH | Yes | No | ack/silence (PackML `Clear`); diag-mode entry |
+| `manualDrain` | IO2 | FULL-DRAIN latching illuminated switch | HIGH (latched) | Yes | No | latched ON = full-keg drain mode: DIRTY_DRAIN runs `fullDrainTimer` (mins, for spoiled/undersold kegs) instead of `dirtyDrainTimer`; captured at cycle start (`drainModeLatched`). In diag mode it drives the drain valve directly. Old park/silence role moved to the touch SILENCE button (COMPLETE) + `cmd/silence`; old DRAIN+START diag chord replaced by the INFO-page DIAG button |
 
 ## Analog Inputs
 
@@ -31,14 +31,14 @@
 |------|-----|-------------|--------|-------|
 | `co2Out` | IO3 | CO₂ solenoid | HIGH | SANI_RETURN push-gas + PRESSURE charge |
 | `alarmOut` | IO4 | RED fault / E-stop stacklight | HIGH | fault / E-stop indicator |
-| `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | solid in IDLE-READY + STOPPED; **breathes (PWM) in COMPLETE** ("swap kegs, START for next"); breathes alternating with red in HELD |
+| `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | solid in IDLE-READY; **breathes (PWM) in COMPLETE** ("swap kegs, START for next"); breathes alternating with red in HELD |
 | `drainOut` | CCIO‑A0 | Drain valve | HIGH | **forced OFF during RETURN phases — chem never to drain** |
 | `waterOut` | CCIO‑A1 | Water valve | HIGH | FLOW phases |
 | `airOut` | CCIO‑A2 | Air valve | HIGH | DRAIN burst, PURGE, CAUSTIC_RETURN push-gas |
 | `causticOut` | CCIO‑A3 | Caustic valve | HIGH | WASHING + CAUSTIC_RETURN |
 | `pumpOut` | CCIO‑A4 | Recirc pump | HIGH | RECIRC phases; **forced OFF during RETURN (no dry run)** |
 | `sanitizerOut` | CCIO‑A5 | Sanitizer valve | HIGH | SANITIZE + SANI_RETURN |
-| `causticHeaterOut` | CCIO‑A6 | Caustic heater | HIGH | STARTUP heating; level/overtemp interlocked |
+| `causticHeaterOut` | CCIO‑A6 | Caustic heater | HIGH | `heaterMode=fw` (default): firmware bang-bang during STARTING, level/overtemp interlocked. `heaterMode=ext`: a safety **PERMIT** in series with the ETS50N PNP thermostat (always-hot tank); permit = level OK + no E-stop + no sensor fault + not ABORTED + below overtemp (2 °C re-arm hysteresis) |
 | `kegsDoneOut` | CCIO‑A7 | COMPLETE / swap-kegs signal | HIGH | high while `MACH_COMPLETE` for an external done-indicator; cleared on COMPLETE exit + all-stop (pin was freed when the fan moved off-controller) |
 
 > **Was missing from the prior table:** `causticHeaterOut` (CCIO‑A6).

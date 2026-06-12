@@ -19,7 +19,7 @@
 | 1 | STARTING | `STARTING` | acting | caustic heater | none † | EXECUTE (caustic ≥ `OPTIMAL_CAUSTIC_TEMP`) |
 | 2 | EXECUTE | `EXECUTE` | dual | per-phase (Axis B below) | per-phase | COMPLETE (after PRESSURE) |
 | 3 | HELD | `HELD` | wait | none (phase outputs cleared on entry; timer frozen) | `pauseMaxMs` ‡ | EXECUTE (RESUME/RESTART) |
-| 4 | COMPLETE | `COMPLETE` | wait | **none** — no alarm; blue "SWAP KEG" banner on-screen | none | EXECUTE (START=next keg) · IDLE (DRAIN=park) |
+| 4 | COMPLETE | `COMPLETE` | wait | **none** — no alarm; blue "SWAP KEG" banner; green button breathes; `kegsDoneOut` high | none | EXECUTE (START=next keg) · IDLE (touch SILENCE / `cmd/silence` = park) |
 | 5 | STOPPING | `STOPPING` | acting | evac outputs per `evacKind` | 2 min | STOPPED |
 | 6 | STOPPED | *(momentary)* | acting | none (de-energized, **silent** — alarm forced off) | none | IDLE (**auto-Reset**, 2026-06-12 — the GET READY ack screen is gone; IDLE_READY's START is the only arming step) |
 | 7 | CLEARING | `CLEARING` | acting | none | none | STOPPED *(defined; see Recovery — currently unreached)* |

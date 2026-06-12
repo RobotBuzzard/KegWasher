@@ -15,6 +15,7 @@ extern byte errorCode;
 
 void diagnostics_init();
 void diagnostics_process();
+void diagnostics_requestEntry();   // from the settings INFO page DIAG button
 void diagnostics_runTest();
 void diagnostics_logEvent(const char* eventMsg);
 const char* diagnostics_getErrorMessage(byte code);

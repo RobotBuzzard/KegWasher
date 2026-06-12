@@ -18,6 +18,13 @@
 bool diagnosticMode = false;
 byte errorCode = ERR_NONE;
 
+// Diag entry is requested from the settings INFO page (DIAG button). The old
+// DRAIN+START chord is gone: IO2 is a LATCHING switch now (full-drain mode),
+// so "drain on + START" is the normal way to begin a bad-keg wash — the chord
+// would have hijacked it into diagnostics.
+static bool diagEntryRequested = false;
+void diagnostics_requestEntry() { diagEntryRequested = true; }
+
 void diagnostics_init() {
   diagnosticMode = false;
   errorCode = ERR_NONE;
@@ -28,8 +35,9 @@ void diagnostics_process() {
   // accidentally jump into output-toggling mode mid-wash.
   bool safeToEnter = (machineState == MACH_IDLE) || (machineState == MACH_COMPLETE);
 
-  if (!diagnosticMode && safeToEnter
-      && isManualDrainPressed && isCycleStartPressed) {
+  if (!diagnosticMode && diagEntryRequested) {
+    diagEntryRequested = false;
+    if (!safeToEnter) return;
     diagnosticMode = true;
     display_showMessage("DIAGNOSTIC MODE");
 
@@ -42,8 +50,9 @@ void diagnostics_process() {
 
     diagnostics_runTest();
 
-    // Block until both buttons are released so we don't immediately re-enter.
-    while (isManualDrainPressed || isCycleStartPressed) {
+    // Block until START is released so we don't immediately exit below.
+    // (NOT the drain switch — it latches, and holding it is legitimate.)
+    while (isCycleStartPressed) {
       delay(50);
       hardware_readInputs();
     }
@@ -52,13 +61,18 @@ void diagnostics_process() {
   }
 
   if (diagnosticMode) {
-    if (isManualDrainPressed) hardware_setDrain(true);
-    else                      hardware_setDrain(false);
+    // The latching DRAIN switch drives the drain valve directly in diag mode.
+    if (isFullDrainOn) hardware_setDrain(true);
+    else               hardware_setDrain(false);
 
     if (isCycleStartPressed) {
       diagnosticMode = false;
+      hardware_setDrain(false);
       display_showMessage("Exiting diagnostics");
       delay(1000);
+      // Re-enter IDLE from the top so the READY/NOT_READY screen repaints
+      // (the state machine was frozen while diag mode was active).
+      if (machineState == MACH_IDLE) idleSub = IDLE_INIT;
     }
   }
 }

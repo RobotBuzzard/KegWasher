@@ -267,7 +267,7 @@ static void mqtt_applyCmdFlags() {
   if (kwMqttCmdSilence) {
     kwMqttCmdSilence = false;
     diagnostics_logEvent("Remote cmd: silence");
-    isManualDrainPressed = true;
+    display_requestSilence();   // same flag as the COMPLETE screen's SILENCE button
   }
   // On-screen cycle controls (touch).
   if (display_takeTouchPause()) {
@@ -366,6 +366,7 @@ struct MqttStatusCache {
   bool          sensorsInit   = false;
   int           causticTemp   = -999;
   int           causticLevel  = -999;   // -1/0/1: sentinel / LOW / OK (float switch)
+  int           fullDrainMode = -999;   // latching DRAIN switch (IO2), live state
   unsigned long elapsedSec    = 0xFFFFFFFFUL;
   unsigned long remainingSec  = 0xFFFFFFFFUL;
   char          screen[16]    = "";    // panel screen id (display_currentScreen)
@@ -531,6 +532,13 @@ static void mqtt_publishStatus() {
   if (level != kwMqttCache.causticLevel) {
     kwMqttCache.causticLevel = level;
     kwMqtt.publish(kwTopic("level/caustic"), level ? "OK" : "LOW", true);
+  }
+
+  // Full-drain mode: live state of the latching DRAIN switch (IO2).
+  int fdm = isFullDrainOn ? 1 : 0;
+  if (fdm != kwMqttCache.fullDrainMode) {
+    kwMqttCache.fullDrainMode = fdm;
+    kwMqtt.publish(kwTopic("mode/fulldrain"), fdm ? "ON" : "OFF", true);
   }
 
   // ----- Timers (operating states only) -----
@@ -767,7 +775,11 @@ void loop() {
     }
   }
 
-  stateMachine_process();
+  // Diag mode owns the machine while active: freeze the state machine so the
+  // exit START press can't double as a cycle start, and so READY's redraw
+  // doesn't paint over the diag messages. (Diag is gated to IDLE/COMPLETE and
+  // the ESTOP path above still runs.)
+  if (!diagnosticMode) stateMachine_process();
 
   // Indicators (IO4 red / IO5 green):
   //  - HELD (paused): both lamps breathe via PWM — visible-from-across-the-room hold.

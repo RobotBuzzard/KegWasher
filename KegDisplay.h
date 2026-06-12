@@ -67,6 +67,8 @@ void display_setMqttIndicators(bool connected, bool pubActive, bool subActive);
 // ── Touch event pump — call every loop (replaces genie.DoEvents) ───────
 void display_doEvents();
 bool display_takeTouchStart();   // one-shot: a START button touch is pending
+bool display_takeTouchSilence(); // one-shot: SILENCE (COMPLETE screen / MQTT cmd/silence)
+void display_requestSilence();   // MQTT cmd/silence sets the same flag
 bool display_takeTouchRecover(); // one-shot: a RECOVER button touch is pending (ABORTED)
 bool display_takeTouchPause();   // one-shot: a PAUSE/RESUME button touch is pending
 bool display_takeTouchRestart(); // one-shot: a RESTART button touch is pending (paused)

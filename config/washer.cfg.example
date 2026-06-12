@@ -28,6 +28,18 @@ causticRtnTimer=15000      # air-blow caustic back to its reservoir (NOT drain)
 rinseTimer=25000           # post-caustic water rinse (to drain)
 rinsePurgeTimer=10000      # air-blow the rinse water out (to drain)
 
+# Heater control mode (SD-only — not panel-editable):
+#   fw  = firmware bang-bang during STARTING (direct contactor wiring; default)
+#   ext = ETS50N PNP thermostat regulates the tank (always-hot); the ClearCore
+#         output is a safety PERMIT in series with it. ONLY set ext once the
+#         probe->contactor chain is physically wired!
+heaterMode=fw
+
+# Full-keg drain: DIRTY_DRAIN runs this long INSTEAD of dirtyDrainTimer while
+# the latching DRAIN switch (IO2) is on — for sessions of spoiled/undersold
+# kegs that arrive full. Keg-size scaled like every stage timer.
+fullDrainTimer=180000
+
 # --- Sanitize + seal ---
 saniTimer=45000            # recirculate sanitizer
 saniRtnTimer=15000         # CO2-blow sanitizer back to its reservoir (NOT drain)

@@ -38,6 +38,10 @@ const char* display_currentScreen() { return g_screen; }
 static const int BTN_START_X = 18, BTN_START_Y = 210, BTN_START_W = 236, BTN_START_H = 120;
 static volatile bool g_touchStart = false;
 static volatile bool g_touchRecover = false;  // RECOVER button on the ABORTED screen
+// SILENCE on the COMPLETE screen (park at IDLE, no new cycle). Also set by
+// MQTT cmd/silence via display_requestSilence().
+static const int BTN_SILENCE_X = 18, BTN_SILENCE_Y = 392, BTN_SILENCE_W = 236, BTN_SILENCE_H = 44;
+static volatile bool g_touchSilence = false;
 
 // Operating-screen cycle controls.
 //  - Running: a single PAUSE button.
@@ -60,8 +64,8 @@ static volatile bool g_touchStop    = false;
 // globals + WASHER.CFG.
 #define S_BLACK 0x0000u
 static const word S_GREY = 0x4208;          // disabled nav button
-static const int  S_NUM = 15, S_PER_PAGE = 4;
-static const int  S_ITEM_PAGES = 4;             // ceil(14/4)
+static const int  S_NUM = 16, S_PER_PAGE = 4;
+static const int  S_ITEM_PAGES = 4;             // 16 items = 4 full pages
 static const int  S_PAGES = S_ITEM_PAGES + 1;   // + trailing INFO page
 
 static unsigned long sWkTimer[10];
@@ -69,6 +73,7 @@ static double        sWkMod;
 static unsigned long sWkPauseMs;
 static int           sWkMinT, sWkOptT;
 static int           sWkCal10;          // probe trim, tenths of a degree C
+static unsigned long sWkFullDrain;      // DIRTY_DRAIN w/ DRAIN switch latched
 static int           sPage = 0;
 
 static unsigned long* const sTimerPtr[10] = {
@@ -78,7 +83,7 @@ static unsigned long* const sTimerPtr[10] = {
 static const char* const sLabel[S_NUM] = {
   "DIRTY DRN", "DIRTY RNS", "DIRTY PRG", "WASH", "CAUS RTN",
   "RINSE", "RNS PURGE", "SANITIZE", "SANI RTN", "PRESSURE", "LG KEG x",
-  "PAUSE MAX", "MIN TEMP", "HEAT TGT", "TEMP CAL"
+  "PAUSE MAX", "MIN TEMP", "HEAT TGT", "TEMP CAL", "FULL DRN"
 };
 // Validation bounds — MUST match KegConfig.cpp (TIMER_MIN_MS/MAX, kegmod
 // 1.0-3.0, PAUSE_MIN_MS/PAUSE_LIMIT_MS, TEMP_MIN_C). Temps additionally
@@ -98,6 +103,7 @@ static const word S_SUBTX = 0x84B4;   // secondary text (palette SUB)
 
 static void sFmt(int idx, char* buf, size_t n) {
   if (idx < 10)  { snprintf(buf, n, "%lus", sWkTimer[idx] / 1000UL); return; }
+  if (idx == 15) { snprintf(buf, n, "%lus", sWkFullDrain / 1000UL);  return; }
   if (idx == 11) { snprintf(buf, n, "%lum", sWkPauseMs / 60000UL);   return; }
   if (idx == 12) { snprintf(buf, n, "%dF %dC", (sWkMinT * 9 + 2) / 5 + 32, sWkMinT); return; }
   if (idx == 13) { snprintf(buf, n, "%dF %dC", (sWkOptT * 9 + 2) / 5 + 32, sWkOptT); return; }
@@ -145,6 +151,10 @@ static void sDrawInfo() {
     KDS::label(18, y + 28, true, 1, 2, WHITE, S_BLACK, val[i]);
     y += S_ROW_H;
   }
+  // Output-exercise diagnostic mode lives here now — the old DRAIN+START chord
+  // is gone (IO2 is the latching full-drain switch; the chord would hijack a
+  // legitimate "drain latched + START" bad-keg cycle start).
+  KDS::button(S_MINUS_X, S_ROW_Y0 + 3 * S_ROW_H + 4, S_ACT_W, S_ACT_H, "DIAG", BLUE);
 }
 
 static void sDraw() {
@@ -197,11 +207,16 @@ static void sAdjust(int idx, int dir) {
     if (v < sWkMinT)         v = sWkMinT;
     if (v > maxCausticTemp)  v = maxCausticTemp;
     sWkOptT = v;
-  } else {                                 // idx == 14: probe trim, 0.1 C steps
+  } else if (idx == 14) {                  // probe trim, 0.1 C steps
     int v = sWkCal10 + dir;
     if (v < -100) v = -100;
     if (v >  100) v =  100;
     sWkCal10 = v;
+  } else {                                 // idx == 15: full-drain duration
+    long v = (long)sWkFullDrain + dir * (long)S_TSTEP;
+    if (v < (long)S_TMIN) v = (long)S_TMIN;
+    if (v > (long)S_TMAX) v = (long)S_TMAX;
+    sWkFullDrain = (unsigned long)v;
   }
 }
 
@@ -217,6 +232,7 @@ static void sSave() {
   minCausticTemp     = sWkMinT;
   optimalCausticTemp = sWkOptT;
   tempCalOffsetC10   = sWkCal10;
+  fullDrainTimer     = sWkFullDrain;
   config_saveToSD();             // persists the full config (incl. these) to WASHER.CFG
   diagnostics_logEvent("Settings saved");
   sExitToReady();
@@ -231,9 +247,10 @@ void display_openSettings() {
   for (int i = 0; i < 10; i++) sWkTimer[i] = *sTimerPtr[i];
   sWkMod     = largeKegMod;
   sWkPauseMs = pauseMaxMs;
-  sWkMinT    = minCausticTemp;
-  sWkOptT    = optimalCausticTemp;
-  sWkCal10   = tempCalOffsetC10;
+  sWkMinT      = minCausticTemp;
+  sWkOptT      = optimalCausticTemp;
+  sWkCal10     = tempCalOffsetC10;
+  sWkFullDrain = fullDrainTimer;
   sPage  = 0;
   idleSub = IDLE_SETTINGS;       // state_idle no-ops; this screen owns the panel
   diagnostics_logEvent("Settings opened");
@@ -291,6 +308,9 @@ void display_showFinishedScreen() {
   g_screen = "COMPLETE";
   KDS::finished(ipStr());
   KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
+  // SILENCE parks at IDLE without a new cycle (was the physical DRAIN press,
+  // before IO2 became the latching full-drain switch).
+  KDS::button(BTN_SILENCE_X, BTN_SILENCE_Y, BTN_SILENCE_W, BTN_SILENCE_H, "SILENCE", AMBER);
   reapplyMqtt();
 }
 // 1 Hz countdown on the STOPPING screen (same field as the operating timer)
@@ -378,8 +398,11 @@ static const char* const phaseDescs[NUM_PHASES] = {
 
 void display_showOperatingScreen() {
   g_screen = (machineState == MACH_HELD) ? "PAUSED" : "OPERATING";
+  // Full-drain mode: DIRTY_DRAIN's subtitle says what the long timer is for.
+  const char* desc = (drainModeLatched && recipePhase == PHASE_DIRTY_DRAIN)
+                       ? "DRAIN BAD BEER" : phaseDescs[recipePhase];
   // Edge strip: GREEN while running (IEC normal), AMBER while held.
-  KDS::operatingFrame(phaseNames[recipePhase], phaseDescs[recipePhase],
+  KDS::operatingFrame(phaseNames[recipePhase], desc,
                       (int)recipePhase, NUM_PHASES - 1, ipStr(),
                       (machineState == MACH_HELD) ? AMBER : GREEN);
   display_updateTimer(timers_getStateElapsed());
@@ -437,6 +460,13 @@ void display_doEvents() {
       if (inRect(x, y, S_MINUS_X, rowY + 4, S_BTN_W, S_BTN_H)) { sAdjust(idx, -1); sDrawValue(slot, idx); return; }
       if (inRect(x, y, S_PLUS_X,  rowY + 4, S_BTN_W, S_BTN_H)) { sAdjust(idx, +1); sDrawValue(slot, idx); return; }
     }
+    if (sPage == S_ITEM_PAGES &&   // INFO page: DIAG button (output exercise)
+        inRect(x, y, S_MINUS_X, S_ROW_Y0 + 3 * S_ROW_H + 4, S_ACT_W, S_ACT_H)) {
+      diagnostics_logEvent("Diag entry (INFO page)");
+      idleSub = IDLE_READY;            // close settings; diag paints over READY
+      diagnostics_requestEntry();      // consumed by diagnostics_process()
+      return;
+    }
     if (inRect(x, y, 18,        S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage > 0)           { sPage--; sDraw(); } return; }
     if (inRect(x, y, S_NEXT_X,  S_NAV_Y, S_NAV_W, S_NAV_H)) { if (sPage < S_PAGES - 1) { sPage++; sDraw(); } return; }
     if (inRect(x, y, 18,        S_ACT_Y, S_ACT_W, S_ACT_H)) { sSave();   return; }
@@ -452,6 +482,10 @@ void display_doEvents() {
   if (startScreen && inRect(x, y, BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H)) {
     g_touchStart = true;
     KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", WHITE);  // press feedback
+  } else if (machineState == MACH_COMPLETE &&
+             inRect(x, y, BTN_SILENCE_X, BTN_SILENCE_Y, BTN_SILENCE_W, BTN_SILENCE_H)) {
+    g_touchSilence = true;
+    KDS::button(BTN_SILENCE_X, BTN_SILENCE_Y, BTN_SILENCE_W, BTN_SILENCE_H, "...", WHITE);
   } else if (machineState == MACH_IDLE && idleSub == IDLE_READY &&
              inRect(x, y, S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H)) {
     display_openSettings();        // SETTINGS button on the READY screen
@@ -484,6 +518,13 @@ bool display_takeTouchStart() {
   if (g_touchStart) { g_touchStart = false; return true; }
   return false;
 }
+
+// SILENCE: touch button on COMPLETE, or MQTT cmd/silence (same flag).
+bool display_takeTouchSilence() {
+  if (g_touchSilence) { g_touchSilence = false; return true; }
+  return false;
+}
+void display_requestSilence() { g_touchSilence = true; }
 
 // Drain a pending RECOVER-button touch (one-shot, ABORTED screen).
 bool display_takeTouchRecover() {
