@@ -273,7 +273,7 @@ void display_bootDone(bool ok) {
 
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk) {
   g_screen = "NOT_READY";
-  bool levelOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
+  bool levelOk = isCausticLevelOk;
   KDS::readiness(waterOk, airOk, co2Ok, estopOk, levelOk, false, ipStr());  // amber, no START
   reapplyMqtt();
 }
@@ -282,7 +282,7 @@ void display_showReadyScreen() {
   g_screen = "READY";
   // Same unified screen, all-OK: green title + the live signal rows + START.
   KDS::readiness(isWaterOk, isAirOk, isCo2Ok, !isEstopActive,
-                 hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL, true, ipStr());
+                 isCausticLevelOk, true, ipStr());
   KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "START", GREEN);
   KDS::button(S_OPEN_X, S_OPEN_Y, S_OPEN_W, S_OPEN_H, "SETTINGS", BLUE);
   reapplyMqtt();
@@ -301,12 +301,8 @@ void display_updateStoppingTimer(unsigned long remainingMs) {
 
 void display_showStopping() {
   g_screen = "STOPPING"; KDS::stopping(ipStr()); reapplyMqtt(); }
-void display_showHaltedScreen() {
-  g_screen = "STOPPED";
-  KDS::halted(ipStr());
-  KDS::buttonPrimary(BTN_START_X, BTN_START_Y, BTN_START_W, BTN_START_H, "GET READY", GREEN);
-  reapplyMqtt();
-}
+// (The STOPPED "GET READY" ack screen is gone — STOPPED auto-resets to IDLE,
+// which lands on READY. 2026-06-12, operator request.)
 void display_showError(const char* m) {
   g_screen = "ABORTED";
   KDS::error(m, ipStr());
@@ -347,8 +343,13 @@ void display_updateTimer(unsigned long elapsedMs) {
 }
 
 void display_updateStatus() {
-  KDS::operatingStatus(hardware_getCausticTempC10(),
-                       isWaterOk, isAirOk, isCo2Ok, isEstopActive, kwMqttReady);
+  KDS::operatingTemp(hardware_getCausticTempC10());
+  // OUT = driven actuators (shadowed in KegHardware); IN = live inputs.
+  // IN bit order: 0=water 1=air 2=pres(keg switch) 3=level 4=estop-SAFE.
+  byte inBits = (byte)((isWaterOk ? 1 : 0) | (isAirOk ? 2 : 0) | (isCo2Ok ? 4 : 0) |
+                       ((isCausticLevelOk) ? 8 : 0) |
+                       (!isEstopActive ? 16 : 0));
+  KDS::operatingIO(hardware_getOutputBits(), inBits);
 }
 
 // Draw the cycle-control buttons for the current pause state.
@@ -418,6 +419,14 @@ void display_doEvents() {
   int x, y;
   if (!KDS::touch(&x, &y)) return;
 
+  // Resistive taps bounce (press/release/press within ~100 ms). When a press
+  // changes the screen, the bounce's second edge lands on whatever button now
+  // owns those pixels — GET READY → START was a real one (same rect). Swallow
+  // any touch arriving inside a short window after the last accepted one.
+  static unsigned long lastTouchMs = 0;
+  if (millis() - lastTouchMs < 350UL) return;
+  lastTouchMs = millis();
+
   // The settings editor owns every touch while it's open (idleSub == SETTINGS).
   if (machineState == MACH_IDLE && idleSub == IDLE_SETTINGS) {
     int first = sPage * S_PER_PAGE;
@@ -436,7 +445,6 @@ void display_doEvents() {
   }
 
   bool startScreen = (machineState == MACH_COMPLETE) ||
-                     (machineState == MACH_STOPPED) ||
                      (machineState == MACH_IDLE && idleSub == IDLE_READY);
   bool operating = (machineState == MACH_EXECUTE || machineState == MACH_HELD);
   bool held      = (machineState == MACH_HELD);

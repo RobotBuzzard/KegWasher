@@ -68,7 +68,15 @@ namespace {
   const int TMP_Y = 254, TMP_CLR_Y2 = 284;
   const int TMPSUB_Y = 286;
   const int RULE3_Y = 320;
-  const int SENS_Y = 330;                   // 2x2 grid, rows +34
+  const int SENS_Y = 330;                   // 2x2 grid, rows +34 (readiness screens)
+
+  // Operating-screen OUT/IN telemetry grid (replaces the 2x2 sensor grid while
+  // running): all 8 actuator outputs over two 4-col rows + all 5 inputs on one
+  // 5-col row, between RULE3 (320) and the PAUSE button (400). Scale-1 labels.
+  const int IO_R1_Y = 326, IO_ROW_H = 24;   // rows at 326 / 350 / 374
+  const int IO_X0   = LX + 34;              // cells start right of the OUT/IN tags
+  const int IO_OUT_PITCH = 46;              // 4 columns
+  const int IO_IN_PITCH  = 41;              // 5 columns
   const int FOOT_DOT_PUB_X = 238, FOOT_DOT_SUB_X = 256, FOOT_DOT_Y = DH - 9;
 
   Diablo_Serial_4DLib* D = nullptr;
@@ -279,7 +287,9 @@ namespace {
 
   // partial-update caches for the operating screen
   int  g_lastTemp = -999;
-  int  g_lastSens = -1;     // packed w|a|c|e bits
+  int  g_lastSens = -1;     // packed w|a|c|e bits (legacy 2x2 operating grid)
+  int  g_lastOut  = -1;     // operating OUT dots (8 actuator bits)
+  int  g_lastIn   = -1;     // operating IN dots (5 input bits)
   word g_stripCol = 0;      // current state colour of the edge strip
   int  g_stripTop = 0;      // top y of the remaining (filled) strip portion
 
@@ -317,6 +327,33 @@ namespace {
       sensorDot(i, y0, ok[i]);
       word fg = (!ok[i] && emphasizeBad && i != 2) ? C_TXT : C_SUB;
       lbl(x + 19, y, false, 2, 2, fg, C_BG, SENS_LBL[i]);
+    }
+  }
+
+  // Operating OUT/IN grid. OUT = the 8 actuators (bit order matches
+  // hardware_getOutputBits): green = driven, grey = off. IN = the 5 inputs:
+  // green = OK/made; PRES (index 2) grey when open (unpressurized is normal);
+  // the rest red when lost (the active-resource monitor will abort anyway).
+  const char* IO_OUT_LBL[8] = { "DRN", "WTR", "AIR", "CAU", "PMP", "SAN", "CO2", "HTR" };
+  const char* IO_IN_LBL[5]  = { "WTR", "AIR", "PRES", "LVL", "STP" };
+  void ioDotOut(int i, bool on) {
+    int x = IO_X0 + (i % 4) * IO_OUT_PITCH, y = IO_R1_Y + (i / 4) * IO_ROW_H;
+    disc(x + 4, y + 5, 4, on ? C_GRN : C_TRACK);
+  }
+  void ioDotIn(int i, bool ok) {
+    int x = IO_X0 + i * IO_IN_PITCH, y = IO_R1_Y + 2 * IO_ROW_H;
+    disc(x + 4, y + 5, 4, ok ? C_GRN : (i == 2 ? C_TRACK : C_RED));
+  }
+  void ioChrome() {   // static tags + labels; dots come from operatingIO()
+    lbl(LX, IO_R1_Y, false, 1, 1, C_SUB, C_BG, "OUT");
+    lbl(LX, IO_R1_Y + 2 * IO_ROW_H, false, 1, 1, C_SUB, C_BG, "IN");
+    for (int i = 0; i < 8; i++) {
+      int x = IO_X0 + (i % 4) * IO_OUT_PITCH, y = IO_R1_Y + (i / 4) * IO_ROW_H;
+      lbl(x + 11, y, false, 1, 1, C_SUB, C_BG, IO_OUT_LBL[i]);
+    }
+    for (int i = 0; i < 5; i++) {
+      int x = IO_X0 + i * IO_IN_PITCH, y = IO_R1_Y + 2 * IO_ROW_H;
+      lbl(x + 11, y, false, 1, 1, C_SUB, C_BG, IO_IN_LBL[i]);
     }
   }
 
@@ -423,8 +460,8 @@ void operatingFrame(const char* phaseName, const char* desc,
   hline(LX, RX, RULE2_Y, C_TRACK);
   lbl4(LX, TMPSUB_Y, C_SUB, "CAUSTIC");
   hline(LX, RX, RULE3_Y, C_TRACK);
-  sensorGrid(SENS_Y, true, true, true, true, false);
-  g_lastTemp = -999; g_lastSens = -1;       // force first partial update
+  ioChrome();                               // OUT/IN tags + labels; dots follow
+  g_lastTemp = -999; g_lastOut = g_lastIn = -1;   // force first partial update
   footerIP(ip);
 }
 // legacy 3-arg form (KegDisplay migrates to the rich one; keep compiling)
@@ -449,6 +486,38 @@ void operatingTimer(int minutes, int seconds) {
   snprintf(b, sizeof(b), "%02d:%02d", minutes, seconds);
   rect(LX - 2, TMR_Y, RX, TMR_CLR_Y2, C_BG);
   lbl(LX, TMR_Y, true, 4, 5, C_TXT, C_BG, b);
+}
+
+// Temp partial update (extracted from the legacy operatingStatus).
+void operatingTemp(int tempC10) {
+  if (tempC10 == g_lastTemp) return;
+  g_lastTemp = tempC10;
+  // tenths-of-a-degree input so F gets real precision (1 C = 1.8 F steps)
+  int f10 = tempC10 * 9 / 5 + 320;
+  int f = (f10 >= 0) ? (f10 + 5) / 10 : (f10 - 5) / 10;
+  int c = (tempC10 >= 0) ? (tempC10 + 5) / 10 : (tempC10 - 5) / 10;
+  char b[16];
+  snprintf(b, sizeof(b), "%dF %dC", f, c);
+  rect(LX - 2, TMP_Y, RX, TMP_CLR_Y2, C_BG);
+  lbl(LX, TMP_Y, true, 2, 2, C_GRN, C_BG, b);
+}
+
+// OUT/IN dot partial update — per-dot change detection (serial link economy).
+void operatingIO(byte outBits, byte inBits) {
+  if ((int)outBits != g_lastOut) {
+    for (int i = 0; i < 8; i++) {
+      bool on = outBits & (1 << i);
+      if (g_lastOut < 0 || on != (bool)(g_lastOut & (1 << i))) ioDotOut(i, on);
+    }
+    g_lastOut = outBits;
+  }
+  if ((int)inBits != g_lastIn) {
+    for (int i = 0; i < 5; i++) {
+      bool ok = inBits & (1 << i);
+      if (g_lastIn < 0 || ok != (bool)(g_lastIn & (1 << i))) ioDotIn(i, ok);
+    }
+    g_lastIn = inBits;
+  }
 }
 
 void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bool mqtt) {

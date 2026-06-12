@@ -208,13 +208,24 @@ bool hardware_allSystemsGo() {
   // verifies it in-cycle by requiring the switch to trip before its timer.
   if (!isWaterOk)                                 { errorCode = ERR_WATER_PRESSURE; return false; }
   if (causticTempSensorError)                     { errorCode = ERR_SENSOR_FAULT;   return false; }
-  if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
+  if (!isCausticLevelOk) {
                                                     errorCode = ERR_CAUSTIC_LEVEL;  return false; }
   return true;
 }
 
+// g_outBits mirrors the driven actuators for the operating display's OUT grid
+// (bit order in KegHardware.h). The ESTOP ISR's bare-metal kills don't touch
+// it — the main-loop allStop() that follows zeroes it, and the display is on
+// the fault screen by then anyway.
+static byte g_outBits = 0;
+static inline void outBit(byte bit, bool on) {
+  if (on) g_outBits |= (byte)(1 << bit); else g_outBits &= (byte)~(1 << bit);
+}
+byte hardware_getOutputBits() { return g_outBits; }
+
 // ---------- All-stop (main-loop only) ----------
 void hardware_allStop() {
+  g_outBits = 0;
   digitalWrite(co2Out, LOW);
   digitalWrite(alarmOut, HIGH);
   digitalWrite(readyLedOut, LOW);     // green off on all-stop (fault/estop)
@@ -230,14 +241,14 @@ void hardware_allStop() {
 }
 
 // ---------- Output setters ----------
-void hardware_setCo2(bool state)       { digitalWrite(co2Out, state ? HIGH : LOW); }
+void hardware_setCo2(bool state)       { outBit(6, state); digitalWrite(co2Out, state ? HIGH : LOW); }
 void hardware_setAlarm(bool state)     { digitalWrite(alarmOut, state ? HIGH : LOW); }
-void hardware_setDrain(bool state)     { digitalWrite(drainOut, state ? HIGH : LOW); }
-void hardware_setWater(bool state)     { digitalWrite(waterOut, state ? HIGH : LOW); }
-void hardware_setAir(bool state)       { digitalWrite(airOut, state ? HIGH : LOW); }
-void hardware_setCaustic(bool state)   { digitalWrite(causticOut, state ? HIGH : LOW); }
-void hardware_setPump(bool state)      { digitalWrite(pumpOut, state ? HIGH : LOW); }
-void hardware_setSanitizer(bool state) { digitalWrite(sanitizerOut, state ? HIGH : LOW); }
+void hardware_setDrain(bool state)     { outBit(0, state); digitalWrite(drainOut, state ? HIGH : LOW); }
+void hardware_setWater(bool state)     { outBit(1, state); digitalWrite(waterOut, state ? HIGH : LOW); }
+void hardware_setAir(bool state)       { outBit(2, state); digitalWrite(airOut, state ? HIGH : LOW); }
+void hardware_setCaustic(bool state)   { outBit(3, state); digitalWrite(causticOut, state ? HIGH : LOW); }
+void hardware_setPump(bool state)      { outBit(4, state); digitalWrite(pumpOut, state ? HIGH : LOW); }
+void hardware_setSanitizer(bool state) { outBit(5, state); digitalWrite(sanitizerOut, state ? HIGH : LOW); }
 // GREEN cycle-start / ready indicator on IO5 — a dedicated output (no time-mux).
 void hardware_setReadyLamp(bool on)    { digitalWrite(readyLedOut, on ? HIGH : LOW); }
 
@@ -267,7 +278,8 @@ void hardware_pulseLamps() {
 // ---------- Heater (interlocked) ----------
 void hardware_setCausticHeater(bool state) {
   if (state) {
-    if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
+    if (!isCausticLevelOk) {
+      outBit(7, false);
       digitalWrite(causticHeaterOut, LOW);
       isHeaterActive = false;
       errorCode = ERR_CAUSTIC_LEVEL;
@@ -275,6 +287,7 @@ void hardware_setCausticHeater(bool state) {
       return;
     }
     if (hardware_getCausticTemp() >= maxCausticTemp) {
+      outBit(7, false);
       digitalWrite(causticHeaterOut, LOW);
       isHeaterActive = false;
       errorCode = ERR_HEATER_OVERTEMP;
@@ -297,6 +310,7 @@ void hardware_setCausticHeater(bool state) {
              (millis() - heatingStartTime) / 1000UL);
     diagnostics_logEvent(buf);
   }
+  outBit(7, state);
   digitalWrite(causticHeaterOut, state ? HIGH : LOW);
   isHeaterActive = state;
 }
@@ -332,7 +346,7 @@ bool hardware_monitorHeating() {
     heatingLastCheckTime = now;
   }
 
-  if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
+  if (!isCausticLevelOk) {
     hardware_setCausticHeater(false);
     errorCode = ERR_CAUSTIC_LEVEL;
     diagnostics_logEvent("Heater shutdown: low level");
@@ -386,9 +400,5 @@ int hardware_getCausticTemp() {
   return (c10 >= 0) ? (c10 + 5) / 10 : (c10 - 5) / 10;   // round-to-nearest whole C
 }
 
-int hardware_getCausticLevel() {
-  // Level is a switch now: report 100/0 so existing percent-threshold
-  // consumers (MIN_CAUSTIC_LEVEL gates, heater interlock, MQTT topic)
-  // keep working unchanged.
-  return isCausticLevelOk ? 100 : 0;
-}
+// (hardware_getCausticLevel + MIN_CAUSTIC_LEVEL are gone — the "level" is the
+// NC float switch on A-12; consumers read the isCausticLevelOk bool directly.)

@@ -624,7 +624,7 @@ static void state_idle() {
       static bool prevWater = false, prevAir = false, prevCo2 = false, prevEstop = false;
       static bool prevLevel = false;
       static bool drawn = false;
-      bool levelOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
+      bool levelOk = isCausticLevelOk;
 
       bool changed = (!drawn || waterOk != prevWater || airOk != prevAir ||
                       co2Ok != prevCo2 || estopOk != prevEstop || levelOk != prevLevel);
@@ -656,7 +656,7 @@ static void state_idle() {
       // allSystemsGo() is forced true so the READY->NOT_READY transition
       // below never fires — without this the screen showed stale green
       // dots after a sensor dropped.)
-      bool lvlOk = hardware_getCausticLevel() >= MIN_CAUSTIC_LEVEL;
+      bool lvlOk = isCausticLevelOk;
       byte sig = (byte)((lvlOk << 4) | (isWaterOk << 3) | (isAirOk << 2) |
                         (isCo2Ok << 1) | (byte)isEstopActive);
       if (sig != lastSig) { lastSig = sig; drawn = false; }
@@ -709,7 +709,7 @@ static void state_starting() {
   }
 
   if (!isHeaterActive) {
-    if (hardware_getCausticLevel() < MIN_CAUSTIC_LEVEL) {
+    if (!isCausticLevelOk) {
       errorCode = ERR_CAUSTIC_LEVEL;
       display_showError(diagnostics_getErrorMessage(ERR_CAUSTIC_LEVEL));
       stateMachine_abort();
@@ -872,7 +872,7 @@ static bool faultConditionActive(byte code) {
     case ERR_CO2_PRESSURE:    return false;
     case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  minCausticTemp;
     case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= maxCausticTemp;
-    case ERR_CAUSTIC_LEVEL:   return hardware_getCausticLevel() <  MIN_CAUSTIC_LEVEL;
+    case ERR_CAUSTIC_LEVEL:   return !isCausticLevelOk;
     case ERR_SENSOR_FAULT:    return causticTempSensorError;
     default:                  return false;  // transient — no standing condition to clear
   }
@@ -992,19 +992,13 @@ static void state_stopping() {
   changeMachineState(MACH_STOPPED);          // machineEnter(STOPPED) de-energizes, silent
 }
 
-// ---------- STOPPED (de-energized halt) ----------
+// ---------- STOPPED (de-energized halt — momentary) ----------
 static void state_stopped() {
-  static bool drawn = false;
-  static bool prevPress = false;
-
-  if (!drawn) { display_showHaltedScreen(); drawn = true; }
-
-  bool nowPressed = isCycleStartPressed;
-  if (smRising(nowPressed, prevPress)) {     // START = Reset → IDLE
-    drawn = false;
-    prevPress = nowPressed;
-    changeMachineState(MACH_IDLE);           // washerInitialized → READY, no pre-check
-    return;
-  }
-  prevPress = nowPressed;
+  // The "GET READY" ack screen is gone (operator request 2026-06-12): IDLE_READY
+  // already requires an explicit START before anything moves, so the second
+  // acknowledgment added a tap without adding safety — and its button shared
+  // pixels with READY's START, where tap-bounce chained into an instant start.
+  // PackML Reset is now automatic; STOPPED is a momentary de-energized landing.
+  diagnostics_logEvent("Stopped -> idle");
+  changeMachineState(MACH_IDLE);             // washerInitialized → READY, no pre-check
 }

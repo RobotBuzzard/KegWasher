@@ -51,12 +51,15 @@ void hardware_setSanitizer(bool state);
 void hardware_setCausticHeater(bool state);
 void hardware_setReadyLamp(bool on);   // GREEN cycle-start indicator on IO5 (dedicated output)
 void hardware_setKegsDone(bool on);    // COMPLETE / swap-kegs signal on CCIO-A7
+
+// Shadow of the driven actuator outputs, for the operating display's OUT grid.
+// Bit order: 0=drain 1=water 2=air 3=caustic 4=pump 5=sanitizer 6=co2 7=heater.
+byte hardware_getOutputBits();
 void hardware_pulseLamps();            // HELD: breathe IO4+IO5 via PWM (call per loop tick)
 void hardware_pulseReadyLamp();        // COMPLETE: breathe IO5 green alone (call per loop tick)
 
 int  hardware_getCausticTemp();      // whole degrees C (rounded, calibrated)
 int  hardware_getCausticTempC10();   // tenths of a degree C (calibrated) — display precision
-int  hardware_getCausticLevel();
 
 bool hardware_monitorHeating();
 bool hardware_checkHeatingRate();

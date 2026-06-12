@@ -365,7 +365,7 @@ struct MqttStatusCache {
   bool          estopActive   = false;
   bool          sensorsInit   = false;
   int           causticTemp   = -999;
-  int           causticLevel  = -999;
+  int           causticLevel  = -999;   // -1/0/1: sentinel / LOW / OK (float switch)
   unsigned long elapsedSec    = 0xFFFFFFFFUL;
   unsigned long remainingSec  = 0xFFFFFFFFUL;
   char          screen[16]    = "";    // panel screen id (display_currentScreen)
@@ -526,11 +526,11 @@ static void mqtt_publishStatus() {
     snprintf(buf, sizeof(buf), "%d", causticT);
     kwMqtt.publish(kwTopic("temp/caustic"), buf, true);
   }
-  int level = hardware_getCausticLevel();
+  // Caustic "level" is the NC float switch — publish OK/LOW, not a number.
+  int level = isCausticLevelOk ? 1 : 0;
   if (level != kwMqttCache.causticLevel) {
     kwMqttCache.causticLevel = level;
-    snprintf(buf, sizeof(buf), "%d", level);
-    kwMqtt.publish(kwTopic("level/caustic"), buf, true);
+    kwMqtt.publish(kwTopic("level/caustic"), level ? "OK" : "LOW", true);
   }
 
   // ----- Timers (operating states only) -----
@@ -785,8 +785,7 @@ void loop() {
   } else {
     if (kwWasHeld && machineState == MACH_EXECUTE) hardware_setAlarm(false);
     kwWasHeld = false;
-    hardware_setReadyLamp(machineState == MACH_STOPPED ||
-                          (machineState == MACH_IDLE && idleSub == IDLE_READY));
+    hardware_setReadyLamp(machineState == MACH_IDLE && idleSub == IDLE_READY);
   }
 
   // Operating display: the operating screen is shown while EXECUTE (running) or

@@ -154,7 +154,8 @@ extern bool kwBenchMode;
 // ---------- Heater limits ----------
 #define MIN_HEATING_RATE       3       // °C/min minimum during heating
 #define MAX_HEATING_TIME       900000UL  // 15 min cap
-#define MIN_CAUSTIC_LEVEL      25      // % — refuse heating below this
+// (MIN_CAUSTIC_LEVEL is gone — the caustic "level" is the NC float switch on
+// A-12, read directly as the isCausticLevelOk bool.)
 
 // ---------- Error codes (canonical home) ----------
 #define ERR_NONE              0

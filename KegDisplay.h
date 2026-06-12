@@ -45,7 +45,6 @@ void display_update();  // alias for display_showOperatingScreen()
 void display_showReadyScreen();    // "Check levels / Press START"
 void display_showFinishedScreen(); // "Cycle complete / DRAIN+START = new"
 void display_showStopping();       // "DRAINING" — STOP/DRAIN evacuation in progress
-void display_showHaltedScreen();   // "STOPPED" + START to recover (after STOP/DRAIN)
 void display_showNotReady(bool waterOk, bool airOk, bool co2Ok, bool estopOk);
 
 void display_showProgress(const char* label, int percentage,

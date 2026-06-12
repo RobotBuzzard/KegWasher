@@ -106,12 +106,12 @@ void diagnostics_runTest() {
   // Compact sensor summary — all key readings in one STRINGS object.
   char status[64];
   snprintf(status, sizeof(status),
-    "W:%s A:%s C:%s ES:%s L:%d%% T:%d",
-    isWaterOk     ? "OK" : "NO",
-    isAirOk       ? "OK" : "NO",
-    isCo2Ok       ? "OK" : "NO",
-    isEstopActive ? "ACT" : "OK",
-    hardware_getCausticLevel(),
+    "W:%s A:%s C:%s ES:%s L:%s T:%d",
+    isWaterOk        ? "OK" : "NO",
+    isAirOk          ? "OK" : "NO",
+    isCo2Ok          ? "OK" : "NO",
+    isEstopActive    ? "ACT" : "OK",
+    isCausticLevelOk ? "OK" : "LOW",
     hardware_getCausticTemp()
   );
   display_showMessage(status);
