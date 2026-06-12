@@ -2,7 +2,20 @@
 
 Live roadmap from current bench-only build to a production-ready keg cleaner controller. Reorganised when the project's state changes meaningfully — not just a backlog dump. Deeper per-item rationale lives in [`docs/reliability-todo.md`](docs/reliability-todo.md).
 
-## Status (2026-06-08)
+## Status (2026-06-12)
+
+**Update 2026-06-10 (design-C screen redesign + runtime bench mode — bench-verified on hardware):**
+The panel got a full **design-C redesign** in `KegDisplaySerial` (three polish rounds): DejaVu-style
+typography with self-measuring font metrics, pixel-grid layout, primary/secondary on-screen buttons,
+live READY sensor dots, STOPPING countdown, alternating pause lamps, FONT_4 subtitles, plus
+**settings page 2** (pause max, process temps), an **INFO page**, and a retained `kegwasher/screen`
+topic. **Bench mode is now runtime**, decided by SD-card presence at boot — the compile-time
+`#define BENCH_MODE` is gone (no `WASHER.CFG` → gates bypassed + 5 s stages; card present →
+production gates, incl. a 5th LEVEL readiness row). Fixed: **A12 caustic level is an NC float
+switch** — read digital, not analog. The Node-RED dashboard was synced to the PackML model, made
+**monitor-only** (command buttons removed — control happens at the machine), and gained ABORTED
+alerting; the temporary `debug/cau_adc` publish was dropped (ETS50N cal confirmed). All of Phase 0
+is now complete.
 
 **Update 2026-06-08 (PackML re-arch + sensor bring-up — bench-verified on hardware):** The state
 machine was re-architected to the **two-axis PackML / ISA-88 model** (`machineState` × `recipePhase`)
@@ -24,7 +37,7 @@ to their reservoirs, never to drain). Added: per-state safety monitoring + entry
 controls (PAUSE/RESUME, RESTART = re-run current stage, STOP/DRAIN = evacuate → HALTED), and a
 countdown-skip fix. SD card formatted + `washer.config` written.
 
-Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed via `#define BENCH_MODE` in `KegConfig.h`.
+Bench-only development build. Firmware compiles, flashes, runs through a complete BENCH_MODE cycle (STARTUP → DRAINING → RINSING → WASHING → SANITIZE → PRESSURE → FINISHED) in ~25 s with the display updating correctly on every transition. Hardware watchdog active and bench-validated. ESTOP polarity is correct for normally-closed wiring. No real plumbing is connected; sensor gates are bypassed in bench mode. *(Superseded 2026-06-10: bench mode is now runtime via SD-card presence — the compile-time `#define BENCH_MODE` is gone.)*
 
 **Display (2026-06-03):** dropped the planned ViSi-Genie path for **raw SPE serial** drawing on the gen4-uLCD-43DT (Diablo16, portrait 272×480, link bumped to 115200 for ~12× faster redraws). Per-state screens, flicker-free partial updates, footer (IP + MQTT pub/sub dots), host-side-calibrated resistive touch, and an on-screen START button — all verified on hardware. `genieArduinoDEV` removed. See CLAUDE.md "Display" + the `kegwasher_display_serial` memory. (A web/HTTP HMI was re-assessed as feasible 2026-06-04 — an option that revisits the Phase 0 "no HTTP" note below.)
 
@@ -44,7 +57,7 @@ Goal: full status read-out + full command surface available to any MQTT subscrib
 - [x] **MQTT status publish** — change-detected, retained publishes for `kegwasher/state`, `kegwasher/state/sub`, `kegwasher/keg`, `kegwasher/timer/{elapsed_s,remaining_s}` (seconds, not ms — dashboards consume mm:ss directly), `kegwasher/temp/{caustic,enclosure}`, `kegwasher/level/caustic`, `kegwasher/sensors/{water,air,co2,estop}`, `kegwasher/error/{code,message}`. Throttled to 250 ms; only publishes topics whose values actually changed since last call. All retained so dashboards land hot.
 - [x] **MQTT command subscribe** — subscribe to `kegwasher/cmd/+`. Callback sets pending-command flags only (no `kwMqtt.publish` from callback context — PubSubClient shares one buffer for send/recv, mid-receive publishes corrupt the parser; bench-confirmed). `mqtt_applyCmdFlags()` runs in the safe loop context and OR's the flags into `isCycleStartPressed` / `isManualDrainPressed` so state handlers act on them through their existing button code paths. `cmd/start` works in STARTUP_READY (begin cycle) and FINISHED (next keg); `cmd/silence` works in ERROR/FINISHED (silence alarm); `cmd/reset` works only in ERROR (clear errorCode + transition to STARTUP). All commands refused if ESTOP is active. `cmd/keg_size` deferred — needs a remote-override mechanism since `isLargeKeg` is overwritten by `hardware_readInputs()` every tick.
 - [x] **Heartbeat + free-RAM publish** — `kegwasher/heartbeat/{uptime_s, free_ram, loop_max_us}` published every 5 s, all retained. `loop_max_us` is per-tick max accumulator, **reset to 0 after each publish** so each window's reading is independent (otherwise a single boot-time display spike would dominate forever). Bench-validated: ~300 µs in STARTUP_READY, ~135 KB free of 192 KB total.
-- [x] **Node-RED dashboard on CheapBourbon** — *done; synced to the PackML model 2026-06-10.* Running on `.111:1880/ui` (flows exported to `nodered/`). State badge (machineState + IDLE sub), recipe phase, panel-screen id, mm:ss timers, caustic temp, sensor LED grid, heartbeat. **Monitor + alert only** — command buttons removed 2026-06-10 (all control happens at the machine); the old pre-PackML "screen mirror" removed (a graphical panel replica via the retained `kegwasher/screen` topic comes after the screen redesign).
+- [x] **Node-RED dashboard on CheapBourbon** — *done; synced to the PackML model 2026-06-10.* Running on `.111:1880/ui` (flows exported to `nodered/`). State badge (machineState + IDLE sub), recipe phase, panel-screen id, mm:ss timers, caustic temp, sensor LED grid, heartbeat. **Monitor + alert only** — command buttons removed 2026-06-10 (all control happens at the machine); the old pre-PackML "screen mirror" removed. The screen redesign has since landed (2026-06-10), so a graphical panel replica via the retained `kegwasher/screen` topic is now unblocked — if still wanted.
 - [x] **Light alerting** — *done 2026-06-10.* Node-RED flow: `kegwasher/state` in `ABORTED` >5 min → ALERT row + red toast every minute until recovery (60 s re-check tick, since firmware publishes are change-detected). Email/SMS escalation still later.
 
 ## Phase 0.5 — SD-card configurator app
@@ -87,7 +100,7 @@ Items that don't block first wet test but should land before a customer ever see
 
 - [ ] **Per-state display pages refactor** ([`reliability-todo.md` P0](docs/reliability-todo.md)) — replace the every-handler-writes-the-screen pattern with a pending-render queue. Dedicated layouts per state (heating ETA bar, mm:ss countdown grid, FINISHED banner, error code + recovery hint).
 - [ ] **Button + indicator refinement** — *deferred by the user until the functions are all figured out (2026-06-08).* Minor changes to the physical buttons/indicators (IO1 START, IO2 DRAIN/ACK, IO4 RED fault, IO5 GREEN ready) and the on-screen controls (START / PAUSE-RESUME / RESTART / STOP-DRAIN / SETTINGS) — behavior, when each lights (solid vs flash), color, label, position. Specifics TBD. Bench-verified so far: START registers + the green ready indicator lights in the right states.
-- [ ] **Screen UX overhaul** — once the cleaner is functionally complete (Phases 0-2 done), revisit display content for operator clarity. Things to consider: bigger fonts for the most-glanced values (mm:ss countdown, current state badge), prioritise what's on each screen by what the operator needs at that moment vs. what's nice-to-have, lose information that duplicates the dashboard, add at-a-glance status icons (heater on, valve states), use color more deliberately (red for FAIL, green for OK, etc.), maybe a dedicated "summary" screen for FINISHED with cycle time + peak temps. The current layout/footer-icon precedent lives in the code (`KegDisplaySerial` / `KegDisplay`) + the CLAUDE.md "Display" section.
+- [ ] **Screen UX overhaul — residual items** — *mostly landed early via the design-C redesign (2026-06-10):* bigger fonts for glanced values, per-state layouts, deliberate color, primary/secondary buttons, live sensor dots are all done. Still open (revisit once Phases 0-2 are done): a dedicated **FINISHED summary screen** with cycle time + peak temps (the current COMPLETE screen is just "KEGS DONE - SWAP"), at-a-glance actuator icons (heater on, valve states), and a pass to drop on-panel info that duplicates the dashboard.
 - [ ] **Power-fail recovery** ([`reliability-todo.md` P2](docs/reliability-todo.md)) — persist `currentState`, `errorCode`, and stage elapsed time to NVM on each state transition. On boot, prompt the operator to resume or abort if the previous cycle was interrupted.
 - [ ] **Config checksum + EEPROM/NVM backup** ([`reliability-todo.md` P3](docs/reliability-todo.md)) — CRC on `washer.config`; if the SD copy is corrupt, fall back to the NVM-saved copy instead of compiled defaults.
 - [ ] **State history ring buffer** ([`reliability-todo.md` P4](docs/reliability-todo.md)) — last N state changes with millis timestamps; published to `kegwasher/history` on demand (subscribe-triggered) for post-incident analysis. Off-device historical trends are a separate deferred item (see Phase 4).
@@ -136,6 +149,10 @@ Operator-facing materials. Distinct from the developer docs in `docs/`; these sh
 
 ## Recently done (last ~2 weeks)
 
+- ✅ **Design-C screen redesign** — DejaVu typography w/ self-measuring font metrics, pixel grid, primary/secondary buttons, live READY sensor dots, STOPPING countdown, alternating pause lamps, FONT_4 subtitles; plus settings page 2 (pause max, process temps), INFO page, retained `kegwasher/screen` topic. Three polish rounds, bench-verified.
+- ✅ **Runtime bench mode** — SD-card presence at boot decides bench vs production; `#define BENCH_MODE` removed; LEVEL readiness row added (caustic level is part of `allSystemsGo`).
+- ✅ **A12 caustic level fix** — it's an NC float switch; read digital, not analog.
+- ✅ **Node-RED dashboard synced to PackML** — monitor-only (command buttons removed), ABORTED >5 min alerting.
 - ✅ **PackML / ISA-88 re-architecture** — split the monolithic `currentState` into `machineState` (PackML) × `recipePhase` (ISA-88); IDLE sub-states; HELD = Hold/Unhold; abort/recover. ESTOP-tested, merged to main.
 - ✅ **10-stage cycle + chem recovery** — full `DIRTY_DRAIN…PRESSURE` with caustic/sani blown back to reservoirs (never to drain); per-state safety monitors + entry preconditions (bench-gated).
 - ✅ **Operator flow + cycle controls** — one-press-per-keg with a one-time power-up pre-check; PAUSE/RESUME, RESTART (re-run stage), STOP-DRAIN (evacuate → HALTED); on-screen + MQTT command surface.
