@@ -21,7 +21,7 @@
 | 3 | HELD | `HELD` | wait | none (phase outputs cleared on entry; timer frozen) | `pauseMaxMs` ‡ | EXECUTE (RESUME/RESTART) |
 | 4 | COMPLETE | `COMPLETE` | wait | **none** — no alarm; blue "SWAP KEG" banner on-screen | none | EXECUTE (START=next keg) · IDLE (DRAIN=park) |
 | 5 | STOPPING | `STOPPING` | acting | evac outputs per `evacKind` | 2 min | STOPPED |
-| 6 | STOPPED | `STOPPED` | wait | none (de-energized, **silent** — alarm forced off) | none | IDLE (START=Reset) |
+| 6 | STOPPED | *(momentary)* | acting | none (de-energized, **silent** — alarm forced off) | none | IDLE (**auto-Reset**, 2026-06-12 — the GET READY ack screen is gone; IDLE_READY's START is the only arming step) |
 | 7 | CLEARING | `CLEARING` | acting | none | none | STOPPED *(defined; see Recovery — currently unreached)* |
 | 8 | ABORTED | `ABORTED` | wait | alarm / IO4 red stacklight (3-state, see Recovery) | none | HELD or IDLE via `abortRecover()` |
 
@@ -85,7 +85,7 @@ overtemp is no longer monitored — the fan self-regulates off-controller.) See
 | ID | `IDLE_*` | Description | Exit |
 |----|----------|-------------|------|
 | 0 | INIT | one-shot: clears `errorCode`, branches on the init latch | → READY if `washerInitialized`, else → NOT_READY |
-| 1 | NOT_READY | unified readiness screen; shows which of water/air/CO₂/estop are offline (amber title, no START) | `hardware_allSystemsGo()` → READY (sets `washerInitialized`) |
+| 1 | NOT_READY | unified readiness screen; shows which of water/air/estop/level are offline (amber title, no START; the PRES dot is informational — keg pressure never gates readiness) | `hardware_allSystemsGo()` → READY (sets `washerInitialized`) |
 | 2 | READY | same screen, all-OK: green title + START button | START → EXECUTE (bench / hot) or STARTING (cold, non-bench); a system dropping out → NOT_READY |
 | 3 | SETTINGS | on-screen settings editor | *not yet wired — Phase 5* |
 
@@ -179,7 +179,7 @@ Codes 0–16 (`KegConfig.h`); full I/O mapping in `io-table.md`, PackML view in
      │                              │                          STOPPING
      │   ┌── recipe (Axis B) ───────┘                              │ evac done
      │   │  DIRTY_DRAIN→DIRTY_RINSE→DIRTY_PURGE→WASHING→           ▼
-     │   │  CAUSTIC_RTN→RINSING→RINSE_PURGE→SANITIZE→          STOPPED ─START─► IDLE
+     │   │  CAUSTIC_RTN→RINSING→RINSE_PURGE→SANITIZE→          STOPPED ─auto──► IDLE
      │   │  SANI_RTN→PRESSURE                                  (silent)
      │   └────────────────────────► COMPLETE ──START──► EXECUTE (next keg)
      └────────────────────────────────  │
