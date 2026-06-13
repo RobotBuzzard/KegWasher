@@ -495,10 +495,17 @@ void stateMachine_setPause(bool wantPaused) {
     diagnostics_logEvent("Cycle paused (HELD)");
   } else {
     if (machineState != MACH_HELD) return;
+    // Re-read the latching DRAIN switch on resume. Unlike the keg-size selector
+    // (which scales the whole cycle and stays latched), DRAIN is a deliberate
+    // mode toggle affecting only DIRTY_DRAIN; an operator who flips it while
+    // paused expects the resumed cycle to honor it. No-op once DIRTY_DRAIN has
+    // passed (nothing else reads drainModeLatched).
+    drainModeLatched = isFullDrainOn;
     machineState = MACH_EXECUTE;
     timers_shiftStateStart(millis() - pauseStartMs);  // don't count paused time
     diagnostics_logEvent("Cycle resumed");
     if (!enterPhase(recipePhase)) return;  // re-assert; may abort if a resource dropped
+    display_showOperatingScreen();   // refresh subtitle/countdown for the (maybe new) mode
   }
 }
 
@@ -550,7 +557,9 @@ void stateMachine_restart() {
   } else if (machineState != MACH_EXECUTE) {
     return;
   }
+  drainModeLatched = isFullDrainOn;  // re-read the latching DRAIN switch on an explicit restart
   timers_resetStateTimer();          // back to the beginning of this phase's timer
+  display_showOperatingScreen();     // timer jumped to full; refresh subtitle/countdown too
   diagnostics_logEvent("Phase restarted");
 }
 
