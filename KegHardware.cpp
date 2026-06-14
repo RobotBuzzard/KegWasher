@@ -234,7 +234,14 @@ byte hardware_getOutputBits() { return g_outBits; }
 // causticHeaterOut is a safety PERMIT in series with it (+ the hardware E-stop
 // chain). Asserted whenever heat is *allowed*; the probe decides when to heat —
 // this is what keeps the tank always hot between kegs and across IDLE/COMPLETE.
-// Overtemp re-permits 2 °C below the cutoff so the permit can't chatter.
+// CRITICAL: for the level/E-stop/sensor interlocks below to actually cut heat,
+// causticHeaterOut (its SSR/relay) MUST sit in series in the contactor-coil
+// circuit — the ETS50N only knows temperature, not reservoir level, so without
+// this permit a low/empty tank would dry-fire the element.
+// Layer 1 of the overtemp protection: drop the permit at maxCausticTemp,
+// re-arming 2 °C below so it can't chatter. Layer 2 (monitorHeaterExt in the
+// state machine) raises ERR_HEATER_OVERTEMP + aborts, since hitting this backstop
+// means the external thermostat failed to regulate at its lower setpoint.
 void hardware_manageHeaterPermit() {
   if (!heaterExternal) return;
   static bool overLatch = false;

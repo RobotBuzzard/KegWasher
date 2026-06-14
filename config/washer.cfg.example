@@ -31,8 +31,12 @@ rinsePurgeTimer=10000      # air-blow the rinse water out (to drain)
 # Heater control mode (SD-only — not panel-editable):
 #   fw  = firmware bang-bang during STARTING (direct contactor wiring; default)
 #   ext = ETS50N PNP thermostat regulates the tank (always-hot); the ClearCore
-#         output is a safety PERMIT in series with it. ONLY set ext once the
-#         probe->contactor chain is physically wired!
+#         output is a safety PERMIT that MUST be wired in series in the
+#         contactor-coil circuit (with the E-stop chain). ONLY set ext once that
+#         chain is physically wired! Set the ETS50N switch point below
+#         maxCausticTemp with margin (e.g. SP 60 / RSP 57 vs backstop 70) — the
+#         ClearCore faults (ERR_HEATER_OVERTEMP) if temp reaches maxCausticTemp,
+#         which means the thermostat failed to regulate.
 heaterMode=fw
 
 # Full-keg drain: DIRTY_DRAIN runs this long INSTEAD of dirtyDrainTimer while

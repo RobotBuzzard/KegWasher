@@ -237,9 +237,28 @@ static void monitorActiveResources() {
   }
 }
 
+// ext heater mode: the ClearCore independently watches caustic temp (4-20 mA on
+// A10) as a backstop on the external ETS50N thermostat. The permit logic
+// (hardware_manageHeaterPermit) already drops the heat-permit at maxCausticTemp
+// every tick — but reaching that backstop means the thermostat FAILED to
+// regulate at its (lower) setpoint, so surface it as a loud fault rather than
+// silently riding the backstop. Runs in ALL states because the tank is kept hot
+// continuously in ext mode (IDLE/COMPLETE included), not just during a cycle.
+static void monitorHeaterExt() {
+  if (!heaterExternal) return;
+  if (machineState == MACH_ABORTED) return;   // already faulted
+  if (causticTempSensorError) return;          // sensor fault is its own path
+  if (hardware_getCausticTemp() >= maxCausticTemp) {
+    errorCode = ERR_HEATER_OVERTEMP;
+    display_showError(diagnostics_getErrorMessage(ERR_HEATER_OVERTEMP));
+    stateMachine_abort();
+  }
+}
+
 void stateMachine_process() {
   checkStateTimeout();
   monitorActiveResources();   // no-op unless EXECUTE
+  monitorHeaterExt();         // no-op unless heaterMode=ext
 
   switch (machineState) {
     case MACH_IDLE:     state_idle();     break;
@@ -739,6 +758,15 @@ static void state_starting() {
     if (!isCausticLevelOk) {
       errorCode = ERR_CAUSTIC_LEVEL;
       display_showError(diagnostics_getErrorMessage(ERR_CAUSTIC_LEVEL));
+      stateMachine_abort();
+      return;
+    }
+    // No firmware-driven burn here (the thermostat owns it), so monitorHeating's
+    // MAX_HEATING_TIME cap doesn't apply — bound the wait ourselves. Never
+    // reaching the wash floor = thermostat set too low / element dead / mis-wired.
+    if (timers_getStateElapsed() > MAX_HEATING_TIME) {
+      errorCode = ERR_HEATING_TIMEOUT;
+      display_showError(diagnostics_getErrorMessage(ERR_HEATING_TIMEOUT));
       stateMachine_abort();
       return;
     }
