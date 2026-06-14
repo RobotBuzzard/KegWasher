@@ -231,13 +231,18 @@ byte hardware_getOutputBits() { return g_outBits; }
 
 // External-thermostat heater mode (heaterMode=ext): the ETS50N's PNP switch
 // output regulates the tank (two-point SP/RSP set on the probe) and
-// causticHeaterOut is a safety PERMIT in series with it (+ the hardware E-stop
-// chain). Asserted whenever heat is *allowed*; the probe decides when to heat —
-// this is what keeps the tank always hot between kegs and across IDLE/COMPLETE.
-// CRITICAL: for the level/E-stop/sensor interlocks below to actually cut heat,
-// causticHeaterOut (its SSR/relay) MUST sit in series in the contactor-coil
-// circuit — the ETS50N only knows temperature, not reservoir level, so without
-// this permit a low/empty tank would dry-fire the element.
+// causticHeaterOut is a safety PERMIT in series with it in the heater
+// contactor-coil circuit. Asserted whenever heat is *allowed*; the probe decides
+// when to heat — this keeps the tank always hot between kegs and across
+// IDLE/COMPLETE.
+// CRITICAL: for the level/sensor interlocks below to actually cut heat,
+// causticHeaterOut (its SSR/relay) MUST sit in series in the coil circuit — the
+// ETS50N only knows temperature, not reservoir level, so without this permit a
+// low/empty tank would dry-fire the element. E-stop cuts heat separately, by
+// de-powering the whole coil-circuit feed via an E-stop-relay power contact —
+// NOT by routing the cycling coil through the DI8 NC sensing loop (that would
+// read every heater off-cycle as an E-stop trip). This permit's E-stop drop is
+// the redundant software path.
 // Layer 1 of the overtemp protection: drop the permit at maxCausticTemp,
 // re-arming 2 °C below so it can't chatter. Layer 2 (monitorHeaterExt in the
 // state machine) raises ERR_HEATER_OVERTEMP + aborts, since hitting this backstop
