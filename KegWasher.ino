@@ -333,6 +333,48 @@ static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
   // operator side, not via firmware logs.
 }
 
+// Apply one remote KEY=VALUE config edit — shared by MQTT cmd/cfgset and the
+// embedded web editor (/set). Writes the human-readable outcome into ack
+// ("OK key=value" or "ERR <reason>") and logs it. Rules documented on
+// mqtt_handleCfgSet below.
+static void kw_remoteCfgApply(const char* kvline, char* ack, size_t ackLen) {
+  char line[KEY_MAX_LENGTH + VALUE_MAX_LENGTH + 2];
+  snprintf(line, sizeof(line), "%s", kvline);
+  char key[KEY_MAX_LENGTH] = {0};
+  char value[VALUE_MAX_LENGTH] = {0};
+
+  if (!utils_parseConfigLine(line, key, value)) {
+    snprintf(ack, ackLen, "ERR not KEY=VALUE: %.60s", kvline);
+  } else if (machineState != MACH_IDLE && machineState != MACH_COMPLETE &&
+             machineState != MACH_ABORTED) {
+    snprintf(ack, ackLen, "ERR busy (%s): %s", machStateNames[machineState], key);
+  } else if (strncmp(key, "mqtt", 4) == 0) {
+    snprintf(ack, ackLen, "ERR mqtt* keys are not remote-settable: %s", key);
+  } else {
+    int oldMin = minCausticTemp, oldOpt = optimalCausticTemp, oldMax = maxCausticTemp;
+    byte r = config_applyKV(key, value);
+    if (r == KW_CFG_APPLIED && !config_tempsOrdered()) {
+      minCausticTemp = oldMin; optimalCausticTemp = oldOpt; maxCausticTemp = oldMax;
+      snprintf(ack, ackLen, "ERR temps must be floor<=target<cutoff: %s=%s", key, value);
+    } else if (r == KW_CFG_APPLIED) {
+      if (cfgLoadedFromSD) {
+        config_saveToSD();
+        snprintf(ack, ackLen, "OK %s=%s", key, value);
+      } else {
+        snprintf(ack, ackLen, "OK %s=%s (RAM only - no SD)", key, value);
+      }
+      mqtt_publishConfig();   // refresh the retained cfg/* mirror
+    } else if (r == KW_CFG_UNKNOWN) {
+      snprintf(ack, ackLen, "ERR unknown key: %s", key);
+    } else {
+      snprintf(ack, ackLen, "ERR out of range: %s=%s", key, value);
+    }
+  }
+  char logbuf[110];
+  snprintf(logbuf, sizeof(logbuf), "Cfgset %s", ack);
+  diagnostics_logEvent(logbuf);
+}
+
 // Process a pending cmd/cfgset (KEY=VALUE) in safe loop context. Every outcome
 // is answered on kegwasher/cfg/ack (non-retained): "OK key=value" or
 // "ERR <reason>". Rules:
@@ -352,40 +394,8 @@ static void mqtt_handleCfgSet() {
   kwMqttCmdCfgSet = false;
 
   char ack[96];
-  char key[KEY_MAX_LENGTH] = {0};
-  char value[VALUE_MAX_LENGTH] = {0};
-
-  if (!utils_parseConfigLine(line, key, value)) {
-    snprintf(ack, sizeof(ack), "ERR not KEY=VALUE: %.60s", line);
-  } else if (machineState != MACH_IDLE && machineState != MACH_COMPLETE &&
-             machineState != MACH_ABORTED) {
-    snprintf(ack, sizeof(ack), "ERR busy (%s): %s", machStateNames[machineState], key);
-  } else if (strncmp(key, "mqtt", 4) == 0) {
-    snprintf(ack, sizeof(ack), "ERR mqtt* keys are not remote-settable: %s", key);
-  } else {
-    int oldMin = minCausticTemp, oldOpt = optimalCausticTemp, oldMax = maxCausticTemp;
-    byte r = config_applyKV(key, value);
-    if (r == KW_CFG_APPLIED && !config_tempsOrdered()) {
-      minCausticTemp = oldMin; optimalCausticTemp = oldOpt; maxCausticTemp = oldMax;
-      snprintf(ack, sizeof(ack), "ERR temps must be floor<=target<cutoff: %s=%s", key, value);
-    } else if (r == KW_CFG_APPLIED) {
-      if (cfgLoadedFromSD) {
-        config_saveToSD();
-        snprintf(ack, sizeof(ack), "OK %s=%s", key, value);
-      } else {
-        snprintf(ack, sizeof(ack), "OK %s=%s (RAM only - no SD)", key, value);
-      }
-      mqtt_publishConfig();   // refresh the retained cfg/* mirror
-    } else if (r == KW_CFG_UNKNOWN) {
-      snprintf(ack, sizeof(ack), "ERR unknown key: %s", key);
-    } else {
-      snprintf(ack, sizeof(ack), "ERR out of range: %s=%s", key, value);
-    }
-  }
+  kw_remoteCfgApply(line, ack, sizeof(ack));
   kwMqtt.publish(kwTopic("cfg/ack"), ack, false);
-  char logbuf[110];
-  snprintf(logbuf, sizeof(logbuf), "Cfgset %s", ack);
-  diagnostics_logEvent(logbuf);
 }
 
 // Drain the MQTT command flags into the button-pressed flags. Must run
@@ -773,6 +783,249 @@ static void mqtt_publishHeartbeat() {
   kwMqtt.publish(kwTopic("heartbeat/loop_max_us"), buf, true);
 }
 
+// ---------------------------------------------------------------------
+// Embedded web config editor — http://<machine-ip>/
+// ---------------------------------------------------------------------
+// Browser-facing counterpart of the MQTT editor. Three routes, all GET:
+//   /          the single-page editor (served from flash)
+//   /cfg.json  live config + _state/_temp/_fw meta (what the page renders)
+//   /set?K=V   one edit through kw_remoteCfgApply — the SAME gates and
+//              validation as cmd/cfgset; the ack text is the response body
+// Handling is bounded (~one request per loop tick, 250 ms read budget) so it
+// can't starve the state machine or the watchdog. No auth — LAN-trust, same
+// as the rest of the shop network; the busy/mqtt* gates still apply.
+static EthernetServer kwHttpServer(80);
+static bool kwHttpUp = false;
+
+static const char KW_HTTP_PAGE[] =
+R"html(<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KegWasher Config</title><style>
+body{font-family:system-ui,sans-serif;background:#141414;color:#eee;margin:0 auto;padding:16px;max-width:680px}
+h1{font-size:1.15em}#st{color:#8f8;font-weight:normal}
+table{width:100%;border-collapse:collapse}
+td{padding:5px 6px;border-bottom:1px solid #303030;vertical-align:middle}
+td.k{font-family:monospace;white-space:nowrap}
+td.h{color:#999;font-size:.78em}
+input{width:96px;background:#222;color:#eee;border:1px solid #555;padding:4px;border-radius:3px}
+button{background:#2a7d4f;border:0;color:#fff;padding:5px 12px;border-radius:3px;cursor:pointer}
+#msg{padding:10px 2px;font-family:monospace;white-space:pre-wrap;min-height:1.2em}
+.ok{color:#8f8}.err{color:#f88}
+</style></head><body>
+<h1>KegWasher <span id="st">connecting&hellip;</span></h1>
+<div id="msg"></div>
+<table id="t"></table>
+<script>
+const H={dirtyDrainTimer:"ms &middot; air-push old beer out (whole stage)",
+dirtyRinseTimer:"ms &middot; initial water rinse",
+dirtyPurgeTimer:"ms &middot; air-blow rinse water out",
+washTimer:"ms &middot; caustic recirc (the main clean)",
+causticRtnTimer:"ms &middot; blow caustic back to reservoir",
+rinseTimer:"ms &middot; post-caustic rinse",
+rinsePurgeTimer:"ms &middot; air-blow rinse out",
+saniTimer:"ms &middot; sanitizer recirc",
+saniRtnTimer:"ms &middot; CO2-blow sani back to reservoir",
+purgeTimer:"ms &middot; CO2 charge fail timeout",
+fullDrainTimer:"ms &middot; DIRTY_DRAIN with DRAIN switch latched",
+largeKegMod:"&times; &middot; large-keg multiplier",
+pauseMaxMs:"ms &middot; max PAUSED before abort",
+minCausticTemp:"&deg;C &middot; wash floor &rarr; LOW TEMP banner (warn-only)",
+optimalCausticTemp:"&deg;C &middot; fw-mode heat target",
+maxCausticTemp:"&deg;C &middot; overtemp cutoff",
+heaterMode:"fw | ext (ext = ETS50N thermostat + permit chain)",
+maxHeatingMs:"ms &middot; STARTING gives up after this",
+minHeatingRate:"&deg;C/min &middot; healthy fw-mode heating",
+etsShuntOhms:"&Omega; &middot; measured 4-20mA shunt",
+tempCalOffsetC10:"0.1&deg;C &middot; probe trim"};
+const st=document.getElementById("st"),msg=document.getElementById("msg");
+async function load(full){
+ const j=await (await fetch("/cfg.json")).json();
+ st.textContent=j._state+" · "+j._temp+"°C · v"+j._fw;
+ if(!full)return;
+ const t=document.getElementById("t");t.innerHTML="";
+ for(const k in j){if(k[0]=="_")continue;
+  const r=t.insertRow();
+  r.innerHTML="<td class=k>"+k+"</td><td><input id=\"i_"+k+"\" value=\""+j[k]+"\"></td>"+
+   "<td><button onclick=\"setk('"+k+"')\">set</button></td><td class=h>"+(H[k]||"")+"</td>";}
+}
+async function setk(k){
+ const v=document.getElementById("i_"+k).value.trim();
+ const r=await fetch("/set?"+k+"="+encodeURIComponent(v));
+ const x=await r.text();
+ msg.textContent=x;msg.className=x.startsWith("OK")?"ok":"err";
+ if(x.startsWith("OK"))load(true);}
+load(true);
+setInterval(()=>load(false).catch(()=>{st.textContent="offline?"}),5000);
+</script></body></html>
+)html";
+
+// Build /cfg.json — same key set as the MQTT cfg/* mirror plus _meta fields.
+static char kwHttpJson[1600];
+static size_t kwHttpJsonLen;
+static void httpJsonKV(const char* k, const char* v) {
+  kwHttpJsonLen += snprintf(kwHttpJson + kwHttpJsonLen,
+                            sizeof(kwHttpJson) - kwHttpJsonLen,
+                            "%s\"%s\":\"%s\"", kwHttpJsonLen > 1 ? "," : "", k, v);
+}
+static void httpJsonUL(const char* k, unsigned long v) {
+  char b[16]; snprintf(b, sizeof(b), "%lu", v); httpJsonKV(k, b);
+}
+static void httpJsonInt(const char* k, int v) {
+  char b[16]; snprintf(b, sizeof(b), "%d", v); httpJsonKV(k, b);
+}
+static void http_buildCfgJson() {
+  kwHttpJson[0] = '{'; kwHttpJson[1] = '\0'; kwHttpJsonLen = 1;
+  httpJsonKV("_state", machStateNames[machineState]);
+  httpJsonInt("_temp", hardware_getCausticTemp());
+  httpJsonKV("_fw", KW_FIRMWARE_VERSION);
+  httpJsonUL("dirtyDrainTimer", dirtyDrainTimer);
+  httpJsonUL("dirtyRinseTimer", dirtyRinseTimer);
+  httpJsonUL("dirtyPurgeTimer", dirtyPurgeTimer);
+  httpJsonUL("washTimer",       washTimer);
+  httpJsonUL("causticRtnTimer", causticRtnTimer);
+  httpJsonUL("rinseTimer",      rinseTimer);
+  httpJsonUL("rinsePurgeTimer", rinsePurgeTimer);
+  httpJsonUL("saniTimer",       saniTimer);
+  httpJsonUL("saniRtnTimer",    saniRtnTimer);
+  httpJsonUL("purgeTimer",      purgeTimer);
+  httpJsonUL("fullDrainTimer",  fullDrainTimer);
+  char b[16];
+  snprintf(b, sizeof(b), "%.2f", largeKegMod);
+  httpJsonKV("largeKegMod", b);
+  httpJsonUL("pauseMaxMs", pauseMaxMs);
+  httpJsonInt("minCausticTemp",     minCausticTemp);
+  httpJsonInt("optimalCausticTemp", optimalCausticTemp);
+  httpJsonInt("maxCausticTemp",     maxCausticTemp);
+  httpJsonKV("heaterMode", heaterExternal ? "ext" : "fw");
+  httpJsonUL("maxHeatingMs", maxHeatingMs);
+  httpJsonInt("minHeatingRate", minHeatingRate);
+  snprintf(b, sizeof(b), "%.1f", (double)etsShuntOhms);
+  httpJsonKV("etsShuntOhms", b);
+  httpJsonInt("tempCalOffsetC10", tempCalOffsetC10);
+  if (cfgTouchCalValid) {
+    for (int i = 0; i < 6; i++) {
+      char k[12];
+      snprintf(k, sizeof(k), "touchCal%c", 'A' + i);
+      snprintf(b, sizeof(b), "%.6f", (double)cfgTouchCal[i]);
+      httpJsonKV(k, b);
+    }
+  }
+  kwHttpJsonLen += snprintf(kwHttpJson + kwHttpJsonLen,
+                            sizeof(kwHttpJson) - kwHttpJsonLen, "}");
+}
+
+// Write the whole body in send-buffer-friendly chunks. ClearCore's lwIP is
+// small (TCP_SND_BUF 2.9 KB on a 4 KB heap): one oversized write stalls the
+// connection mid-body and wedges the listener (bench-bitten 2026-07-04 —
+// serving the 4.5 KB page froze port 80 while MQTT stayed up). Pump the stack
+// (Ethernet.maintain → EthernetMgr.Refresh) so ACKs drain the queue and
+// sndbuf recovers between chunks; bounded 3 s total, well under the 8 s WDT.
+static void httpWriteAll(EthernetClient& c, const char* s, size_t len) {
+  const size_t CHUNK = 1024;
+  size_t off = 0;
+  // Bail after 300 ms without a single byte accepted: sndbuf that never
+  // recovers means the peer stalled or vanished mid-response (e.g. a browser
+  // tab closed). A fixed overall budget instead of this stalled the whole
+  // loop ~6 s per dead peer — most of the 8 s watchdog (bench 2026-07-04).
+  unsigned long lastProgress = millis();
+  while (off < len && millis() - lastProgress < 300) {
+    size_t want = len - off;
+    if (want > CHUNK) want = CHUNK;
+    size_t n = c.write((const uint8_t*)s + off, want);
+    if (n > 0) { off += n; lastProgress = millis(); }
+    else { Ethernet.maintain(); delay(2); }   // sndbuf full — pump ACKs
+  }
+  // Give the tail segments a moment to transmit (stack pumps).
+  unsigned long t1 = millis();
+  while (millis() - t1 < 30) { Ethernet.maintain(); delay(1); }
+}
+
+static void httpRespond(EthernetClient& c, const char* status,
+                        const char* ctype, const char* body, size_t bodyLen) {
+  char hdr[160];
+  int n = snprintf(hdr, sizeof(hdr),
+                   "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %u\r\n"
+                   "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+                   status, ctype, (unsigned)bodyLen);
+  httpWriteAll(c, hdr, (size_t)n);
+  httpWriteAll(c, body, bodyLen);
+}
+
+// One request per call, bounded. CRITICAL: drain the ENTIRE request (through
+// the blank line ending the headers) before responding — the ClearCore TCP
+// stack keeps a client slot alive while unread bytes remain, and available()
+// returns any slot with bytes, so leftover headers from request N get served
+// as "request" N+1 and every response shifts by one (bench-bitten 2026-07-04).
+// Do not gate reads on connection state: curl half-closes after sending, and
+// native Connected() is false in CLOSE_WAIT while the buffer still holds the
+// request.
+static void http_process() {
+  if (!kwHttpUp) return;
+  EthernetClient c = kwHttpServer.available();
+  if (!c) return;
+  kwHttpClients++;
+
+  // Drain everything the client sent: store the first request line, discard
+  // the rest, stop at the header-terminating blank line (or 30 ms idle /
+  // 400 ms total — covers multi-segment browser requests; available()
+  // internally refreshes the stack so new segments surface mid-loop).
+  char req[160];
+  size_t n = 0;
+  bool firstLineDone = false, endOfHeaders = false;
+  uint32_t tail = 0;   // rolling last-4-bytes window ("\r\n\r\n" detector)
+  unsigned long t0 = millis(), lastByteMs = millis();
+  while (!endOfHeaders && millis() - t0 < 400) {
+    int avail = c.available();
+    if (avail <= 0) {
+      if (millis() - lastByteMs > 30) break;   // sender done (or stale slot drained)
+      continue;
+    }
+    while (avail-- > 0 && !endOfHeaders) {
+      int ch = c.read();
+      if (ch < 0) break;
+      lastByteMs = millis();
+      tail = (tail << 8) | (uint8_t)ch;
+      if (tail == 0x0D0A0D0AUL) endOfHeaders = true;          // \r\n\r\n
+      if (!firstLineDone) {
+        if (ch == '\n') firstLineDone = true;
+        else if (ch != '\r' && n < sizeof(req) - 1) req[n++] = (char)ch;
+      }
+    }
+  }
+  req[n] = '\0';
+
+  // "GET /path HTTP/1.1" → isolate /path. Anything else (stale-slot garbage,
+  // non-GET methods) is dropped without a response — there is nobody to answer.
+  char* path = nullptr;
+  if (strncmp(req, "GET ", 4) == 0) {
+    path = req + 4;
+    char* sp = strchr(path, ' ');
+    if (sp) *sp = '\0';
+  }
+
+  if (!path) {
+    // drained + dropped
+  } else if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
+    httpRespond(c, "200 OK", "text/html", KW_HTTP_PAGE, strlen(KW_HTTP_PAGE));
+  } else if (strcmp(path, "/cfg.json") == 0) {
+    http_buildCfgJson();
+    httpRespond(c, "200 OK", "application/json", kwHttpJson, kwHttpJsonLen);
+  } else if (strncmp(path, "/set?", 5) == 0 && path[5]) {
+    char ack[96];
+    kw_remoteCfgApply(path + 5, ack, sizeof(ack));   // query IS the KEY=VALUE
+    httpRespond(c, ack[0] == 'O' ? "200 OK" : "409 Conflict",
+                "text/plain", ack, strlen(ack));
+  } else {
+    httpRespond(c, "404 Not Found", "text/plain", "not found\n", 10);
+  }
+  // Deliberately NO c.stop(): EthernetClient::stop() frees the TcpData that
+  // the server's slot table still references (use-after-free + double-free in
+  // Available()'s cleanup — the alternating-hang bug, bench-bitten 2026-07-04).
+  // We answered with Connection: close; the peer's FIN drives TcpClose in the
+  // stack, and Available()'s scan then frees the drained slot exactly once.
+  kwHttpClients--;
+}
+
 // How long to wait for the cable link to come up before giving up and
 // continuing in offline-degraded mode. Generous because the rest of setup
 // runs before the watchdog is armed.
@@ -809,6 +1062,11 @@ static void setupEthernet() {
     snprintf(buf, sizeof(buf), "Ethernet: IP=%u.%u.%u.%u",
              kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
     diagnostics_logEvent(buf);
+
+    // Web config editor at http://<ip>/ (see the HTTP section above).
+    kwHttpServer.begin();
+    kwHttpUp = true;
+    diagnostics_logEvent("Web config editor up (port 80)");
 
     // Bring up the MQTT log mirror. From here on, every
     // diagnostics_logEvent call also publishes to the broker.
@@ -1037,6 +1295,10 @@ void loop() {
   if (kwEthernetReady) {
     Ethernet.maintain();
   }
+
+  // Web config editor: at most one bounded request per tick (no-op when
+  // nobody is connected).
+  http_process();
 
   // Drive MQTT keepalive + retry. Non-blocking when broker is up;
   // throttled to MQTT_RETRY_INTERVAL_MS when down.
