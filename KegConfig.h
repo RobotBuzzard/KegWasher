@@ -258,6 +258,15 @@ extern char mqttTopicRoot[32];
 extern char webUser[24];
 extern char webPass[24];
 
+// Network (SD keys netMode/netIp/netMask/netGw). Applied at BOOT ONLY —
+// remote edits need a power cycle. static requires a valid netIp or the boot
+// falls back to DHCP (logged). Unset mask → 255.255.255.0; unset gw → .1.
+extern bool netStaticMode;
+extern char netIp[16];
+extern char netMask[16];
+extern char netGw[16];
+bool config_parseIp(const char* s, uint8_t out[4]);
+
 // ---------- API ----------
 // NOTE: config_init() must be called AFTER display_init() so failure
 // messages have somewhere to render.

@@ -120,6 +120,12 @@ static void mqtt_publishConfig() {
   mqtt_cfgPubStr("etsShuntOhms", b);
   mqtt_cfgPubStr("heaterMode", heaterExternal ? "ext" : "fw");
   mqtt_cfgPubStr("benchMode", kwBenchMode ? "on" : "off");
+  mqtt_cfgPubStr("netMode", netStaticMode ? "static" : "dhcp");
+  // Address fields only when set — an empty retained payload deletes the
+  // topic (same rule as kegwasher/outputs), which is the correct "unset".
+  if (netIp[0])   mqtt_cfgPubStr("netIp",   netIp);
+  if (netMask[0]) mqtt_cfgPubStr("netMask", netMask);
+  if (netGw[0])   mqtt_cfgPubStr("netGw",   netGw);
   if (cfgTouchCalValid) {
     for (int i = 0; i < 6; i++) {
       char k[12];
@@ -858,6 +864,10 @@ button:active{background:#1d5c35}
 <table id="t"></table>
 <div id="msg"></div>
 <script>
+// NOTE (firmware side): everything in this <script> lives inside a C++ raw
+// string. Arduino's ctags prototype generator does NOT understand raw strings
+// — a top-level `function name(...)` here becomes a bogus C++ prototype and
+// breaks the build (bitten 2026-07-04). Use `const name=(..)=>{}` arrows ONLY.
 // [key, label, operator hint, unit, min, max] — unit drives the "= 10 s"
 // helper and the editor type. ms=milliseconds, C=deg C, x=multiplier,
 // cm=C/min, ohm, c10=tenths of a deg, tog=toggle switch, raw=free number.
@@ -887,6 +897,11 @@ const GROUPS=[
 ["WARNINGS & SAFETY · all states",[
 ["minCausticTemp","Wash floor (°C)","Below this tank temperature the amber LOW TEMP banner shows on the panel (and here). Warning only — it never stops a cycle.","C",0,120],
 ["maxCausticTemp","Overtemp cutoff (°C)","Safety limit: the heater is cut and the machine faults above this.","C",0,120]]],
+["NETWORK · applies at next power-up",[
+["netMode","Network mode","OFF = dhcp: the router assigns the address. ON = static: use the fixed address below. Changes take effect at the next power-up.","tog"],
+["netIp","Static IP address","The machine's fixed address, e.g. 192.168.1.92. Required for static mode (an invalid one falls back to DHCP at boot).","ip"],
+["netMask","Subnet mask","Usually 255.255.255.0 — leave empty for that default.","ip"],
+["netGw","Gateway","The router's address. Leave empty to default to .1 on the IP's subnet.","ip"]]],
 ["SERVICE & CALIBRATION",[
 ["benchMode","Bench mode","ON: readiness and resource safety gates are bypassed for bench work (with this card's timers and temperatures). OFF: production gates active.","tog"],
 ["etsShuntOhms","Temp probe shunt","Measured value of the 4-20 mA shunt resistor (nominal 470 Ω). Set once per machine.","ohm",100,1000],
@@ -898,15 +913,17 @@ const GROUPS=[
 ["touchCalE","Touch cal E","Written by the touch-calibration tool — don’t hand-edit.","raw"],
 ["touchCalF","Touch cal F","Written by the touch-calibration tool — don’t hand-edit.","raw"]]]];
 // Toggle wiring: [value when OFF, value when ON] + confirmation prompts.
-const TOG={heaterMode:["fw","ext"],benchMode:["off","on"]};
+const TOG={heaterMode:["fw","ext"],benchMode:["off","on"],netMode:["dhcp","static"]};
 const TOGC={heaterMode_ext:"Switch heater control to EXT?\n\nThe tank thermostat will hold temperature ALL DAY.\nRequires the permit relay wired in series with the ETS50N.",
 heaterMode_fw:"Switch heater control to FW (firmware warm-up only)?",
 benchMode_on:"Turn BENCH MODE ON?\n\nReadiness and resource safety gates will be BYPASSED.",
-benchMode_off:"Turn bench mode OFF (production gates active)?"};
+benchMode_off:"Turn bench mode OFF (production gates active)?",
+netMode_static:"Switch to a STATIC address at the next power-up?\n\nDouble-check the static IP below first — a wrong address makes the machine unreachable until the SD card is edited.",
+netMode_dhcp:"Switch back to DHCP at the next power-up?"};
 const VAL={};for(const[,ks]of GROUPS)for(const e of ks)if(e.length>4)VAL[e[0]]=[e[4],e[5]];
 const stchip=document.getElementById("stchip"),ltchip=document.getElementById("ltchip"),
       meta=document.getElementById("meta"),msg=document.getElementById("msg");
-function fmt(u,v){
+const fmt=(u,v)=>{
  v=parseFloat(v);
  if(isNaN(v))return "";
  if(u=="ms"){const s=v/1000;
@@ -918,19 +935,25 @@ function fmt(u,v){
  if(u=="cm")return "°C per minute";
  if(u=="ohm")return "Ω";
  return "";}
-function chk(k,v){
+const IPK={netIp:1,netMask:1,netGw:1};
+const chk=(k,v)=>{
+ if(IPK[k]){
+  if(v=="")return null;   // empty = unset (documented default applies)
+  const m=v.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if(!m||m.slice(1).some(o=>+o>255))return "is not a valid IP address";
+  return null;}
  const r=VAL[k];if(!r)return null;
  const n=parseFloat(v);
  if(isNaN(n)||!isFinite(n)||/[^0-9.eE+-]/.test(v))return "is not a number";
  if(n<r[0]||n>r[1])return "must be between "+r[0]+" and "+r[1];
  return null;}
-function chip(s){
+const chip=(s)=>{
  stchip.textContent=s.state+" · "+s.temp+"°C";
  stchip.className="chip "+(s.state=="ABORTED"?"fault":
    (s.state=="HELD"||s.state=="STOPPING")?"warn":
    (s.state=="EXECUTE"||s.state=="STARTING")?"run":"");
  ltchip.style.display=s.warn=="1"?"":"none";}
-async function load(full){
+const load=async(full)=>{
  const j=await (await fetch("/cfg.json")).json();
  chip({state:j._state,temp:j._temp,warn:j._warn});
  meta.textContent="firmware v"+j._fw+" · changes save to the SD card and apply to the next cycle · editing is locked out while a cycle runs";
@@ -969,18 +992,18 @@ async function load(full){
   if(eq&&el.dataset.u)eq.textContent=fmt(el.dataset.u,el.value);};
  t.onkeydown=e=>{if(e.key=="Enter"&&e.target.id&&e.target.type!="checkbox")setk(e.target.id.slice(2));};
 }
-async function apply(k,v){
+const apply=async(k,v)=>{
  const r=await fetch("/set?"+k+"="+encodeURIComponent(v));
  const x=await r.text();
  msg.textContent=x;msg.className=x.startsWith("OK")?"ok":"err";
  return x.startsWith("OK");}
-async function setk(k){
+const setk=async(k)=>{
  const el=document.getElementById("i_"+k),v=el.value.trim();
  const bad=chk(k,v);
  if(bad){msg.textContent="not sent — value "+bad;msg.className="err";el.classList.add("bad");return;}
  el.classList.remove("bad");
  if(await apply(k,v)){el.dataset.o=el.value;el.classList.remove("dirty");load(false);}}
-async function togk(k){
+const togk=async(k)=>{
  const el=document.getElementById("i_"+k);
  const v=el.checked?TOG[k][1]:TOG[k][0];
  const warnMsg=TOGC[k+"_"+v];
@@ -1032,6 +1055,10 @@ static void http_buildCfgJson() {
   httpJsonInt("maxCausticTemp",     maxCausticTemp);
   httpJsonKV("heaterMode", heaterExternal ? "ext" : "fw");
   httpJsonKV("benchMode", kwBenchMode ? "on" : "off");
+  httpJsonKV("netMode", netStaticMode ? "static" : "dhcp");
+  httpJsonKV("netIp",   netIp);     // empty = unset (defaults documented on
+  httpJsonKV("netMask", netMask);   //  the page); JSON keeps empties so the
+  httpJsonKV("netGw",   netGw);     //  editor always shows the fields
   httpJsonUL("maxHeatingMs", maxHeatingMs);
   httpJsonInt("minHeatingRate", minHeatingRate);
   snprintf(b, sizeof(b), "%.1f", (double)etsShuntOhms);
@@ -1215,13 +1242,35 @@ static void setupEthernet() {
     }
     delay(100);
   }
-  diagnostics_logEvent("Ethernet: link up; requesting DHCP...");
+  // Static IP when configured (netMode=static + a valid netIp): no DHCP wait,
+  // address survives router reboots/lease churn, and the editor URL is stable.
+  // Mask defaults to /24, gateway to .1 on the IP's subnet. DNS is unused by
+  // this firmware (broker is an IP) — the gateway is passed to satisfy lwIP.
+  bool up;
+  uint8_t ipd[4];
+  if (netStaticMode && config_parseIp(netIp, ipd)) {
+    uint8_t d[4];
+    IPAddress ip(ipd[0], ipd[1], ipd[2], ipd[3]);
+    IPAddress mask = config_parseIp(netMask, d) ? IPAddress(d[0], d[1], d[2], d[3])
+                                                : IPAddress(255, 255, 255, 0);
+    IPAddress gw   = config_parseIp(netGw, d)   ? IPAddress(d[0], d[1], d[2], d[3])
+                                                : IPAddress(ipd[0], ipd[1], ipd[2], 1);
+    Ethernet.begin(mac, ip, gw, gw, mask);   // (mac, ip, dns, gateway, subnet)
+    diagnostics_logEvent("Ethernet: static IP");
+    up = true;
+  } else {
+    if (netStaticMode) {
+      diagnostics_logEvent("netMode=static but netIp invalid - DHCP fallback");
+    }
+    diagnostics_logEvent("Ethernet: link up; requesting DHCP...");
+    // Ethernet.begin() with a single mac arg drives DHCP. Returns truthy on
+    // success. lwIP's default DHCP timeout is in the tens of seconds, hence
+    // doing this BEFORE Watchdog.enable() — a slow DHCP shouldn't trip an
+    // 8 s watchdog.
+    up = Ethernet.begin(mac) != 0;
+  }
 
-  // Ethernet.begin() with a single mac arg drives DHCP. Returns truthy on
-  // success. lwIP's default DHCP timeout is in the tens of seconds, hence
-  // doing this BEFORE Watchdog.enable() — a slow DHCP shouldn't trip an
-  // 8 s watchdog.
-  if (Ethernet.begin(mac)) {
+  if (up) {
     IPAddress ip = Ethernet.localIP();
     kwLocalIP[0] = ip[0]; kwLocalIP[1] = ip[1];
     kwLocalIP[2] = ip[2]; kwLocalIP[3] = ip[3];

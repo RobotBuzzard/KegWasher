@@ -68,6 +68,29 @@ bool kwBenchMode = false;
 static bool cfgBenchKeySeen = false;
 static bool cfgBenchKeyVal  = false;
 
+// Network config — applied at BOOT by setupEthernet(); a remote edit needs a
+// power cycle to take effect. netMode=static requires a valid netIp (else the
+// boot logs a fallback and uses DHCP). netMask defaults to 255.255.255.0 and
+// netGw to .1 on the IP's subnet when unset.
+bool netStaticMode = false;
+char netIp[16]   = "";
+char netMask[16] = "";
+char netGw[16]   = "";
+
+// Dotted-quad parser shared by validation and setupEthernet.
+bool config_parseIp(const char* s, uint8_t out[4]) {
+  int v[4];
+  char extra;
+  if (sscanf(s, "%d.%d.%d.%d%c", &v[0], &v[1], &v[2], &v[3], &extra) != 4) {
+    return false;
+  }
+  for (int i = 0; i < 4; i++) {
+    if (v[i] < 0 || v[i] > 255) return false;
+    out[i] = (uint8_t)v[i];
+  }
+  return true;
+}
+
 // Web editor HTTP Basic auth — both must be non-empty to arm it. Never
 // published to the cfg/* mirror or cfg.json; settable remotely (masked in
 // acks/logs) so the lock can be enabled from the editor itself. Recovery
@@ -195,6 +218,21 @@ byte config_applyKV(const char* key, const char* value) {
   }
   else if (strcmp(key, "webUser")         == 0) { applyStrKey(value, webUser, sizeof(webUser)); return KW_CFG_APPLIED; }
   else if (strcmp(key, "webPass")         == 0) { applyStrKey(value, webPass, sizeof(webPass)); return KW_CFG_APPLIED; }
+  else if (strcmp(key, "netMode")         == 0) {
+    if      (strcmp(value, "static") == 0) netStaticMode = true;
+    else if (strcmp(value, "dhcp")   == 0) netStaticMode = false;
+    else { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "netIp") == 0 || strcmp(key, "netMask") == 0 ||
+           strcmp(key, "netGw") == 0) {
+    // Empty clears (back to the documented default); non-empty must parse.
+    uint8_t d[4];
+    if (value[0] && !config_parseIp(value, d)) { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    char* dst = (key[3] == 'I') ? netIp : (key[3] == 'M') ? netMask : netGw;
+    applyStrKey(value, dst, 16);
+    return KW_CFG_APPLIED;
+  }
   else if (strcmp(key, "benchMode")       == 0) {
     // Bench with a card: gates bypassed, but the card's timers/thresholds are
     // used (the 5 s compression is cardless-only). Applies immediately on a
@@ -343,6 +381,11 @@ void config_saveToSD() {
   settingsFile.print("maxHeatingMs=");       settingsFile.println(maxHeatingMs);
   settingsFile.print("minHeatingRate=");     settingsFile.println(minHeatingRate);
   settingsFile.print("etsShuntOhms=");       settingsFile.println(etsShuntOhms, 1);
+  // Network: mode always; addresses only when set (empty = documented default).
+  settingsFile.print("netMode=");            settingsFile.println(netStaticMode ? "static" : "dhcp");
+  if (netIp[0])   { settingsFile.print("netIp=");   settingsFile.println(netIp);   }
+  if (netMask[0]) { settingsFile.print("netMask="); settingsFile.println(netMask); }
+  if (netGw[0])   { settingsFile.print("netGw=");   settingsFile.println(netGw);   }
   // Web-editor auth: written only when armed (both set), so an unused lock
   // doesn't leave empty keys in the file. Survives the full rewrite like
   // heaterMode — dropping them would silently unlock the editor.
@@ -396,6 +439,10 @@ void config_setDefaults() {
   etsShuntOhms       = DEF_ETS_SHUNT_OHMS;
   webUser[0]         = '\0';
   webPass[0]         = '\0';
+  netStaticMode      = false;
+  netIp[0]           = '\0';
+  netMask[0]         = '\0';
+  netGw[0]           = '\0';
 
   snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
            MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);

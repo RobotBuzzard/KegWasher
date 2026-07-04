@@ -117,6 +117,16 @@ tempCalOffsetC10=0         # trim vs a reference thermometer, tenths of a °C
 #touchCalF=-15.0
 
 # ============================================================
+# NETWORK (applies at POWER-UP — a remote change needs a reboot)
+# static requires a valid netIp; an invalid/missing one falls back to DHCP
+# (logged). No DNS/hostname — the ClearCore lwIP build has neither.
+# ============================================================
+netMode=dhcp               # dhcp | static
+#netIp=192.168.1.92        # required for static
+#netMask=255.255.255.0     # optional (this is the default)
+#netGw=192.168.1.1         # optional (default: .1 on the IP's subnet)
+
+# ============================================================
 # WEB EDITOR LOGIN (optional). Set BOTH to require a username/password on the
 # browser config editor (HTTP Basic auth — a shop-floor lock, not internet
 # security). Leave unset/empty for an open editor. Lost the password? Pull
