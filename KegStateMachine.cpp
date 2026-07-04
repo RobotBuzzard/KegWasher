@@ -59,8 +59,6 @@ static byte evacKind = EVAC_NONE;
 // than discarding the cycle. PHASE_NONE = no cycle was running → recover to READY.
 static byte abortResumePhase = PHASE_NONE;
 
-static const unsigned long AIR_BURST_DURATION = 5000UL;
-
 // PRESSURE phase: minimum time after the return path closes before the keg
 // pressure switch is trusted — lets residual SANI_RETURN backpressure bleed
 // so a still-settling line can't end the charge instantly.
@@ -89,32 +87,26 @@ static void showHeatingProgress();
 static const char* errorBannerText(byte code);
 
 // Hard upper bounds on time-in-state — last-resort safety nets if a transition
-// condition never triggers. 0 = no timeout (operator-paced / self-bounded).
-static const unsigned long machStateMaxDuration[NUM_MACH_STATES] = {
-  0,                 // IDLE      — operator-paced
-  0,                 // STARTING  — heater bounded by hardware_monitorHeating
-  0,                 // EXECUTE   — bounded per-phase (phaseMaxDuration)
-  0,                 // HELD      — bounded by pauseStartMs / PAUSE_MAX_MS
-  0,                 // COMPLETE  — operator acknowledge
-  2UL * 60 * 1000,   // STOPPING  — bounded evacuation
-  0,                 // STOPPED   — operator acknowledge
-  0,                 // CLEARING  — instant pass-through
-  0                  // ABORTED   — operator acknowledge
-};
+// condition never triggers (a stuck phase advance / evacuation). Derived from
+// the CONFIGURED duration plus a grace margin, so no legal WASHER.CFG value can
+// trip a false ERR_STATE_TIMEOUT. (The old fixed 10/20-min tables aborted any
+// stage the operator configured longer — config allows up to 30 min × largeKegMod.)
+// Every other machine state is operator-paced or bounded by its own mechanism
+// (HELD → pauseMaxMs, STARTING → maxHeatingMs).
+static const unsigned long PHASE_TIMEOUT_GRACE_MS = 10UL * 60 * 1000;
+static const unsigned long EVAC_TIMEOUT_GRACE_MS  = 2UL * 60 * 1000;
 
-static const unsigned long phaseMaxDuration[NUM_PHASES] = {
-  0,                  // NONE
-  10UL * 60 * 1000,   // DIRTY_DRAIN
-  10UL * 60 * 1000,   // DIRTY_RINSE
-  10UL * 60 * 1000,   // DIRTY_PURGE
-  20UL * 60 * 1000,   // WASHING — longest phase
-  10UL * 60 * 1000,   // CAUSTIC_RETURN
-  10UL * 60 * 1000,   // RINSING
-  10UL * 60 * 1000,   // RINSE_PURGE
-  10UL * 60 * 1000,   // SANITIZE
-  10UL * 60 * 1000,   // SANI_RETURN
-  10UL * 60 * 1000    // PRESSURE
-};
+// Low caustic temp is WARN-ONLY (operator decision 2026-07-04): it never gates
+// or aborts a cycle — the ext-mode thermostat owns the recovery, the operator
+// owns the decision to wash cold. Surfaced as the amber LOW TEMP banner
+// (READY + operating screens) and kegwasher/warn/lowtemp. Single latch with a
+// 2 °C re-arm so a reading hovering at the wash floor can't flicker either.
+bool kwLowTempWarn = false;
+static void updateLowTempWarn() {
+  if (kwBenchMode) { kwLowTempWarn = false; return; }   // no tank plumbed
+  int t = hardware_getCausticTemp();
+  kwLowTempWarn = t < (kwLowTempWarn ? minCausticTemp + 2 : minCausticTemp);
+}
 
 // Single source of truth for per-phase duration. Maps each recipe phase to its
 // configured timer × latched keg-size modifier. Used by the phase handlers, the
@@ -188,12 +180,12 @@ static void checkStateTimeout() {
   unsigned long maxDur;
   if (machineState == MACH_EXECUTE) {
     if (recipePhase >= NUM_PHASES) return;
-    maxDur = phaseMaxDuration[recipePhase];
+    maxDur = stageTimerFor(recipePhase) + PHASE_TIMEOUT_GRACE_MS;
+  } else if (machineState == MACH_STOPPING) {
+    maxDur = evacDuration() + EVAC_TIMEOUT_GRACE_MS;
   } else {
-    if (machineState >= NUM_MACH_STATES) return;
-    maxDur = machStateMaxDuration[machineState];
+    return;   // operator-paced or self-bounded (see note above)
   }
-  if (maxDur == 0) return;
   if (timers_getStateElapsed() > maxDur) {
     diagnostics_logEvent("State timeout");
     errorCode = ERR_STATE_TIMEOUT;
@@ -213,22 +205,21 @@ static void monitorActiveResources() {
   // sensor is the keg-side switch downstream of co2Out, whose state during an
   // open-circuit blowback is indeterminate. PRESSURE verifies CO2 end-to-end
   // in its own handler (switch must trip before the stage timer).
-  bool needAir = false, needWater = false, needCaustic = false;
+  bool needAir = false, needWater = false;
   switch (recipePhase) {
-    case PHASE_DIRTY_DRAIN:    needAir   = (timers_getStateElapsed() < AIR_BURST_DURATION); break;
+    case PHASE_DIRTY_DRAIN:
     case PHASE_DIRTY_PURGE:
     case PHASE_CAUSTIC_RETURN:
     case PHASE_RINSE_PURGE:    needAir   = true; break;
     case PHASE_DIRTY_RINSE:
     case PHASE_RINSING:        needWater = true; break;
-    case PHASE_WASHING:        needCaustic = true; break;
-    default: break;  // SANITIZE recirculates only — nothing pressurized to lose
+    default: break;  // WASHING/SANITIZE recirculate only — nothing pressurized
+                     // to lose; low caustic temp is warn-only (kwLowTempWarn)
   }
 
   byte err = ERR_NONE;
-  if      (needAir   && !isAirOk)                                       err = ERR_AIR_PRESSURE;
-  else if (needWater && !isWaterOk)                                     err = ERR_WATER_PRESSURE;
-  else if (needCaustic && hardware_getCausticTemp() < minCausticTemp) err = ERR_CAUSTIC_TEMP;
+  if      (needAir   && !isAirOk)   err = ERR_AIR_PRESSURE;
+  else if (needWater && !isWaterOk) err = ERR_WATER_PRESSURE;
 
   if (err != ERR_NONE) {
     errorCode = err;
@@ -256,6 +247,7 @@ static void monitorHeaterExt() {
 }
 
 void stateMachine_process() {
+  updateLowTempWarn();
   checkStateTimeout();
   monitorActiveResources();   // no-op unless EXECUTE
   monitorHeaterExt();         // no-op unless heaterMode=ext
@@ -328,7 +320,7 @@ static bool enterPhase(byte phase) {
     case PHASE_DIRTY_DRAIN:
       if (!requireResource(isAirOk, ERR_AIR_PRESSURE)) return false;
       hardware_setDrain(true);
-      // Air burst (first 5 s) happens in the DIRTY_DRAIN handler.
+      hardware_setAir(true);   // pushes the old beer out for the whole stage
       return true;
     case PHASE_DIRTY_RINSE:
       if (!requireResource(isWaterOk, ERR_WATER_PRESSURE)) return false;
@@ -341,8 +333,7 @@ static bool enterPhase(byte phase) {
       hardware_setDrain(true);
       return true;
     case PHASE_WASHING:
-      if (!requireResource(hardware_getCausticTemp() >= minCausticTemp,
-                           ERR_CAUSTIC_TEMP)) return false;
+      // No temp gate — low caustic temp is warn-only (LOW TEMP banner).
       hardware_setCaustic(true);
       hardware_setPump(true);
       return true;
@@ -686,6 +677,7 @@ static void state_idle() {
     case IDLE_READY: {
       static bool drawn = false;
       static byte lastSig = 0xFF;
+      static bool tempWarnShown = false;
 
       // Live sensor dots: redraw when any input changes. (In BENCH_MODE
       // allSystemsGo() is forced true so the READY->NOT_READY transition
@@ -699,8 +691,18 @@ static void state_idle() {
       if (!drawn) {
         display_showReadyScreen();
         drawn = true;
+        tempWarnShown = false;   // full repaint wiped the banner zone
       }
-      // No flashing banner — green title + START button say it all.
+
+      // LOW TEMP warning — steady AMBER banner (abnormal condition, not an
+      // action prompt, so no flash). Temp is deliberately NOT a READY gate:
+      // fw mode heats after START, ext mode's thermostat is always working
+      // on it — but the operator deserves to know a START now means a wait
+      // (fw) or that the thermostat isn't keeping up (ext).
+      if (kwLowTempWarn != tempWarnShown) {
+        tempWarnShown = kwLowTempWarn;
+        display_showLowTempWarn(kwLowTempWarn);
+      }
 
       if (!hardware_allSystemsGo()) {   // a system went offline
         drawn = false;
@@ -762,9 +764,9 @@ static void state_starting() {
       return;
     }
     // No firmware-driven burn here (the thermostat owns it), so monitorHeating's
-    // MAX_HEATING_TIME cap doesn't apply — bound the wait ourselves. Never
+    // maxHeatingMs cap doesn't apply — bound the wait ourselves. Never
     // reaching the wash floor = thermostat set too low / element dead / mis-wired.
-    if (timers_getStateElapsed() > MAX_HEATING_TIME) {
+    if (timers_getStateElapsed() > maxHeatingMs) {
       errorCode = ERR_HEATING_TIMEOUT;
       display_showError(diagnostics_getErrorMessage(ERR_HEATING_TIMEOUT));
       stateMachine_abort();
@@ -791,20 +793,11 @@ static void state_starting() {
 
 // ---------- EXECUTE: recipe phase handlers ----------
 // Valves are asserted in enterPhase() / cleared in exitPhase(); these handlers
-// just run the per-phase timer and advance. The only in-handler valve nuance is
-// DIRTY_DRAIN's 5 s start air burst.
-static void phase_dirtyDrain() {
-  hardware_setAir(timers_getStateElapsed() < AIR_BURST_DURATION);
-  if (timers_isStateDone(stageTimerFor(PHASE_DIRTY_DRAIN))) {
-    hardware_setAir(false);
-    advancePhase(PHASE_DIRTY_RINSE);
-  }
-}
-
+// just run the per-phase timer and advance.
 static void dispatchPhase() {
   switch (recipePhase) {
     case PHASE_DIRTY_DRAIN:
-      phase_dirtyDrain();
+      if (timers_isStateDone(stageTimerFor(PHASE_DIRTY_DRAIN)))    advancePhase(PHASE_DIRTY_RINSE);
       break;
     case PHASE_DIRTY_RINSE:
       if (timers_isStateDone(stageTimerFor(PHASE_DIRTY_RINSE)))    advancePhase(PHASE_DIRTY_PURGE);
@@ -813,7 +806,6 @@ static void dispatchPhase() {
       if (timers_isStateDone(stageTimerFor(PHASE_DIRTY_PURGE)))    advancePhase(PHASE_WASHING);
       break;
     case PHASE_WASHING:
-      // Caustic-temp safety is handled by monitorActiveResources() before this.
       if (timers_isStateDone(stageTimerFor(PHASE_WASHING)))        advancePhase(PHASE_CAUSTIC_RETURN);
       break;
     case PHASE_CAUSTIC_RETURN:
@@ -935,7 +927,8 @@ static bool faultConditionActive(byte code) {
     // pressure, which is legitimately 0 once outputs are safe — there is no
     // standing condition to wait out, so it's operator-clearable immediately.
     case ERR_CO2_PRESSURE:    return false;
-    case ERR_CAUSTIC_TEMP:    return hardware_getCausticTemp() <  minCausticTemp;
+    // ERR_CAUSTIC_TEMP is no longer raised (low temp = warn-only banner);
+    // the code stays defined so dashboards/error maps keep their numbering.
     case ERR_HEATER_OVERTEMP: return hardware_getCausticTemp() >= maxCausticTemp;
     case ERR_CAUSTIC_LEVEL:   return !isCausticLevelOk;
     case ERR_SENSOR_FAULT:    return causticTempSensorError;

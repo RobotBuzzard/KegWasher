@@ -56,9 +56,15 @@ void display_showMessage(const char* message);
 // ── Partial updates (call from KegWasher.ino loop) ─────────────────────
 void display_updateTimer(unsigned long elapsedMs);  // every 1 s during operating states
 void display_updateStatus();                        // every 5 s during operating states
+void display_updateIO();                            // every loop tick — KDS change-detects,
+                                                    // so it draws only on an actual bit flip
 
 // ── Banner flash (500 ms interval, called from the state machine) ──────
 void display_flashBanner(const char* text, word bgColor, bool visible);
+// Steady amber LOW TEMP banner on the READY screen (positioned for that layout).
+void display_showLowTempWarn(bool show);
+// Same warning on the operating screen; call per tick (change-detected in KDS).
+void display_updateLowTempWarnOp(bool show);
 
 // ── Footer (IP) + MQTT pub/sub indicators ──────────────────────────────
 void display_updateFooter();

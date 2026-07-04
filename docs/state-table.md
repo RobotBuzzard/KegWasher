@@ -20,13 +20,13 @@
 | 2 | EXECUTE | `EXECUTE` | dual | per-phase (Axis B below) | per-phase | COMPLETE (after PRESSURE) |
 | 3 | HELD | `HELD` | wait | none (phase outputs cleared on entry; timer frozen) | `pauseMaxMs` ‡ | EXECUTE (RESUME/RESTART) |
 | 4 | COMPLETE | `COMPLETE` | wait | **none** — no alarm; blue "SWAP KEG" banner; green button breathes; `kegsDoneOut` high | none | EXECUTE (START=next keg) · IDLE (touch SILENCE / `cmd/silence` = park) |
-| 5 | STOPPING | `STOPPING` | acting | evac outputs per `evacKind` | 2 min | STOPPED |
+| 5 | STOPPING | `STOPPING` | acting | evac outputs per `evacKind` | evac + 2 min | STOPPED |
 | 6 | STOPPED | *(momentary)* | acting | none (de-energized, **silent** — alarm forced off) | none | IDLE (**auto-Reset**, 2026-06-12 — the GET READY ack screen is gone; IDLE_READY's START is the only arming step) |
 | 7 | CLEARING | `CLEARING` | acting | none | none | STOPPED *(defined; see Recovery — currently unreached)* |
 | 8 | ABORTED | `ABORTED` | wait | alarm / IO4 red stacklight (3-state, see Recovery) | none | HELD or IDLE via `abortRecover()` |
 
-`NUM_MACH_STATES = 9`. Timeouts live in `machStateMaxDuration[]`; only STOPPING
-is bounded (2 min). `0` = operator-paced / self-bounded.
+`NUM_MACH_STATES = 9`. Only STOPPING
+is bounded (evacuation duration + 2 min grace). `0` = operator-paced / self-bounded. Phase timeouts are the configured stage timer + 10 min grace (no fixed table — config allows 30 min stages).
 
 † STARTING isn't time-bounded here — the heater is bounded by the
 hardware heating monitor (rate/overtemp/level → `ERR_HEATING_*` / `ERR_CAUSTIC_LEVEL`).
@@ -45,16 +45,16 @@ two RETURN phases force `drainOut` + `pumpOut` LOW (firmware *and* relay wiring)
 
 | ID | `PHASE_*` | Title label | Outputs ON (entry) | Cleared (exit) | Monitored resource | Timer | Hard timeout | → next |
 |----|-----------|-------------|--------------------|-----------------|--------------------|-------|--------------|--------|
-| 1 | DIRTY_DRAIN | `DIRTY DRAIN` | drain (+air burst ≤5 s) | drain, air | air (during burst) | `dirtyDrainTimer` | 10 min | DIRTY_RINSE |
-| 2 | DIRTY_RINSE | `DIRTY RINSE` | water, drain | water, drain | water | `dirtyRinseTimer` | 10 min | DIRTY_PURGE |
-| 3 | DIRTY_PURGE | `DIRTY PURGE` | air, drain | air, drain | air | `dirtyPurgeTimer` | 10 min | WASHING |
-| 4 | WASHING | `WASHING` | caustic, pump | caustic, pump | caustic temp ≥ `MIN_CAUSTIC_TEMP` | `washTimer` | **20 min** | CAUSTIC_RETURN |
-| 5 | CAUSTIC_RETURN | `CAUSTIC RTN` | caustic, air *(drain/pump forced OFF)* | air, caustic | air | `causticRtnTimer` | 10 min | RINSING |
-| 6 | RINSING | `RINSING` | water, drain | water, drain | water | `rinseTimer` | 10 min | RINSE_PURGE |
-| 7 | RINSE_PURGE | `RINSE PURGE` | air, drain | air, drain | air | `rinsePurgeTimer` | 10 min | SANITIZE |
-| 8 | SANITIZE | `SANITIZE` | sanitizer, pump | sanitizer, pump | — (recirc only) | `saniTimer` | 10 min | SANI_RETURN |
-| 9 | SANI_RETURN | `SANI RTN` | sanitizer, CO₂ *(drain/pump forced OFF)* | CO₂, sanitizer | — (see note) | `saniRtnTimer` | 10 min | PRESSURE |
-| 10 | PRESSURE | `PRESSURE` | CO₂ (valves closed) | CO₂ | — (see note) | `purgeTimer` = **fail timeout** | 10 min | → COMPLETE **on `co2Ok` trip** |
+| 1 | DIRTY_DRAIN | `DIRTY DRAIN` | air, drain | drain, air | air | `dirtyDrainTimer` | timer + 10 min | DIRTY_RINSE |
+| 2 | DIRTY_RINSE | `DIRTY RINSE` | water, drain | water, drain | water | `dirtyRinseTimer` | timer + 10 min | DIRTY_PURGE |
+| 3 | DIRTY_PURGE | `DIRTY PURGE` | air, drain | air, drain | air | `dirtyPurgeTimer` | timer + 10 min | WASHING |
+| 4 | WASHING | `WASHING` | caustic, pump | caustic, pump | — (low temp = warn-only LOW TEMP banner) | `washTimer` | timer + 10 min | CAUSTIC_RETURN |
+| 5 | CAUSTIC_RETURN | `CAUSTIC RTN` | caustic, air *(drain/pump forced OFF)* | air, caustic | air | `causticRtnTimer` | timer + 10 min | RINSING |
+| 6 | RINSING | `RINSING` | water, drain | water, drain | water | `rinseTimer` | timer + 10 min | RINSE_PURGE |
+| 7 | RINSE_PURGE | `RINSE PURGE` | air, drain | air, drain | air | `rinsePurgeTimer` | timer + 10 min | SANITIZE |
+| 8 | SANITIZE | `SANITIZE` | sanitizer, pump | sanitizer, pump | — (recirc only) | `saniTimer` | timer + 10 min | SANI_RETURN |
+| 9 | SANI_RETURN | `SANI RTN` | sanitizer, CO₂ *(drain/pump forced OFF)* | CO₂, sanitizer | — (see note) | `saniRtnTimer` | timer + 10 min | PRESSURE |
+| 10 | PRESSURE | `PRESSURE` | CO₂ (valves closed) | CO₂ | — (see note) | `purgeTimer` = **fail timeout** | timer + 10 min | → COMPLETE **on `co2Ok` trip** |
 
 > **CO₂ sensing (changed 2026-06-12):** the only CO₂ sensor is the keg-side pressure switch
 > (`co2Ok`, DI7) **downstream of the `co2Out` solenoid** — it reads keg/line pressure, not supply,
@@ -71,7 +71,7 @@ two RETURN phases force `drainOut` + `pumpOut` LOW (firmware *and* relay wiring)
 (index 0 = `PHASE_NONE`). Per-phase timers are keg-size scaled
 (`stageTimerFor()` → `timers_adjustForKegSize(base, kegSizeLatched)`), the single
 source of truth shared by the handlers, the display countdown, and the MQTT
-remaining-time publish. Timeouts are in `phaseMaxDuration[]`.
+remaining-time publish. Hard timeouts derive from the same source: `stageTimerFor(phase)` + 10 min grace.
 
 **Entry gates** (`enterPhase`, `#ifndef BENCH_MODE`): the monitored resource is
 also checked *before* entry — a missing resource aborts the entry to ABORTED with

@@ -118,7 +118,7 @@ extern bool kwBenchMode;
 
 // ----- Axis B: ISA-88 recipe phase (valid only while MACH_EXECUTE) -----
 #define PHASE_NONE             0
-#define PHASE_DIRTY_DRAIN      1   // drain old product + 5s air burst        → drain
+#define PHASE_DIRTY_DRAIN      1   // air-push old product out (air + drain)   → drain
 #define PHASE_DIRTY_RINSE      2   // pre-rinse water + drain                  → drain
 #define PHASE_DIRTY_PURGE      3   // air-blow pre-rinse water + drain         → drain
 #define PHASE_WASHING          4   // recirculate hot caustic (caustic + pump)
@@ -138,9 +138,21 @@ extern bool kwBenchMode;
 #define IDLE_READY             2   // ready; START begins a cycle
 #define IDLE_SETTINGS          3   // on-screen settings editor (Phase 5 — not yet wired)
 
+// ---------- Firmware version (published on kegwasher/firmware) ----------
+#define KW_FIRMWARE_VERSION    "1.0.0"
+
 // ---------- ADC ----------
 #define adcResolution          12
 #define ADC_MAX                4095
+
+// ETS50N 4-20 mA shunt resistor (Ω) — per-unit hardware: set to the MEASURED
+// value of the installed resistor (nominal 470, ±5% = 446..494) for best
+// accuracy. SD key: etsShuntOhms.
+#define DEF_ETS_SHUNT_OHMS     470.0f
+extern float etsShuntOhms;
+
+// Large-keg timer multiplier compiled default. SD key: largeKegMod.
+#define DEF_LARGE_KEG_MOD      1.5
 
 // ---------- Temperature thresholds (°C) — compiled defaults ----------
 // These seed the runtime globals below (minCausticTemp, …), which are
@@ -151,9 +163,11 @@ extern bool kwBenchMode;
 // (enclosure overtemp + fan on/off thresholds removed — enclosure temp/fan are
 //  off-controller now; the fan self-regulates via its own thermometer.)
 
-// ---------- Heater limits ----------
-#define MIN_HEATING_RATE       3       // °C/min minimum during heating
-#define MAX_HEATING_TIME       900000UL  // 15 min cap
+// ---------- Heater limits (compiled defaults; SD-overridable) ----------
+#define DEF_MIN_HEATING_RATE   3         // °C/min minimum during fw-mode heating
+#define DEF_MAX_HEATING_MS     900000UL  // 15 min heating cap
+extern int           minHeatingRate;     // SD key: minHeatingRate (°C/min)
+extern unsigned long maxHeatingMs;       // SD key: maxHeatingMs (STARTING bound, both modes)
 // (MIN_CAUSTIC_LEVEL is gone — the caustic "level" is the NC float switch on
 // A-12, read directly as the isCausticLevelOk bool.)
 

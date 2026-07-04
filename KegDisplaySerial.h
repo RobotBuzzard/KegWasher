@@ -38,6 +38,7 @@ void cycleProgress(unsigned long cycleElapsedMs, unsigned long cycleTotalMs);  /
 void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bool mqtt);  // temp in tenths C (legacy 2x2 grid)
 void operatingTemp(int tempC10);               // temp-only partial update (tenths C)
 void operatingIO(byte outBits, byte inBits);   // OUT (8 actuators) / IN (5 inputs) dot grid
+void operatingLowTemp(bool show);              // steady LOW TEMP banner; safe to call per tick
 
 // ---- touch ----
 void touchEnable();
@@ -51,7 +52,9 @@ void setTouchCalibration(float a, float b, float c, float d, float e, float f);
 // ---- footer MQTT pub/sub indicators (partial update; call on MQTT state change) ----
 void mqttIndicators(bool connected, bool pubActive, bool subActive);
 void footer(const char* ip);                                // redraw footer bar + IP + P/S labels
-void banner(const char* text, word colour, bool visible);   // flashing alert strip under the title
+// Alert strip. Default y = the reserved zone under the title rule; pass y1/y2
+// to place it elsewhere (READY's zone is occupied by the sensor grid).
+void banner(const char* text, word colour, bool visible, int y1 = -1, int y2 = -1);
 void button(int x, int y, int w, int h, const char* label, word colour);         // secondary (card + coloured label)
 void buttonPrimary(int x, int y, int w, int h, const char* label, word colour);  // primary (solid fill, dark label)
 

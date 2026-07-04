@@ -290,6 +290,7 @@ namespace {
   int  g_lastSens = -1;     // packed w|a|c|e bits (legacy 2x2 operating grid)
   int  g_lastOut  = -1;     // operating OUT dots (8 actuator bits)
   int  g_lastIn   = -1;     // operating IN dots (5 input bits)
+  int  g_opWarn   = 0;      // LOW TEMP banner shown-state (operatingLowTemp)
   word g_stripCol = 0;      // current state colour of the edge strip
   int  g_stripTop = 0;      // top y of the remaining (filled) strip portion
 
@@ -462,7 +463,19 @@ void operatingFrame(const char* phaseName, const char* desc,
   hline(LX, RX, RULE3_Y, C_TRACK);
   ioChrome();                               // OUT/IN tags + labels; dots follow
   g_lastTemp = -999; g_lastOut = g_lastIn = -1;   // force first partial update
+  g_opWarn = 0;                             // frame drew REMAINING, no banner
   footerIP(ip);
+}
+
+// Steady LOW TEMP warning on the operating screen — banner zone (which holds
+// only the REMAINING label here; the label is restored on hide). Shown-state
+// lives HERE so every operatingFrame() repaint (phase change, resume, restart)
+// resets it — callers can invoke this every tick, it no-ops when unchanged.
+void operatingLowTemp(bool show) {
+  if ((int)show == g_opWarn) return;
+  g_opWarn = show ? 1 : 0;
+  banner("LOW TEMP", C_AMB, show);
+  if (!show) lbl4(LX, REM_Y, C_SUB, "REMAINING");
 }
 // legacy 3-arg form (KegDisplay migrates to the rich one; keep compiling)
 void operatingFrame(const char* stateName, const char* ip, word barColour) {
@@ -600,15 +613,17 @@ void mqttIndicators(bool connected, bool pubActive, bool subActive) {
 void footer(const char* ip) { rect(0, FOOT_Y, DW - 1, DH - 1, C_CARD); footerIP(ip); }
 
 // alert banner in the reserved zone under the rule (flash-toggled by caller)
-void banner(const char* text, word colour, bool visible) {
+void banner(const char* text, word colour, bool visible, int y1, int y2) {
+  if (y1 < 0) y1 = BANNER_Y1;
+  if (y2 < 0) y2 = BANNER_Y2;
   word c = remap(colour);
   if (visible) {
-    rrect(16, BANNER_Y1, 256, BANNER_Y2, 8, c);
+    rrect(16, y1, 256, y2, 8, c);
     int sx = (strW(text, true, 2) <= 228) ? 2 : 1;
-    int ty = (BANNER_Y1 + BANNER_Y2) / 2 - 2 * (2 * g_capTop8 + g_capH8) / 2;
+    int ty = (y1 + y2) / 2 - 2 * (2 * g_capTop8 + g_capH8) / 2;
     lblC(16, 256, ty, true, sx, 2, inkOn(c), c, text);
   } else {
-    rect(10, BANNER_Y1 - 2, 260, BANNER_Y2 + 2, C_BG);
+    rect(10, y1 - 2, 260, y2 + 2, C_BG);
   }
 }
 

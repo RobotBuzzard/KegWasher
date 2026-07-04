@@ -101,10 +101,23 @@ static bool mqtt_try_connect() {
            kwLocalIP[0], kwLocalIP[1], kwLocalIP[2], kwLocalIP[3]);
   kwMqtt.publish(kwTopicIp, buf, true);
 
-  // Firmware build identifier — retained so we can verify which version
-  // is actually running on the ClearCore even when offline.
-  snprintf(buf, sizeof(buf), "%s %s", __DATE__, __TIME__);
+  // Firmware version + build identifier — retained so we can verify which
+  // version is actually running on the ClearCore even when offline.
+  snprintf(buf, sizeof(buf), "v%s %s %s", KW_FIRMWARE_VERSION, __DATE__, __TIME__);
   kwMqtt.publish(kwTopic("firmware"), buf, true);
+
+  // Heater mode is fixed at boot (SD key, not panel-editable) — publish once
+  // per connect so "which mode is this machine actually in?" is answerable
+  // remotely. ext = ETS50N thermostat owns the burn, permit always asserted.
+  kwMqtt.publish(kwTopic("mode/heater"), heaterExternal ? "ext" : "fw", true);
+
+  // Temp thresholds as loaded (SD or defaults): floor = minCausticTemp (wash
+  // gate + the READY LOW TEMP banner), target = optimalCausticTemp (fw-mode
+  // heat-to). Fixed after boot, so once per connect like mode/heater.
+  snprintf(buf, sizeof(buf), "%d", minCausticTemp);
+  kwMqtt.publish(kwTopic("config/temp_floor"), buf, true);
+  snprintf(buf, sizeof(buf), "%d", optimalCausticTemp);
+  kwMqtt.publish(kwTopic("config/temp_target"), buf, true);
 
   // Subscribe to the command surface. Single-level wildcard '+' matches
   // any leaf under cmd/ (start, silence, reset, future additions).
@@ -335,6 +348,7 @@ static void mqtt_applyCmdFlags() {
 //   sensors/air          — OK|FAIL
 //   sensors/co2          — OK|FAIL
 //   sensors/estop        — INACTIVE|ACTIVE
+//   outputs              — CSV of driven actuators ("DRN,AIR"; "" = all off)
 //   temp/caustic         — int °C
 //   level/caustic        — int %
 //   timer/elapsed_s      — seconds in current state
@@ -366,6 +380,8 @@ struct MqttStatusCache {
   bool          sensorsInit   = false;
   int           causticTemp   = -999;
   int           causticLevel  = -999;   // -1/0/1: sentinel / LOW / OK (float switch)
+  int           outBits       = -1;     // driven actuators (hardware_getOutputBits)
+  int           lowTempWarn   = -999;   // kwLowTempWarn (warn-only banner state)
   int           fullDrainMode = -999;   // latching DRAIN switch (IO2), live state
   unsigned long elapsedSec    = 0xFFFFFFFFUL;
   unsigned long remainingSec  = 0xFFFFFFFFUL;
@@ -520,6 +536,27 @@ static void mqtt_publishStatus() {
   }
   kwMqttCache.sensorsInit = true;
 
+  // ----- Outputs (driven actuators, mirrored from KegHardware) -----
+  // CSV of active outputs ("DRN,AIR"; "NONE" when all off — an empty retained
+  // payload would delete the topic). Bit order matches hardware_getOutputBits /
+  // the panel's OUT grid. 250 ms status throttle is fast enough to catch even
+  // brief outputs (e.g. PRESSURE's switch-tripped CO2 shutoff).
+  int outBits = hardware_getOutputBits();
+  if (outBits != kwMqttCache.outBits) {
+    kwMqttCache.outBits = outBits;
+    static const char* const OUT_NAMES[8] =
+        { "DRN", "WTR", "AIR", "CAU", "PMP", "SAN", "CO2", "HTR" };
+    char outBuf[36] = "";
+    byte pos = 0;
+    for (byte i = 0; i < 8; i++) {
+      if (outBits & (1 << i)) {
+        pos += snprintf(outBuf + pos, sizeof(outBuf) - pos, "%s%s",
+                        pos ? "," : "", OUT_NAMES[i]);
+      }
+    }
+    kwMqtt.publish(kwTopic("outputs"), pos ? outBuf : "NONE", true);
+  }
+
   // ----- Temps & level -----
   int causticT = hardware_getCausticTemp();
   if (causticT != kwMqttCache.causticTemp) {
@@ -532,6 +569,13 @@ static void mqtt_publishStatus() {
   if (level != kwMqttCache.causticLevel) {
     kwMqttCache.causticLevel = level;
     kwMqtt.publish(kwTopic("level/caustic"), level ? "OK" : "LOW", true);
+  }
+
+  // Low-temp warning (amber banner state; warn-only, never a fault).
+  int ltw = kwLowTempWarn ? 1 : 0;
+  if (ltw != kwMqttCache.lowTempWarn) {
+    kwMqttCache.lowTempWarn = ltw;
+    kwMqtt.publish(kwTopic("warn/lowtemp"), ltw ? "ON" : "OFF", true);
   }
 
   // Full-drain mode: live state of the latching DRAIN switch (IO2).
@@ -824,7 +868,18 @@ void loop() {
         lastHeldShown = held;
         display_setPaused(held);
       }
+      // IO dots track the hardware every tick (change-detected in KDS, so
+      // this is serial-silent unless a bit flips). Unthrottled because brief
+      // output changes (mid-phase valve moves like PRESSURE's CO2 shutoff)
+      // can fit entirely between two 5 s status refreshes and never show.
+      // Runs while HELD too: outputs are safe-off during a pause and the
+      // dots should say so.
+      display_updateIO();
       if (!held) {
+        // LOW TEMP warn banner (warn-only; low temp never faults). While HELD
+        // the banner zone belongs to the PAUSED banner; the resume/restart
+        // full repaint resets KDS's shown-state so this re-asserts after.
+        display_updateLowTempWarnOp(kwLowTempWarn);
         if (millis() - lastTimerUpdateMs >= 1000UL) {
           lastTimerUpdateMs = millis();
           display_updateTimer(timers_getStateElapsed());

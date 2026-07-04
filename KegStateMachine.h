@@ -28,6 +28,10 @@ extern bool kegSizeLatched;
 // Full-drain mode (latching DRAIN switch, IO2) — same latch-at-START pattern.
 // When set, DIRTY_DRAIN runs fullDrainTimer instead of dirtyDrainTimer.
 extern bool drainModeLatched;
+// Low caustic temp warning latch (tank < minCausticTemp, 2 °C re-arm). WARN-ONLY:
+// never gates or aborts a cycle. Drives the amber LOW TEMP banner (READY +
+// operating screens) and the kegwasher/warn/lowtemp topic. Updated every tick.
+extern bool kwLowTempWarn;
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 void stateMachine_init();

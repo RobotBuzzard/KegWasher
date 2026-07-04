@@ -34,7 +34,7 @@
 | `readyLedOut` | IO5 | GREEN cycle-start / ready indicator | HIGH | solid in IDLE-READY; **breathes (PWM) in COMPLETE** ("swap kegs, START for next"); breathes alternating with red in HELD |
 | `drainOut` | CCIO‑A0 | Drain valve | HIGH | **forced OFF during RETURN phases — chem never to drain** |
 | `waterOut` | CCIO‑A1 | Water valve | HIGH | FLOW phases |
-| `airOut` | CCIO‑A2 | Air valve | HIGH | DRAIN burst, PURGE, CAUSTIC_RETURN push-gas |
+| `airOut` | CCIO‑A2 | Air valve | HIGH | DIRTY_DRAIN, PURGE, CAUSTIC_RETURN push-gas |
 | `causticOut` | CCIO‑A3 | Caustic valve | HIGH | WASHING + CAUSTIC_RETURN |
 | `pumpOut` | CCIO‑A4 | Recirc pump | HIGH | RECIRC phases; **forced OFF during RETURN (no dry run)** |
 | `sanitizerOut` | CCIO‑A5 | Sanitizer valve | HIGH | SANITIZE + SANI_RETURN |
@@ -64,7 +64,7 @@ standalone self-regulating unit with its own thermometer — not driven by the c
 | State / Phase | Active outputs |
 |---------------|----------------|
 | STARTUP (heating) | `causticHeaterOut` |
-| DIRTY_DRAIN | `drainOut` (+`airOut` first 5 s) |
+| DIRTY_DRAIN | `airOut`, `drainOut` |
 | DIRTY_RINSE | `waterOut`, `drainOut` |
 | DIRTY_PURGE | `airOut`, `drainOut` |
 | WASHING | `causticOut`, `pumpOut` |
@@ -88,7 +88,7 @@ standalone self-regulating unit with its own thermometer — not driven by the c
 | 3 | WATER_PRESSURE | `waterOk` |
 | 4 | AIR_PRESSURE | `airOk` |
 | 5 | CO2_PRESSURE | `co2Ok` — keg failed to reach pressure before `purgeTimer` (no CO₂ / unsealed keg / leak) |
-| 6 | CAUSTIC_TEMP | `causticTemp` |
+| 6 | CAUSTIC_TEMP | `causticTemp` | *(retired 2026-07-04: low temp is warn-only — amber LOW TEMP banner + `warn/lowtemp` — never raised as a fault)*
 | 7 | *(retired)* | was ENCLOSURE_TEMP — enclosure temp off-controller; code not reused |
 | 8 | ESTOP | `ESTOP` |
 | 9 | INVALID_STATE | — |

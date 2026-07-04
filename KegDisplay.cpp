@@ -364,6 +364,14 @@ void display_updateTimer(unsigned long elapsedMs) {
 
 void display_updateStatus() {
   KDS::operatingTemp(hardware_getCausticTempC10());
+  display_updateIO();
+}
+
+// IO dots only — safe to call every loop tick: KDS::operatingIO change-detects
+// per dot, so no serial traffic unless a bit actually flipped. Needed because
+// short-lived output changes (mid-phase valve moves) can fit entirely between
+// two 5 s display_updateStatus() refreshes and never show.
+void display_updateIO() {
   // OUT = driven actuators (shadowed in KegHardware); IN = live inputs.
   // IN bit order: 0=water 1=air 2=pres(keg switch) 3=level 4=estop-SAFE.
   byte inBits = (byte)((isWaterOk ? 1 : 0) | (isAirOk ? 2 : 0) | (isCo2Ok ? 4 : 0) |
@@ -421,6 +429,19 @@ void display_flashBanner(const char* text, word bgColor, bool visible) {
   // (Was hardcoded RED, which painted the green "READY" banner red.)
   KDS::banner(text, bgColor, visible);
 }
+
+// Low-temp warning on the READY screen. Steady amber (condition, not an
+// action prompt — flashing stays reserved for those). Drawn in the free band
+// between START (bottom y330) and SETTINGS (y392): the standard banner zone
+// (y90-126) belongs to the sensor grid on this layout.
+void display_showLowTempWarn(bool show) {
+  KDS::banner("LOW TEMP", AMBER, show, 340, 376);
+}
+
+// Operating-screen variant — standard banner zone. KDS owns the shown-state
+// (reset by every operatingFrame repaint), so call this every tick; it no-ops
+// when nothing changed.
+void display_updateLowTempWarnOp(bool show) { KDS::operatingLowTemp(show); }
 
 void display_updateFooter() { KDS::footer(ipStr()); reapplyMqtt(); }
 

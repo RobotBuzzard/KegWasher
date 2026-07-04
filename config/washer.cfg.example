@@ -16,7 +16,7 @@
 # ============================================================
 
 # --- Pre-clean (to drain) ---
-dirtyDrainTimer=20000      # drain old beer (+5 s air burst at start)
+dirtyDrainTimer=20000      # air-push old beer out (air + drain, whole stage)
 dirtyRinseTimer=20000      # initial water rinse of gross residue
 dirtyPurgeTimer=10000      # air-blow the dirty rinse water out
 
@@ -69,13 +69,46 @@ pauseMaxMs=600000
 
 # ============================================================
 # TEMPERATURE THRESHOLDS (°C, valid range 0..120)
+# Must be ordered minCausticTemp <= optimalCausticTemp < maxCausticTemp, or
+# all three revert to the compiled defaults (logged).
 # ============================================================
-minCausticTemp=50          # WASHING aborts if caustic drops below this
-optimalCausticTemp=60      # heater target during STARTING (warm-up)
-maxCausticTemp=70          # caustic safety cutoff
+minCausticTemp=50          # wash floor: below this the amber LOW TEMP banner
+                           # shows (READY + operating screens) + warn/lowtemp
+                           # on MQTT. WARN-ONLY — never gates or aborts a cycle.
+optimalCausticTemp=60      # heater target during STARTING (fw mode warm-up)
+maxCausticTemp=70          # caustic safety cutoff (overtemp fault backstop)
 # (enclosure temp + fan thresholds removed: the enclosure fan is a standalone
 #  self-regulating unit with its own thermometer, off the controller. A9 + CCIO-A7
 #  are free. maxEnclosureTemp/fanOnTemp/fanOffTemp keys are now ignored if present.)
+
+# ============================================================
+# HEATING BOUNDS
+# ============================================================
+maxHeatingMs=900000        # STARTING gives up (ERR_HEATING_TIMEOUT) after this
+                           # (both heater modes; valid 60000..7200000 = 1 min..2 h)
+minHeatingRate=3           # °C/min considered healthy during fw-mode heating
+                           # (slower is logged as "Slow heating"; valid 1..50)
+
+# ============================================================
+# TEMP SENSOR CALIBRATION (ETS50N 4-20 mA on A-10)
+# ============================================================
+etsShuntOhms=470.0         # MEASURED value of the installed shunt resistor
+                           # (nominal 470 ±5%; valid 100..1000)
+tempCalOffsetC10=0         # trim vs a reference thermometer, tenths of a °C
+                           # (valid -100..100 = ±10.0 °C)
+
+# ============================================================
+# TOUCH CALIBRATION (optional — written by tools/diablo_touch_cal)
+# Host-side affine map raw->screen: x' = A*rx + B*ry + C, y' = D*rx + E*ry + F.
+# Omit all six to use the firmware's baked-in calibration. If present, ALL six
+# should be supplied. Survives panel SETTINGS saves.
+# ============================================================
+#touchCalA=0.066
+#touchCalB=0.000
+#touchCalC=-10.0
+#touchCalD=0.000
+#touchCalE=0.121
+#touchCalF=-15.0
 
 # ============================================================
 # MQTT BROKER  (overrides the compiled KegSecrets.h defaults)

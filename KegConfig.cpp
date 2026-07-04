@@ -17,7 +17,7 @@
 // Production defaults total ≈ 4.4 min/cycle; tune per process via WASHER.CFG or
 // the on-screen settings editor. BENCH_MODE compresses every stage to 5 s so a
 // cardless bench cycle runs in ~50 s. (5 s multiples → clean ±5 s editor steps.)
-  #define DEF_DIRTY_DRAIN_MS  20000UL   // drain old beer (+5 s air burst)
+  #define DEF_DIRTY_DRAIN_MS  20000UL   // drain old beer (air on whole stage)
   #define DEF_DIRTY_RINSE_MS  20000UL   // pre-rinse
   #define DEF_DIRTY_PURGE_MS  10000UL   // air blow to drain
   #define DEF_WASH_MS         90000UL   // caustic recirc — the real clean
@@ -41,7 +41,7 @@ unsigned long saniTimer       = DEF_SANI_MS;
 unsigned long saniRtnTimer    = DEF_SANI_RTN_MS;
 unsigned long purgeTimer      = DEF_PRESSURE_MS;
 unsigned long fullDrainTimer  = DEF_FULL_DRAIN_MS;
-double        largeKegMod     = 1.5;
+double        largeKegMod     = DEF_LARGE_KEG_MOD;
 unsigned long pauseMaxMs      = PAUSE_MAX_MS;   // runtime; SD-overridable (Phase 3)
 
 // Temperature thresholds (°C) — seeded from DEFAULT_*; SD-overridable.
@@ -49,6 +49,11 @@ int minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
 int optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
 int maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
 int tempCalOffsetC10   = 0;   // calibration trim vs a reference thermometer
+
+// Heating bounds + temp-sensor shunt — SD-overridable (were compile-time).
+int           minHeatingRate = DEF_MIN_HEATING_RATE;
+unsigned long maxHeatingMs   = DEF_MAX_HEATING_MS;
+float         etsShuntOhms   = DEF_ETS_SHUNT_OHMS;
 
 // Heater control mode — see KegConfig.h. Default fw (safe on direct wiring).
 bool heaterExternal = false;
@@ -199,6 +204,21 @@ bool config_loadFromSD() {
       else if (strcmp(value, "fw")  == 0) heaterExternal = false;
       else logOutOfRange(key, value);
     }
+    else if (strcmp(key, "maxHeatingMs")    == 0) {
+      unsigned long v = strtoul(value, nullptr, 10);
+      if (v < 60000UL || v > 7200000UL) logOutOfRange(key, value);   // 1 min..2 h
+      else maxHeatingMs = v;
+    }
+    else if (strcmp(key, "minHeatingRate")  == 0) {
+      int v = atoi(value);
+      if (v < 1 || v > 50) logOutOfRange(key, value);                // °C/min
+      else minHeatingRate = v;
+    }
+    else if (strcmp(key, "etsShuntOhms")    == 0) {
+      double v = atof(value);
+      if (v < 100.0 || v > 1000.0) logOutOfRange(key, value);
+      else etsShuntOhms = (float)v;
+    }
     // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
     //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
     // MQTT broker config (override the KegSecrets.h compiled defaults)
@@ -220,6 +240,17 @@ bool config_loadFromSD() {
   }
 
   settingsFile.close();
+
+  // Cross-field sanity: the three temps must be ordered (floor ≤ target < cutoff).
+  // Each key is individually range-checked above, but an unordered trio (e.g.
+  // minCausticTemp=80 with maxCausticTemp=70) is self-contradictory — revert
+  // ALL THREE to the compiled defaults; a half-applied trio is worse than none.
+  if (!(minCausticTemp <= optimalCausticTemp && optimalCausticTemp < maxCausticTemp)) {
+    diagnostics_logEvent("Config temps out of order - defaults used");
+    minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
+    optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
+    maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
+  }
   return true;
 }
 
@@ -256,6 +287,19 @@ void config_saveToSD() {
   // full rewrite — omitting the key would silently flip a unit back to fw).
   settingsFile.print("heaterMode=");         settingsFile.println(heaterExternal ? "ext" : "fw");
 
+  // SD-only keys — same full-rewrite survival requirement as heaterMode.
+  settingsFile.print("maxHeatingMs=");       settingsFile.println(maxHeatingMs);
+  settingsFile.print("minHeatingRate=");     settingsFile.println(minHeatingRate);
+  settingsFile.print("etsShuntOhms=");       settingsFile.println(etsShuntOhms, 1);
+  // Touch calibration: only present when the SD supplied it (cfgTouchCalValid);
+  // dropping it here would silently revert touch to the baked-in cal on reboot.
+  if (cfgTouchCalValid) {
+    for (int i = 0; i < 6; i++) {
+      settingsFile.print("touchCal"); settingsFile.print((char)('A' + i));
+      settingsFile.print("=");        settingsFile.println(cfgTouchCal[i], 6);
+    }
+  }
+
   // NOTE: the MQTT broker block is intentionally NOT written here. This save does
   // SD.remove + full rewrite, so it INTENTIONALLY drops any MQTT block from the
   // file — the device then falls back to compiled KegSecrets.h creds on next boot.
@@ -280,7 +324,7 @@ void config_setDefaults() {
   saniRtnTimer    = DEF_SANI_RTN_MS;
   purgeTimer      = DEF_PRESSURE_MS;
   fullDrainTimer  = DEF_FULL_DRAIN_MS;
-  largeKegMod     = 1.5;
+  largeKegMod     = DEF_LARGE_KEG_MOD;
   pauseMaxMs      = PAUSE_MAX_MS;
 
   minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
@@ -288,6 +332,9 @@ void config_setDefaults() {
   maxCausticTemp     = DEFAULT_MAX_CAUSTIC_TEMP;
   tempCalOffsetC10   = 0;
   heaterExternal     = false;
+  minHeatingRate     = DEF_MIN_HEATING_RATE;
+  maxHeatingMs       = DEF_MAX_HEATING_MS;
+  etsShuntOhms       = DEF_ETS_SHUNT_OHMS;
 
   snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
            MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);

@@ -368,7 +368,7 @@ bool hardware_monitorHeating() {
     return false;
   }
 
-  if (now - heatingStartTime > MAX_HEATING_TIME) {
+  if (now - heatingStartTime > maxHeatingMs) {
     hardware_setCausticHeater(false);
     errorCode = ERR_HEATING_TIMEOUT;
     diagnostics_logEvent("Heater timeout");
@@ -377,7 +377,7 @@ bool hardware_monitorHeating() {
 
   if (now - heatingLastCheckTime > 60000UL) {
     int delta = currentTemp - heatingLastTemp;
-    if (delta < MIN_HEATING_RATE && currentTemp < (optimalCausticTemp - 5)) {
+    if (delta < minHeatingRate && currentTemp < (optimalCausticTemp - 5)) {
       char buf[48];
       snprintf(buf, sizeof(buf), "Slow heating: %dC/min", delta);
       diagnostics_logEvent(buf);
@@ -401,7 +401,7 @@ bool hardware_checkHeatingRate() {
   int totalDelta = hardware_getCausticTemp() - heatingStartTemp;
   float minutes = (millis() - heatingStartTime) / 60000.0f;
   if (minutes <= 0.0f) return true;
-  return (totalDelta / minutes) >= MIN_HEATING_RATE;
+  return (totalDelta / minutes) >= minHeatingRate;
 }
 
 // ---------- Sensor accessors ----------
@@ -418,9 +418,9 @@ bool hardware_checkHeatingRate() {
 // is scaled to its native measuring range -50..150C (device default); if you
 // rescale the span in the ETS menu, change ETS_T_AT_4MA / ETS_T_AT_20MA to match.
 // <~3.6mA (~1.7V) = open / under-range loop -> fail cold.
-// ETS_SHUNT_OHMS MUST equal the installed resistor — set it to the MEASURED value
-// (470 ohm ±5% = 446..494) for best accuracy; nominal 470 is the default.
-static const float ETS_SHUNT_OHMS = 470.0f;
+// The shunt value MUST equal the installed resistor — set etsShuntOhms on the
+// SD card to the MEASURED value (470 ohm ±5% = 446..494) for best accuracy;
+// nominal 470 (DEF_ETS_SHUNT_OHMS) is the compiled default.
 static const float ETS_T_AT_4MA   = -50.0f;
 static const float ETS_T_AT_20MA  = 150.0f;
 static const float ETS_MA_FAULT   = 3.6f;
@@ -429,7 +429,7 @@ int hardware_getCausticTempC10() {
   // A fully open/short loop (0V or >10V) is already flagged by the ADC rail-reject.
   if (causticTempSensorError) return (int)minCausticTemp - 10;
   float v  = (float)causticTempValue / (float)ADC_MAX * 10.0f;   // ClearCore 0-10V input
-  float mA = v / ETS_SHUNT_OHMS * 1000.0f;                       // current through the shunt
+  float mA = v / etsShuntOhms * 1000.0f;                         // current through the shunt
   if (mA < ETS_MA_FAULT) return (int)minCausticTemp - 10;        // loop fault -> fail cold
   float t = ETS_T_AT_4MA + (mA - 4.0f) * (ETS_T_AT_20MA - ETS_T_AT_4MA) / 16.0f;
   return (int)lroundf(t * 10.0f) + tempCalOffsetC10;   // tenths of a degree C

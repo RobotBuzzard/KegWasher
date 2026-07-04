@@ -60,7 +60,7 @@ Order in `loop()` is load-bearing — don't reshuffle without understanding why:
 2. `mqtt_applyCmdFlags()` — **must** run after `hardware_readInputs()` (which overwrites button flags) and before state processing. MQTT commands set `isCycleStartPressed` / `isManualDrainPressed` as one-tick pulses so they flow through the existing button paths.
 3. `hardware_consumeEstopFlag()` → log + abort to `MACH_ABORTED` (`ERR_ESTOP`). ISR has already killed outputs; this is the non-ISR-safe follow-up.
 4. `stateMachine_process()`.
-5. Display: the operating screen (EXECUTE/HELD) draws once on entry and on `recipePhase` change, then partial updates at 1 Hz (timer) / 5 Hz (status). IDLE/COMPLETE/ABORTED/STOPPING/STOPPED manage their own screen transitions from within their state handlers.
+5. Display: the operating screen (EXECUTE/HELD) draws once on entry and on `recipePhase` change, then partial updates: IO dots every tick (change-detected in KDS so mid-phase valve moves show immediately), timer at 1 Hz, temp/status every 5 s. IDLE/COMPLETE/ABORTED/STOPPING/STOPPED manage their own screen transitions from within their state handlers.
 6. `Ethernet.maintain()`, `mqtt_loop()`, `mqtt_publishStatus()`, `mqtt_publishHeartbeat()`.
 7. `Watchdog.kick()` — **last**, so any hang above triggers an 8 s reset.
 8. `delay(10)` paces the loop for debounce stability.
