@@ -260,4 +260,12 @@ bool config_loadFromSD();
 void config_saveToSD();
 void config_setDefaults();
 
+// Apply one KEY=VALUE with bounded validation — shared by the SD loader and the
+// remote (MQTT cfgset) editor. Return codes:
+#define KW_CFG_APPLIED   0
+#define KW_CFG_UNKNOWN   1
+#define KW_CFG_REJECTED  2
+byte config_applyKV(const char* key, const char* value);
+bool config_tempsOrdered();   // floor ≤ target < cutoff
+
 #endif // KEG_CONFIG_H

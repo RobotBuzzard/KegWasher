@@ -73,6 +73,68 @@ static const char* kwTopic(const char* leaf) {
   return kwTopicBuf;
 }
 
+// ----- Config mirror (the remote editor's read surface) -----
+// Mirror the full non-secret runtime config to retained kegwasher/cfg/<key>
+// topics: the machine's live config is always inspectable, and tools/kwcfg
+// reads these and writes via cmd/cfgset. The mqtt* block is deliberately
+// excluded — credentials are provisioning (KegSecrets.h / hand-edited card),
+// not process config, and don't belong on the broker.
+static void mqtt_cfgPubStr(const char* key, const char* v) {
+  char t[48];
+  snprintf(t, sizeof(t), "cfg/%s", key);
+  kwMqtt.publish(kwTopic(t), v, true);
+}
+static void mqtt_cfgPubUL(const char* key, unsigned long v) {
+  char b[16];
+  snprintf(b, sizeof(b), "%lu", v);
+  mqtt_cfgPubStr(key, b);
+}
+static void mqtt_cfgPubInt(const char* key, int v) {
+  char b[16];
+  snprintf(b, sizeof(b), "%d", v);
+  mqtt_cfgPubStr(key, b);
+}
+static void mqtt_publishConfig() {
+  mqtt_cfgPubUL("dirtyDrainTimer", dirtyDrainTimer);
+  mqtt_cfgPubUL("dirtyRinseTimer", dirtyRinseTimer);
+  mqtt_cfgPubUL("dirtyPurgeTimer", dirtyPurgeTimer);
+  mqtt_cfgPubUL("washTimer",       washTimer);
+  mqtt_cfgPubUL("causticRtnTimer", causticRtnTimer);
+  mqtt_cfgPubUL("rinseTimer",      rinseTimer);
+  mqtt_cfgPubUL("rinsePurgeTimer", rinsePurgeTimer);
+  mqtt_cfgPubUL("saniTimer",       saniTimer);
+  mqtt_cfgPubUL("saniRtnTimer",    saniRtnTimer);
+  mqtt_cfgPubUL("purgeTimer",      purgeTimer);
+  mqtt_cfgPubUL("fullDrainTimer",  fullDrainTimer);
+  mqtt_cfgPubUL("pauseMaxMs",      pauseMaxMs);
+  mqtt_cfgPubUL("maxHeatingMs",    maxHeatingMs);
+  char b[16];
+  snprintf(b, sizeof(b), "%.2f", largeKegMod);
+  mqtt_cfgPubStr("largeKegMod", b);
+  mqtt_cfgPubInt("minCausticTemp",     minCausticTemp);
+  mqtt_cfgPubInt("optimalCausticTemp", optimalCausticTemp);
+  mqtt_cfgPubInt("maxCausticTemp",     maxCausticTemp);
+  mqtt_cfgPubInt("tempCalOffsetC10",   tempCalOffsetC10);
+  mqtt_cfgPubInt("minHeatingRate",     minHeatingRate);
+  snprintf(b, sizeof(b), "%.1f", (double)etsShuntOhms);
+  mqtt_cfgPubStr("etsShuntOhms", b);
+  mqtt_cfgPubStr("heaterMode", heaterExternal ? "ext" : "fw");
+  if (cfgTouchCalValid) {
+    for (int i = 0; i < 6; i++) {
+      char k[12];
+      snprintf(k, sizeof(k), "touchCal%c", 'A' + i);
+      snprintf(b, sizeof(b), "%.6f", (double)cfgTouchCal[i]);
+      mqtt_cfgPubStr(k, b);
+    }
+  }
+  // Legacy dashboard aliases for the two thresholds (predate cfg/*).
+  char b2[16];
+  snprintf(b2, sizeof(b2), "%d", minCausticTemp);
+  kwMqtt.publish(kwTopic("config/temp_floor"), b2, true);
+  snprintf(b2, sizeof(b2), "%d", optimalCausticTemp);
+  kwMqtt.publish(kwTopic("config/temp_target"), b2, true);
+}
+
 // Attempt one connection to the broker. Returns true on success.
 // Publishes online=true (retained) and ip (retained) on connect, and
 // registers a Last-Will-Testament so the broker auto-publishes
@@ -111,13 +173,9 @@ static bool mqtt_try_connect() {
   // remotely. ext = ETS50N thermostat owns the burn, permit always asserted.
   kwMqtt.publish(kwTopic("mode/heater"), heaterExternal ? "ext" : "fw", true);
 
-  // Temp thresholds as loaded (SD or defaults): floor = minCausticTemp (wash
-  // gate + the READY LOW TEMP banner), target = optimalCausticTemp (fw-mode
-  // heat-to). Fixed after boot, so once per connect like mode/heater.
-  snprintf(buf, sizeof(buf), "%d", minCausticTemp);
-  kwMqtt.publish(kwTopic("config/temp_floor"), buf, true);
-  snprintf(buf, sizeof(buf), "%d", optimalCausticTemp);
-  kwMqtt.publish(kwTopic("config/temp_target"), buf, true);
+  // Full config mirror to retained cfg/<key> topics (+ the two legacy
+  // config/temp_* aliases). Re-published after every accepted cfgset.
+  mqtt_publishConfig();
 
   // Subscribe to the command surface. Single-level wildcard '+' matches
   // any leaf under cmd/ (start, silence, reset, future additions).
@@ -181,6 +239,12 @@ void net_log_send(const char* msg) {
 //                          MQTT-set value is immediately clobbered.
 //                          Needs a remote-override mechanism (out of
 //                          scope here).
+//   kegwasher/cmd/cfgset   Remote config editor write path. Payload is
+//                          one KEY=VALUE (same schema as WASHER.CFG).
+//                          Validated + persisted to SD + mirrored back
+//                          to the retained cfg/* topics; every attempt
+//                          is answered on kegwasher/cfg/ack ("OK ..."
+//                          or "ERR ..."). See mqtt_handleCfgSet().
 //
 // Hardening:
 //   - Any command is refused if ESTOP is currently active. The intent
@@ -188,9 +252,10 @@ void net_log_send(const char* msg) {
 //     remote-clear an e-stop with the button still held is a footgun.
 //   - Every received command is logged via diagnostics_logEvent which
 //     mirrors to kegwasher/log, giving a free audit trail.
-//   - Payload is ignored — presence of a publish on the topic is the
-//     command. (Some MQTT button-source UIs send "1" or "true" on
-//     press, others send empty; treat any payload as a trigger.)
+//   - Payload is ignored for the button commands — presence of a publish
+//     on the topic is the command. (Some MQTT button-source UIs send "1"
+//     or "true" on press, others send empty; treat any payload as a
+//     trigger.) cfgset is the exception: its payload is the KEY=VALUE.
 //   - Auth is whatever the broker enforces. We don't add per-message
 //     X-API-Key plumbing — the broker's username/password is the
 //     authorisation surface.
@@ -206,6 +271,13 @@ static volatile bool kwMqttCmdResume  = false;
 static volatile bool kwMqttCmdStop    = false;
 static volatile bool kwMqttCmdRestart = false;
 
+// cmd/cfgset is the one command that carries a payload (KEY=VALUE — the remote
+// config editor's write path). One pending slot: a second cfgset arriving
+// before the first is processed is dropped; tools/kwcfg waits for the cfg/ack
+// reply before sending the next key, so this never happens in practice.
+static volatile bool kwMqttCmdCfgSet = false;
+static char kwMqttCfgSetBuf[KEY_MAX_LENGTH + VALUE_MAX_LENGTH + 2];
+
 // PubSubClient invokes this synchronously from kwMqtt.loop() when a
 // message arrives on a subscribed topic. Topic and payload are valid
 // only for the duration of the call.
@@ -218,7 +290,6 @@ static volatile bool kwMqttCmdRestart = false;
 // effects are deferred to mqtt_applyCmdFlags() which runs in the safe
 // main-loop context. See bench-confirmed failure 2026-05-14.
 static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
-  (void)payload; (void)length;  // payload ignored — see header comment
   kwMqttLastRxMs = millis();    // sub-activity (drives the footer 'S' dot)
 
   const char *leaf = strrchr(topic, '/');
@@ -246,11 +317,75 @@ static void mqtt_callback(char *topic, byte *payload, unsigned int length) {
     kwMqttCmdStop = true;
   } else if (strcmp(leaf, "restart") == 0) {
     kwMqttCmdRestart = true;
+  } else if (strcmp(leaf, "cfgset") == 0) {
+    // Copy the payload out — it's only valid for the duration of this call.
+    // Processing (validation, SD write, ack publish) happens in
+    // mqtt_handleCfgSet() from the loop, never here (no publishing mid-receive).
+    if (!kwMqttCmdCfgSet && length > 0 && length < sizeof(kwMqttCfgSetBuf)) {
+      memcpy(kwMqttCfgSetBuf, payload, length);
+      kwMqttCfgSetBuf[length] = '\0';
+      kwMqttCmdCfgSet = true;
+    }
   }
   // Unknown leaves are silently dropped. We can't safely log from here
   // for the same reason — see header comment. A dashboard publishing to
   // bogus topics is a dashboard bug, surfaced via mosquitto_sub on the
   // operator side, not via firmware logs.
+}
+
+// Process a pending cmd/cfgset (KEY=VALUE) in safe loop context. Every outcome
+// is answered on kegwasher/cfg/ack (non-retained): "OK key=value" or
+// "ERR <reason>". Rules:
+//   - refused while a cycle is active (EXECUTE/HELD/STARTING/STOPPING) — edit
+//     config at IDLE/COMPLETE/ABORTED only;
+//   - mqtt* keys refused (credentials are provisioning, not process config —
+//     and the on-device saver intentionally never writes them to the card);
+//   - same bounded validation as the SD loader (config_applyKV), plus the
+//     temps-ordered rule enforced transactionally (violating set is rolled back);
+//   - accepted values persist via config_saveToSD() when a card is present,
+//     RAM-only otherwise (bench), and the cfg/* mirror is republished.
+static void mqtt_handleCfgSet() {
+  if (!kwMqttCmdCfgSet) return;
+  char line[sizeof(kwMqttCfgSetBuf)];
+  strncpy(line, kwMqttCfgSetBuf, sizeof(line));
+  line[sizeof(line) - 1] = '\0';
+  kwMqttCmdCfgSet = false;
+
+  char ack[96];
+  char key[KEY_MAX_LENGTH] = {0};
+  char value[VALUE_MAX_LENGTH] = {0};
+
+  if (!utils_parseConfigLine(line, key, value)) {
+    snprintf(ack, sizeof(ack), "ERR not KEY=VALUE: %.60s", line);
+  } else if (machineState != MACH_IDLE && machineState != MACH_COMPLETE &&
+             machineState != MACH_ABORTED) {
+    snprintf(ack, sizeof(ack), "ERR busy (%s): %s", machStateNames[machineState], key);
+  } else if (strncmp(key, "mqtt", 4) == 0) {
+    snprintf(ack, sizeof(ack), "ERR mqtt* keys are not remote-settable: %s", key);
+  } else {
+    int oldMin = minCausticTemp, oldOpt = optimalCausticTemp, oldMax = maxCausticTemp;
+    byte r = config_applyKV(key, value);
+    if (r == KW_CFG_APPLIED && !config_tempsOrdered()) {
+      minCausticTemp = oldMin; optimalCausticTemp = oldOpt; maxCausticTemp = oldMax;
+      snprintf(ack, sizeof(ack), "ERR temps must be floor<=target<cutoff: %s=%s", key, value);
+    } else if (r == KW_CFG_APPLIED) {
+      if (cfgLoadedFromSD) {
+        config_saveToSD();
+        snprintf(ack, sizeof(ack), "OK %s=%s", key, value);
+      } else {
+        snprintf(ack, sizeof(ack), "OK %s=%s (RAM only - no SD)", key, value);
+      }
+      mqtt_publishConfig();   // refresh the retained cfg/* mirror
+    } else if (r == KW_CFG_UNKNOWN) {
+      snprintf(ack, sizeof(ack), "ERR unknown key: %s", key);
+    } else {
+      snprintf(ack, sizeof(ack), "ERR out of range: %s=%s", key, value);
+    }
+  }
+  kwMqtt.publish(kwTopic("cfg/ack"), ack, false);
+  char logbuf[110];
+  snprintf(logbuf, sizeof(logbuf), "Cfgset %s", ack);
+  diagnostics_logEvent(logbuf);
 }
 
 // Drain the MQTT command flags into the button-pressed flags. Must run
@@ -325,6 +460,7 @@ static void mqtt_applyCmdFlags() {
     // PackML Clear/Reset surface: ABORTED→Clearing (path B), STOPPED/COMPLETE→Idle.
     stateMachine_reset();
   }
+  mqtt_handleCfgSet();   // pending remote config edit (validated + acked)
 }
 
 // ---------------------------------------------------------------------

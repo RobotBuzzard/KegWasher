@@ -2,8 +2,15 @@
 
 Bench helpers for the **gen4-uLCD-43DT (Diablo16)** display on the current
 **raw SPE serial** path (no ViSi-Genie / Workshop4), plus a couple of ClearCore
-recovery aids. Each `*/` sketch is a standalone Arduino sketch (folder name ==
-`.ino` name); the `.py` helpers run on the dev host.
+recovery aids and the network config editor. Each `*/` sketch is a standalone
+Arduino sketch (folder name == `.ino` name); the `.py` helpers and `kwcfg` run
+on the dev host.
+
+## Network config editor
+
+| Tool | What it does |
+|------|--------------|
+| `kwcfg` | Stand-alone remote editor for the machine's `WASHER.CFG` over MQTT. `kwcfg get` (live config from the retained `kegwasher/cfg/*` mirror), `kwcfg set KEY=VALUE ...` (writes via `cmd/cfgset` — firmware validates with the SD-loader rules, persists to the card, acks on `cfg/ack`), `kwcfg edit` (fetch → `$EDITOR` → apply diff), `kwcfg watch`. Uses `mosquitto_pub/sub` (no Python deps); broker/creds default to `192.168.1.111` / rr1 from `~/mosquitto-credentials.txt`, overridable via `KWCFG_*` env or flags. Edits are refused while a cycle runs, and `mqtt*` keys are never remote-settable. |
 
 > Firmware flashing is **not** here — use the canonical wrapper:
 > `~/dev/teknic-clearcore-cli/scripts/flash.sh ~/dev/KegWasher /dev/ttyACM0`

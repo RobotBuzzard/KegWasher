@@ -81,6 +81,7 @@ All of the MQTT plumbing lives in `KegWasher.ino` itself (not a separate module)
 1. **Never publish from inside `mqtt_callback`.** PubSubClient shares one buffer between send/recv; publishing mid-receive corrupts the parser. Callback only sets pending flags; `mqtt_applyCmdFlags()` (called from `loop()`) does the actual work + logging. This includes anything transitively calling `diagnostics_logEvent` (which calls `net_log_send` → `kwMqtt.publish`).
 2. Status publishes are **change-detected** against `MqttStatusCache` sentinels initialized to impossible values so the first call flushes everything. Throttled to 250 ms.
 3. LWT publishes `kegwasher/online=false` on disconnect; on connect we publish `online=true`, `ip`, and `firmware` (all retained) so a fresh subscriber lands hot.
+4. **Remote config editor**: the full non-secret config is mirrored to retained `kegwasher/cfg/<key>` topics; `cmd/cfgset` (payload `KEY=VALUE`) applies one change through `config_applyKV` (same validation as the SD loader, temps-ordered rule enforced transactionally), saves to the card, re-publishes the mirror, and acks on `cfg/ack`. Refused mid-cycle and for all `mqtt*` keys. Host tool: `tools/kwcfg` (`get`/`set`/`edit`/`watch`).
 
 ### Display
 

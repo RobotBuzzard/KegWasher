@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""kwcfg — stand-alone network config editor for the KegWasher.
+
+Reads the machine's live config from the retained kegwasher/cfg/* MQTT topics
+and writes changes through kegwasher/cmd/cfgset (one KEY=VALUE per message;
+the firmware validates against the same rules as the SD loader, persists to
+the card, acks on kegwasher/cfg/ack, and republishes the cfg/* mirror).
+
+Usage:
+  kwcfg get [KEY ...]        show the live config (all keys, or just KEY ...)
+  kwcfg set KEY=VALUE ...    apply one or more changes (acked per key)
+  kwcfg edit                 fetch -> $EDITOR -> apply the diff
+  kwcfg watch                live-tail cfg/*, cfg/ack and the machine log
+
+Connection (flags > env > defaults):
+  --host/-H   broker host      (KWCFG_HOST,  default 192.168.1.111)
+  --user/-u   broker user      (KWCFG_USER,  default rr1)
+  --pass/-P   broker password  (KWCFG_PASS,  default: looked up by user in
+                                ~/mosquitto-credentials.txt)
+  --root/-r   topic root       (KWCFG_ROOT,  default kegwasher)
+
+Notes:
+  - The firmware refuses edits while a cycle is running (ERR busy) and refuses
+    all mqtt* keys (credentials are provisioned via KegSecrets.h / the card).
+  - Edits are rejected atomically: an out-of-range value, or a temp change that
+    breaks minCausticTemp <= optimalCausticTemp < maxCausticTemp, changes
+    nothing on the machine.
+"""
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+# Canonical display order — cycle order first, then modifiers, thresholds,
+# calibration. Keys the firmware publishes that aren't listed (future
+# firmware) sort after these, alphabetically.
+KEY_ORDER = [
+    "dirtyDrainTimer", "dirtyRinseTimer", "dirtyPurgeTimer",
+    "washTimer", "causticRtnTimer",
+    "rinseTimer", "rinsePurgeTimer",
+    "saniTimer", "saniRtnTimer", "purgeTimer",
+    "fullDrainTimer",
+    "largeKegMod", "pauseMaxMs",
+    "minCausticTemp", "optimalCausticTemp", "maxCausticTemp",
+    "heaterMode", "maxHeatingMs", "minHeatingRate",
+    "etsShuntOhms", "tempCalOffsetC10",
+    "touchCalA", "touchCalB", "touchCalC",
+    "touchCalD", "touchCalE", "touchCalF",
+]
+
+HELP_TEXT = {
+    "dirtyDrainTimer":    "ms  air-push old beer out (air+drain, whole stage)",
+    "dirtyRinseTimer":    "ms  initial water rinse",
+    "dirtyPurgeTimer":    "ms  air-blow the dirty rinse water out",
+    "washTimer":          "ms  caustic recirculation (the main clean)",
+    "causticRtnTimer":    "ms  air-blow caustic back to its reservoir",
+    "rinseTimer":         "ms  post-caustic water rinse",
+    "rinsePurgeTimer":    "ms  air-blow the rinse water out",
+    "saniTimer":          "ms  sanitizer recirculation",
+    "saniRtnTimer":       "ms  CO2-blow sanitizer back to its reservoir",
+    "purgeTimer":         "ms  CO2 charge FAIL TIMEOUT (normally ends early)",
+    "fullDrainTimer":     "ms  DIRTY_DRAIN when the DRAIN switch is latched",
+    "largeKegMod":        "x   large-keg multiplier on every stage timer",
+    "pauseMaxMs":         "ms  max PAUSED before alarm+abort",
+    "minCausticTemp":     "C   wash floor -> LOW TEMP banner (warn-only)",
+    "optimalCausticTemp": "C   fw-mode heat-to target during STARTING",
+    "maxCausticTemp":     "C   caustic safety cutoff (overtemp fault)",
+    "heaterMode":         "fw|ext  ext ONLY once the ETS50N permit chain is wired",
+    "maxHeatingMs":       "ms  STARTING gives up after this",
+    "minHeatingRate":     "C/min  healthy fw-mode heating rate",
+    "etsShuntOhms":       "ohm MEASURED 4-20mA shunt value (nominal 470)",
+    "tempCalOffsetC10":   "0.1C  trim vs a reference thermometer",
+}
+
+
+def conn():
+    host = os.environ.get("KWCFG_HOST", "192.168.1.111")
+    user = os.environ.get("KWCFG_USER", "rr1")
+    pw = os.environ.get("KWCFG_PASS", "")
+    root = os.environ.get("KWCFG_ROOT", "kegwasher")
+
+    args = sys.argv[1:]
+    out = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--host", "-H"):
+            host = args[i + 1]; i += 2
+        elif a in ("--user", "-u"):
+            user = args[i + 1]; i += 2
+        elif a in ("--pass", "-P"):
+            pw = args[i + 1]; i += 2
+        elif a in ("--root", "-r"):
+            root = args[i + 1]; i += 2
+        else:
+            out.append(a); i += 1
+
+    if not pw:
+        credfile = os.path.expanduser("~/mosquitto-credentials.txt")
+        try:
+            with open(credfile) as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] == user:
+                        pw = parts[1]
+                        break
+        except OSError:
+            pass
+    if not pw:
+        sys.exit(f"kwcfg: no password for '{user}' (flag --pass, env KWCFG_PASS, "
+                 f"or a '{user} <pass>' line in ~/mosquitto-credentials.txt)")
+    return host, user, pw, root, out
+
+
+def sub_cmd(host, user, pw, topics, timeout):
+    cmd = ["mosquitto_sub", "-h", host, "-u", user, "-P", pw, "-v",
+           "-W", str(timeout)]
+    for t in topics:
+        cmd += ["-t", t]
+    return cmd
+
+
+def fetch(host, user, pw, root, timeout=2):
+    """Return {key: value} from the retained cfg/* mirror."""
+    r = subprocess.run(sub_cmd(host, user, pw, [f"{root}/cfg/#"], timeout),
+                       capture_output=True, text=True)
+    cfg = {}
+    prefix = f"{root}/cfg/"
+    for line in r.stdout.splitlines():
+        if not line.startswith(prefix):
+            continue
+        topic, _, value = line.partition(" ")
+        key = topic[len(prefix):]
+        if key and "/" not in key and key != "ack":
+            cfg[key] = value
+    return cfg
+
+
+def ordered(keys):
+    known = [k for k in KEY_ORDER if k in keys]
+    extra = sorted(k for k in keys if k not in KEY_ORDER)
+    return known + extra
+
+
+def cmd_get(host, user, pw, root, want):
+    cfg = fetch(host, user, pw, root)
+    if not cfg:
+        sys.exit(f"kwcfg: no cfg/* topics from '{root}' — machine offline, "
+                 "pre-cfg firmware, or wrong broker/root")
+    keys = ordered(cfg) if not want else want
+    width = max(len(k) for k in keys)
+    for k in keys:
+        if k not in cfg:
+            print(f"{k:<{width}}  <not published>")
+            continue
+        hint = HELP_TEXT.get(k, "")
+        print(f"{k:<{width}}  {cfg[k]:<10} {('# ' + hint) if hint else ''}".rstrip())
+
+
+def apply_one(host, user, pw, root, key, value, ack_timeout=6):
+    """Publish one cfgset and wait for its ack. Returns (ok, ack_text)."""
+    sub = subprocess.Popen(
+        sub_cmd(host, user, pw, [f"{root}/cfg/ack"], ack_timeout),
+        stdout=subprocess.PIPE, text=True)
+    # Give the subscription a beat to register before publishing.
+    import time
+    time.sleep(0.3)
+    subprocess.run(["mosquitto_pub", "-h", host, "-u", user, "-P", pw,
+                    "-t", f"{root}/cmd/cfgset", "-m", f"{key}={value}"],
+                   check=True)
+    want = f"{key}="
+    ack = None
+    for line in sub.stdout:
+        _, _, payload = line.rstrip("\n").partition(" ")
+        # Acks look like "OK key=value..." / "ERR <reason>: key=value" /
+        # "ERR unknown key: key" — match any ack that names our key.
+        if want in payload or payload.endswith(key):
+            ack = payload
+            break
+    sub.terminate()
+    if ack is None:
+        return False, "no ack (machine offline? cycle running?)"
+    return ack.startswith("OK"), ack
+
+
+def cmd_set(host, user, pw, root, pairs):
+    if not pairs:
+        sys.exit("kwcfg set: nothing to set (KEY=VALUE ...)")
+    kv = []
+    for p in pairs:
+        if "=" not in p:
+            sys.exit(f"kwcfg set: '{p}' is not KEY=VALUE")
+        k, _, v = p.partition("=")
+        kv.append((k.strip(), v.strip()))
+    failures = 0
+    for k, v in kv:
+        ok, ack = apply_one(host, user, pw, root, k, v)
+        print(("  ok  " if ok else " ERR  ") + ack)
+        if not ok:
+            failures += 1
+    sys.exit(1 if failures else 0)
+
+
+def cmd_edit(host, user, pw, root):
+    cfg = fetch(host, user, pw, root)
+    if not cfg:
+        sys.exit(f"kwcfg: no cfg/* topics from '{root}' — machine offline?")
+    keys = ordered(cfg)
+    width = max(len(k) for k in keys)
+
+    with tempfile.NamedTemporaryFile("w", suffix=".cfg", prefix="kwcfg-",
+                                     delete=False) as f:
+        path = f.name
+        f.write(f"# KegWasher live config ({root} @ {host})\n")
+        f.write("# Edit values and save; unchanged lines are ignored.\n")
+        f.write("# Deleting a line does NOT delete the setting.\n\n")
+        for k in keys:
+            hint = HELP_TEXT.get(k, "")
+            pad = " " * (width - len(k))
+            f.write(f"{k}={cfg[k]}{pad}   # {hint}\n" if hint
+                    else f"{k}={cfg[k]}\n")
+
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
+    subprocess.run([editor, path])
+
+    changes = []
+    with open(path) as f:
+        for line in f:
+            line = line.split("#", 1)[0].strip()
+            if not line or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k, v = k.strip(), v.strip()
+            if k in cfg and v != cfg[k]:
+                changes.append((k, v))
+            elif k not in cfg:
+                changes.append((k, v))   # let the firmware judge unknown keys
+    os.unlink(path)
+
+    if not changes:
+        print("no changes")
+        return
+    print(f"applying {len(changes)} change(s):")
+    failures = 0
+    for k, v in changes:
+        ok, ack = apply_one(host, user, pw, root, k, v)
+        print(("  ok  " if ok else " ERR  ") + ack)
+        if not ok:
+            failures += 1
+    sys.exit(1 if failures else 0)
+
+
+def cmd_watch(host, user, pw, root):
+    topics = [f"{root}/cfg/#", f"{root}/log"]
+    cmd = ["mosquitto_sub", "-h", host, "-u", user, "-P", pw, "-v"]
+    for t in topics:
+        cmd += ["-t", t]
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        pass
+
+
+def main():
+    host, user, pw, root, args = conn()
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    verb, rest = args[0], args[1:]
+    if verb == "get":
+        cmd_get(host, user, pw, root, rest)
+    elif verb == "set":
+        cmd_set(host, user, pw, root, rest)
+    elif verb == "edit":
+        cmd_edit(host, user, pw, root)
+    elif verb == "watch":
+        cmd_watch(host, user, pw, root)
+    else:
+        sys.exit(f"kwcfg: unknown command '{verb}' (get|set|edit|watch)")
+
+
+if __name__ == "__main__":
+    main()

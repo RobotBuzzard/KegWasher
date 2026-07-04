@@ -116,6 +116,96 @@ static void applyStrKey(const char* value, char* target, size_t cap) {
   snprintf(target, cap, "%s", value);
 }
 
+// Apply one KEY=VALUE pair with bounded validation — the single rulebook shared
+// by the SD loader and the remote (MQTT cfgset) editor. Returns:
+//   KW_CFG_APPLIED   value accepted (target updated)
+//   KW_CFG_UNKNOWN   key not recognised (loader ignores; remote editor errors)
+//   KW_CFG_REJECTED  value out of range (logged; target unchanged)
+byte config_applyKV(const char* key, const char* value) {
+  if      (strcmp(key, "fullDrainTimer") == 0)  return applyTimerKey(key, value, fullDrainTimer)  ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "dirtyDrainTimer") == 0) return applyTimerKey(key, value, dirtyDrainTimer) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "dirtyRinseTimer") == 0) return applyTimerKey(key, value, dirtyRinseTimer) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "dirtyPurgeTimer") == 0) return applyTimerKey(key, value, dirtyPurgeTimer) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "washTimer")       == 0) return applyTimerKey(key, value, washTimer)       ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "causticRtnTimer") == 0) return applyTimerKey(key, value, causticRtnTimer) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "rinseTimer")      == 0) return applyTimerKey(key, value, rinseTimer)      ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "rinsePurgeTimer") == 0) return applyTimerKey(key, value, rinsePurgeTimer) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "saniTimer")       == 0) return applyTimerKey(key, value, saniTimer)       ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "saniRtnTimer")    == 0) return applyTimerKey(key, value, saniRtnTimer)    ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "purgeTimer")      == 0) return applyTimerKey(key, value, purgeTimer)      ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "largeKegMod")     == 0) {
+    double v = atof(value);
+    if (v < KEGMOD_MIN || v > KEGMOD_MAX) { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    largeKegMod = v;
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "pauseMaxMs")      == 0) {
+    unsigned long v = strtoul(value, nullptr, 10);
+    if (v < PAUSE_MIN_MS || v > PAUSE_LIMIT_MS) { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    pauseMaxMs = v;
+    return KW_CFG_APPLIED;
+  }
+  // Temperature thresholds (°C)
+  else if (strcmp(key, "minCausticTemp")     == 0) return applyTempKey(key, value, minCausticTemp)     ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "optimalCausticTemp") == 0) return applyTempKey(key, value, optimalCausticTemp) ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "maxCausticTemp")     == 0) return applyTempKey(key, value, maxCausticTemp)     ? KW_CFG_APPLIED : KW_CFG_REJECTED;
+  else if (strcmp(key, "tempCalOffsetC10") == 0) {
+    int v = atoi(value);
+    if (v < -100 || v > 100) { logOutOfRange(key, value); return KW_CFG_REJECTED; }   // +/-10.0 C max trim
+    tempCalOffsetC10 = v;
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "heaterMode")      == 0) {
+    if      (strcmp(value, "ext") == 0) heaterExternal = true;
+    else if (strcmp(value, "fw")  == 0) heaterExternal = false;
+    else { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "maxHeatingMs")    == 0) {
+    unsigned long v = strtoul(value, nullptr, 10);
+    if (v < 60000UL || v > 7200000UL) { logOutOfRange(key, value); return KW_CFG_REJECTED; }   // 1 min..2 h
+    maxHeatingMs = v;
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "minHeatingRate")  == 0) {
+    int v = atoi(value);
+    if (v < 1 || v > 50) { logOutOfRange(key, value); return KW_CFG_REJECTED; }                // °C/min
+    minHeatingRate = v;
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "etsShuntOhms")    == 0) {
+    double v = atof(value);
+    if (v < 100.0 || v > 1000.0) { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    etsShuntOhms = (float)v;
+    return KW_CFG_APPLIED;
+  }
+  // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
+  //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
+  // MQTT broker config (override the KegSecrets.h compiled defaults)
+  else if (strcmp(key, "mqttBrokerIp")    == 0) { applyStrKey(value, mqttBrokerIp,  sizeof(mqttBrokerIp));  return KW_CFG_APPLIED; }
+  else if (strcmp(key, "mqttBrokerPort")  == 0) {
+    long p = strtol(value, nullptr, 10);
+    if (p < 1 || p > 65535) { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    mqttBrokerPort = (int)p;
+    return KW_CFG_APPLIED;
+  }
+  else if (strcmp(key, "mqttUser")        == 0) { applyStrKey(value, mqttUser,      sizeof(mqttUser));      return KW_CFG_APPLIED; }
+  else if (strcmp(key, "mqttPass")        == 0) { applyStrKey(value, mqttPass,      sizeof(mqttPass));      return KW_CFG_APPLIED; }
+  else if (strcmp(key, "mqttClientId")    == 0) { applyStrKey(value, mqttClientId,  sizeof(mqttClientId));  return KW_CFG_APPLIED; }
+  else if (strcmp(key, "mqttTopicRoot")   == 0) { applyStrKey(value, mqttTopicRoot, sizeof(mqttTopicRoot)); return KW_CFG_APPLIED; }
+  else if (strncmp(key, "touchCal", 8) == 0 && key[8] >= 'A' && key[8] <= 'F' && key[9] == '\0') {
+    cfgTouchCal[key[8] - 'A'] = atof(value);   // touchCalA..F -> affine coeffs
+    cfgTouchCalValid = true;
+    return KW_CFG_APPLIED;
+  }
+  return KW_CFG_UNKNOWN;   // loader ignores (forward-compat); remote editor errors
+}
+
+// The three temps must be ordered (floor ≤ target < cutoff) to be coherent.
+bool config_tempsOrdered() {
+  return minCausticTemp <= optimalCausticTemp && optimalCausticTemp < maxCausticTemp;
+}
+
 void config_init() {
   analogReadResolution(adcResolution);
 
@@ -165,78 +255,10 @@ bool config_loadFromSD() {
     line[i] = '\0';
 
     if (!utils_parseConfigLine(line, key, value)) continue;
-
-    if      (strcmp(key, "fullDrainTimer") == 0)  applyTimerKey(key, value, fullDrainTimer);
-    else if (strcmp(key, "dirtyDrainTimer") == 0) applyTimerKey(key, value, dirtyDrainTimer);
-    else if (strcmp(key, "dirtyRinseTimer") == 0) applyTimerKey(key, value, dirtyRinseTimer);
-    else if (strcmp(key, "dirtyPurgeTimer") == 0) applyTimerKey(key, value, dirtyPurgeTimer);
-    else if (strcmp(key, "washTimer")       == 0) applyTimerKey(key, value, washTimer);
-    else if (strcmp(key, "causticRtnTimer") == 0) applyTimerKey(key, value, causticRtnTimer);
-    else if (strcmp(key, "rinseTimer")      == 0) applyTimerKey(key, value, rinseTimer);
-    else if (strcmp(key, "rinsePurgeTimer") == 0) applyTimerKey(key, value, rinsePurgeTimer);
-    else if (strcmp(key, "saniTimer")       == 0) applyTimerKey(key, value, saniTimer);
-    else if (strcmp(key, "saniRtnTimer")    == 0) applyTimerKey(key, value, saniRtnTimer);
-    else if (strcmp(key, "purgeTimer")      == 0) applyTimerKey(key, value, purgeTimer);
-    else if (strcmp(key, "largeKegMod")     == 0) {
-      double v = atof(value);
-      if (v < KEGMOD_MIN || v > KEGMOD_MAX) {
-        logOutOfRange(key, value);
-      } else {
-        largeKegMod = v;
-      }
-    }
-    else if (strcmp(key, "pauseMaxMs")      == 0) {
-      unsigned long v = strtoul(value, nullptr, 10);
-      if (v < PAUSE_MIN_MS || v > PAUSE_LIMIT_MS) logOutOfRange(key, value);
-      else pauseMaxMs = v;
-    }
-    // Temperature thresholds (°C)
-    else if (strcmp(key, "minCausticTemp")     == 0) applyTempKey(key, value, minCausticTemp);
-    else if (strcmp(key, "optimalCausticTemp") == 0) applyTempKey(key, value, optimalCausticTemp);
-    else if (strcmp(key, "maxCausticTemp")     == 0) applyTempKey(key, value, maxCausticTemp);
-    else if (strcmp(key, "tempCalOffsetC10") == 0) {
-      int v = atoi(value);
-      if (v < -100 || v > 100) logOutOfRange(key, value);   // +/-10.0 C max trim
-      else tempCalOffsetC10 = v;
-    }
-    else if (strcmp(key, "heaterMode")      == 0) {
-      if      (strcmp(value, "ext") == 0) heaterExternal = true;
-      else if (strcmp(value, "fw")  == 0) heaterExternal = false;
-      else logOutOfRange(key, value);
-    }
-    else if (strcmp(key, "maxHeatingMs")    == 0) {
-      unsigned long v = strtoul(value, nullptr, 10);
-      if (v < 60000UL || v > 7200000UL) logOutOfRange(key, value);   // 1 min..2 h
-      else maxHeatingMs = v;
-    }
-    else if (strcmp(key, "minHeatingRate")  == 0) {
-      int v = atoi(value);
-      if (v < 1 || v > 50) logOutOfRange(key, value);                // °C/min
-      else minHeatingRate = v;
-    }
-    else if (strcmp(key, "etsShuntOhms")    == 0) {
-      double v = atof(value);
-      if (v < 100.0 || v > 1000.0) logOutOfRange(key, value);
-      else etsShuntOhms = (float)v;
-    }
-    // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
-    //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
-    // MQTT broker config (override the KegSecrets.h compiled defaults)
-    else if (strcmp(key, "mqttBrokerIp")    == 0) applyStrKey(value, mqttBrokerIp,  sizeof(mqttBrokerIp));
-    else if (strcmp(key, "mqttBrokerPort")  == 0) {
-      long p = strtol(value, nullptr, 10);
-      if (p < 1 || p > 65535) logOutOfRange(key, value);
-      else mqttBrokerPort = (int)p;
-    }
-    else if (strcmp(key, "mqttUser")        == 0) applyStrKey(value, mqttUser,      sizeof(mqttUser));
-    else if (strcmp(key, "mqttPass")        == 0) applyStrKey(value, mqttPass,      sizeof(mqttPass));
-    else if (strcmp(key, "mqttClientId")    == 0) applyStrKey(value, mqttClientId,  sizeof(mqttClientId));
-    else if (strcmp(key, "mqttTopicRoot")   == 0) applyStrKey(value, mqttTopicRoot, sizeof(mqttTopicRoot));
-    else if (strncmp(key, "touchCal", 8) == 0 && key[8] >= 'A' && key[8] <= 'F' && key[9] == '\0') {
-      cfgTouchCal[key[8] - 'A'] = atof(value);   // touchCalA..F -> affine coeffs
-      cfgTouchCalValid = true;
-    }
-    // Unknown keys silently ignored — forward-compat with newer config files.
+    // Shared rulebook (config_applyKV): out-of-range values are logged and
+    // kept at their prior/default value; unknown keys are silently ignored —
+    // forward-compat with newer config files.
+    config_applyKV(key, value);
   }
 
   settingsFile.close();
@@ -245,7 +267,7 @@ bool config_loadFromSD() {
   // Each key is individually range-checked above, but an unordered trio (e.g.
   // minCausticTemp=80 with maxCausticTemp=70) is self-contradictory — revert
   // ALL THREE to the compiled defaults; a half-applied trio is worse than none.
-  if (!(minCausticTemp <= optimalCausticTemp && optimalCausticTemp < maxCausticTemp)) {
+  if (!config_tempsOrdered()) {
     diagnostics_logEvent("Config temps out of order - defaults used");
     minCausticTemp     = DEFAULT_MIN_CAUSTIC_TEMP;
     optimalCausticTemp = DEFAULT_OPTIMAL_CAUSTIC_TEMP;
