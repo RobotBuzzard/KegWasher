@@ -119,6 +119,7 @@ static void mqtt_publishConfig() {
   snprintf(b, sizeof(b), "%.1f", (double)etsShuntOhms);
   mqtt_cfgPubStr("etsShuntOhms", b);
   mqtt_cfgPubStr("heaterMode", heaterExternal ? "ext" : "fw");
+  mqtt_cfgPubStr("benchMode", kwBenchMode ? "on" : "off");
   if (cfgTouchCalValid) {
     for (int i = 0; i < 6; i++) {
       char k[12];
@@ -800,62 +801,171 @@ static bool kwHttpUp = false;
 static const char KW_HTTP_PAGE[] =
 R"html(<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KegWasher Config</title><style>
-body{font-family:system-ui,sans-serif;background:#141414;color:#eee;margin:0 auto;padding:16px;max-width:680px}
-h1{font-size:1.15em}#st{color:#8f8;font-weight:normal}
+<title>KegWasher</title><style>
+body{font-family:system-ui,sans-serif;background:#131313;color:#e8e8e8;margin:0 auto;padding:14px;max-width:720px}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+h1{font-size:1.25em;margin:0}
+.chip{padding:3px 12px;border-radius:12px;font-size:.78em;background:#3a3a3a}
+.chip.run{background:#1d5c35}.chip.warn{background:#7a5a00}.chip.fault{background:#7a1f1f}
+#meta{color:#8a8a8a;font-size:.78em;margin-bottom:8px}
 table{width:100%;border-collapse:collapse}
-td{padding:5px 6px;border-bottom:1px solid #303030;vertical-align:middle}
-td.k{font-family:monospace;white-space:nowrap}
-td.h{color:#999;font-size:.78em}
-input{width:96px;background:#222;color:#eee;border:1px solid #555;padding:4px;border-radius:3px}
-button{background:#2a7d4f;border:0;color:#fff;padding:5px 12px;border-radius:3px;cursor:pointer}
-#msg{padding:10px 2px;font-family:monospace;white-space:pre-wrap;min-height:1.2em}
-.ok{color:#8f8}.err{color:#f88}
+tr.sec td{padding:18px 4px 5px;color:#6fbf8a;font-size:.72em;letter-spacing:.14em;border-bottom:1px solid #2c2c2c}
+td{padding:9px 6px;border-bottom:1px solid #212121;vertical-align:top}
+.lbl b{font-size:.95em;font-weight:600}
+.hint{color:#9a9a9a;font-size:.78em;margin-top:2px;max-width:420px;line-height:1.35}
+.key{color:#5c5c5c;font-family:monospace;font-size:.7em;margin-top:3px}
+td.val{white-space:nowrap;text-align:right;width:120px}
+td.act{width:60px;text-align:right}
+input,select{width:104px;background:#222;color:#e8e8e8;border:1px solid #4a4a4a;padding:6px;border-radius:4px;font-size:.95em;box-sizing:border-box}
+input.dirty,select.dirty{border-color:#e0a800}
+input.bad{border-color:#c33;background:#2a1717}
+.tog{appearance:none;position:relative;width:52px;height:26px;background:#454545;border:0;border-radius:13px;cursor:pointer;transition:background .15s;vertical-align:middle;padding:0}
+.tog:checked{background:#2a7d4f}
+.tog::before{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#ddd;transition:left .15s}
+.tog:checked::before{left:29px}
+.eq{display:block;color:#8a8a8a;font-size:.72em;margin-top:4px;min-height:1em}
+button{background:#2a7d4f;border:0;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:.88em}
+button:active{background:#1d5c35}
+#msg{position:sticky;bottom:8px;background:#1c1c1c;border:1px solid #2c2c2c;border-radius:6px;padding:10px 12px;font-family:monospace;font-size:.85em;white-space:pre-wrap;margin-top:12px;display:none}
+#msg.ok{border-color:#2a7d4f;color:#8fdc9f;display:block}
+#msg.err{border-color:#a33;color:#f0a0a0;display:block}
 </style></head><body>
-<h1>KegWasher <span id="st">connecting&hellip;</span></h1>
-<div id="msg"></div>
+<header><h1>KegWasher</h1><span class="chip" id="stchip">&hellip;</span><span class="chip warn" id="ltchip" style="display:none">LOW TEMP</span></header>
+<div id="meta"></div>
 <table id="t"></table>
+<div id="msg"></div>
 <script>
-const H={dirtyDrainTimer:"ms &middot; air-push old beer out (whole stage)",
-dirtyRinseTimer:"ms &middot; initial water rinse",
-dirtyPurgeTimer:"ms &middot; air-blow rinse water out",
-washTimer:"ms &middot; caustic recirc (the main clean)",
-causticRtnTimer:"ms &middot; blow caustic back to reservoir",
-rinseTimer:"ms &middot; post-caustic rinse",
-rinsePurgeTimer:"ms &middot; air-blow rinse out",
-saniTimer:"ms &middot; sanitizer recirc",
-saniRtnTimer:"ms &middot; CO2-blow sani back to reservoir",
-purgeTimer:"ms &middot; CO2 charge fail timeout",
-fullDrainTimer:"ms &middot; DIRTY_DRAIN with DRAIN switch latched",
-largeKegMod:"&times; &middot; large-keg multiplier",
-pauseMaxMs:"ms &middot; max PAUSED before abort",
-minCausticTemp:"&deg;C &middot; wash floor &rarr; LOW TEMP banner (warn-only)",
-optimalCausticTemp:"&deg;C &middot; fw-mode heat target",
-maxCausticTemp:"&deg;C &middot; overtemp cutoff",
-heaterMode:"fw | ext (ext = ETS50N thermostat + permit chain)",
-maxHeatingMs:"ms &middot; STARTING gives up after this",
-minHeatingRate:"&deg;C/min &middot; healthy fw-mode heating",
-etsShuntOhms:"&Omega; &middot; measured 4-20mA shunt",
-tempCalOffsetC10:"0.1&deg;C &middot; probe trim"};
-const st=document.getElementById("st"),msg=document.getElementById("msg");
+// [key, label, operator hint, unit, min, max] — unit drives the "= 10 s"
+// helper and the editor type. ms=milliseconds, C=deg C, x=multiplier,
+// cm=C/min, ohm, c10=tenths of a deg, tog=toggle switch, raw=free number.
+// min/max mirror the firmware's validation (the firmware still re-checks).
+// Sections are organized by the machine STATE each setting governs.
+const GROUPS=[
+["WASH CYCLE · runs during EXECUTE",[
+["dirtyDrainTimer","Blow out old beer","Air + drain push the leftover product out. First stage of every cycle.","ms",5000,1800000],
+["dirtyRinseTimer","First rinse","Water flush of the gross residue, straight to the drain.","ms",5000,1800000],
+["dirtyPurgeTimer","Blow out first rinse","Air pushes the rinse water out to the drain.","ms",5000,1800000],
+["washTimer","Caustic wash","Hot caustic recirculates through the kegs — the main clean.","ms",5000,1800000],
+["causticRtnTimer","Caustic recovery","Air pushes the caustic back to its reservoir for reuse. Never goes to the drain.","ms",5000,1800000],
+["rinseTimer","Post-wash rinse","Water rinse after the caustic wash, to the drain.","ms",5000,1800000],
+["rinsePurgeTimer","Blow out post-rinse","Air pushes the post-wash rinse water out to the drain.","ms",5000,1800000],
+["saniTimer","Sanitize","Sanitizer recirculates through the kegs.","ms",5000,1800000],
+["saniRtnTimer","Sanitizer recovery","CO2 pushes the sanitizer back to its reservoir for reuse.","ms",5000,1800000],
+["purgeTimer","CO2 fill limit","Longest the keg gets to reach pressure. Normally ends early when the pressure switch trips — hitting this limit is a fault (no CO2, unsealed keg, or leak).","ms",5000,1800000],
+["fullDrainTimer","Full-keg drain","Replaces “Blow out old beer” when the DRAIN switch is latched — for kegs that come back full.","ms",5000,1800000],
+["largeKegMod","Large-keg multiplier","Every stage time is multiplied by this when the keg-size switch is on LARGE (1/2 BBL).","x",1,3]]],
+["WARM-UP · STARTING",[
+["heaterMode","Heater control","OFF = fw: firmware runs the heater during warm-up only. ON = ext: the tank thermostat holds temperature all day — requires the permit relay wired in series with the thermostat.","tog"],
+["optimalCausticTemp","Warm-up target (°C)","Tank temperature the heater aims for before the first cycle (fw mode).","C",0,120],
+["maxHeatingMs","Warm-up time limit","If the tank is not at temperature by then, warm-up gives up with a fault.","ms",60000,7200000],
+["minHeatingRate","Healthy heating rate","Warm-up slower than this gets flagged in the log (fw mode).","cm",1,50]]],
+["PAUSE · HELD",[
+["pauseMaxMs","Max pause time","Paused longer than this and the machine alarms and aborts — chemicals may be sitting in the keg.","ms",60000,3600000]]],
+["WARNINGS & SAFETY · all states",[
+["minCausticTemp","Wash floor (°C)","Below this tank temperature the amber LOW TEMP banner shows on the panel (and here). Warning only — it never stops a cycle.","C",0,120],
+["maxCausticTemp","Overtemp cutoff (°C)","Safety limit: the heater is cut and the machine faults above this.","C",0,120]]],
+["SERVICE & CALIBRATION",[
+["benchMode","Bench mode","ON: readiness and resource safety gates are bypassed for bench work (with this card's timers and temperatures). OFF: production gates active.","tog"],
+["etsShuntOhms","Temp probe shunt","Measured value of the 4-20 mA shunt resistor (nominal 470 Ω). Set once per machine.","ohm",100,1000],
+["tempCalOffsetC10","Temp reading trim","Added to the probe reading, in tenths of a degree. +10 makes it read 1.0 °C higher.","c10",-100,100],
+["touchCalA","Touch cal A","Written by the touch-calibration tool — don’t hand-edit.","raw"],
+["touchCalB","Touch cal B","Written by the touch-calibration tool — don’t hand-edit.","raw"],
+["touchCalC","Touch cal C","Written by the touch-calibration tool — don’t hand-edit.","raw"],
+["touchCalD","Touch cal D","Written by the touch-calibration tool — don’t hand-edit.","raw"],
+["touchCalE","Touch cal E","Written by the touch-calibration tool — don’t hand-edit.","raw"],
+["touchCalF","Touch cal F","Written by the touch-calibration tool — don’t hand-edit.","raw"]]]];
+// Toggle wiring: [value when OFF, value when ON] + confirmation prompts.
+const TOG={heaterMode:["fw","ext"],benchMode:["off","on"]};
+const TOGC={heaterMode_ext:"Switch heater control to EXT?\n\nThe tank thermostat will hold temperature ALL DAY.\nRequires the permit relay wired in series with the ETS50N.",
+heaterMode_fw:"Switch heater control to FW (firmware warm-up only)?",
+benchMode_on:"Turn BENCH MODE ON?\n\nReadiness and resource safety gates will be BYPASSED.",
+benchMode_off:"Turn bench mode OFF (production gates active)?"};
+const VAL={};for(const[,ks]of GROUPS)for(const e of ks)if(e.length>4)VAL[e[0]]=[e[4],e[5]];
+const stchip=document.getElementById("stchip"),ltchip=document.getElementById("ltchip"),
+      meta=document.getElementById("meta"),msg=document.getElementById("msg");
+function fmt(u,v){
+ v=parseFloat(v);
+ if(isNaN(v))return "";
+ if(u=="ms"){const s=v/1000;
+  if(s<60)return "= "+(s%1?s.toFixed(1):s)+" s";
+  const m=Math.floor(s/60),r=Math.round(s%60);
+  return "= "+m+" min"+(r?" "+r+" s":"");}
+ if(u=="x")return "= "+Math.round((v-1)*100)+"% longer";
+ if(u=="c10")return "= "+(v>=0?"+":"")+(v/10).toFixed(1)+" °C";
+ if(u=="cm")return "°C per minute";
+ if(u=="ohm")return "Ω";
+ return "";}
+function chk(k,v){
+ const r=VAL[k];if(!r)return null;
+ const n=parseFloat(v);
+ if(isNaN(n)||!isFinite(n)||/[^0-9.eE+-]/.test(v))return "is not a number";
+ if(n<r[0]||n>r[1])return "must be between "+r[0]+" and "+r[1];
+ return null;}
+function chip(s){
+ stchip.textContent=s.state+" · "+s.temp+"°C";
+ stchip.className="chip "+(s.state=="ABORTED"?"fault":
+   (s.state=="HELD"||s.state=="STOPPING")?"warn":
+   (s.state=="EXECUTE"||s.state=="STARTING")?"run":"");
+ ltchip.style.display=s.warn=="1"?"":"none";}
 async function load(full){
  const j=await (await fetch("/cfg.json")).json();
- st.textContent=j._state+" · "+j._temp+"°C · v"+j._fw;
+ chip({state:j._state,temp:j._temp,warn:j._warn});
+ meta.textContent="firmware v"+j._fw+" · changes save to the SD card and apply to the next cycle · editing is locked out while a cycle runs";
  if(!full)return;
  const t=document.getElementById("t");t.innerHTML="";
- for(const k in j){if(k[0]=="_")continue;
-  const r=t.insertRow();
-  r.innerHTML="<td class=k>"+k+"</td><td><input id=\"i_"+k+"\" value=\""+j[k]+"\"></td>"+
-   "<td><button onclick=\"setk('"+k+"')\">set</button></td><td class=h>"+(H[k]||"")+"</td>";}
+ const done={};
+ for(const[sec,keys]of GROUPS){
+  const rows=keys.filter(e=>e[0]in j);
+  if(!rows.length)continue;
+  t.insertRow().innerHTML="<td colspan=3>"+sec+"</td>";
+  t.rows[t.rows.length-1].className="sec";
+  for(const[k,lbl,hint,u]of rows){done[k]=1;
+   let ed,act="<button onclick=\"setk('"+k+"')\">set</button>",eq=fmt(u,j[k]);
+   if(u=="tog"){
+    const on=j[k]==TOG[k][1];
+    ed="<input type=checkbox class=tog id=\"i_"+k+"\""+(on?" checked":"")+" onchange=\"togk('"+k+"')\">";
+    act="";eq=j[k];}
+   else ed="<input id=\"i_"+k+"\" data-o=\""+j[k]+"\" data-u=\""+u+"\" value=\""+j[k]+"\">";
+   t.insertRow().innerHTML=
+    "<td class=lbl><b>"+lbl+"</b><div class=hint>"+hint+"</div><div class=key>"+k+(u=="ms"?" · ms":"")+"</div></td>"+
+    "<td class=val>"+ed+"<span class=eq id=\"e_"+k+"\">"+eq+"</span></td>"+
+    "<td class=act>"+act+"</td>";}}
+ const extra=Object.keys(j).filter(k=>k[0]!="_"&&!done[k]);
+ if(extra.length){
+  t.insertRow().innerHTML="<td colspan=3>OTHER</td>";
+  t.rows[t.rows.length-1].className="sec";
+  for(const k of extra)
+   t.insertRow().innerHTML="<td class=lbl><div class=key>"+k+"</div></td>"+
+    "<td class=val><input id=\"i_"+k+"\" data-o=\""+j[k]+"\" value=\""+j[k]+"\"></td>"+
+    "<td class=act><button onclick=\"setk('"+k+"')\">set</button></td>";}
+ t.oninput=e=>{const el=e.target,k=el.id.slice(2);
+  if(el.type=="checkbox")return;
+  el.classList.remove("bad");
+  el.classList.toggle("dirty",el.value!=el.dataset.o);
+  const eq=document.getElementById("e_"+k);
+  if(eq&&el.dataset.u)eq.textContent=fmt(el.dataset.u,el.value);};
+ t.onkeydown=e=>{if(e.key=="Enter"&&e.target.id&&e.target.type!="checkbox")setk(e.target.id.slice(2));};
 }
-async function setk(k){
- const v=document.getElementById("i_"+k).value.trim();
+async function apply(k,v){
  const r=await fetch("/set?"+k+"="+encodeURIComponent(v));
  const x=await r.text();
  msg.textContent=x;msg.className=x.startsWith("OK")?"ok":"err";
- if(x.startsWith("OK"))load(true);}
+ return x.startsWith("OK");}
+async function setk(k){
+ const el=document.getElementById("i_"+k),v=el.value.trim();
+ const bad=chk(k,v);
+ if(bad){msg.textContent="not sent — value "+bad;msg.className="err";el.classList.add("bad");return;}
+ el.classList.remove("bad");
+ if(await apply(k,v)){el.dataset.o=el.value;el.classList.remove("dirty");load(false);}}
+async function togk(k){
+ const el=document.getElementById("i_"+k);
+ const v=el.checked?TOG[k][1]:TOG[k][0];
+ const warnMsg=TOGC[k+"_"+v];
+ if(warnMsg&&!confirm(warnMsg)){el.checked=!el.checked;return;}
+ if(await apply(k,v)){document.getElementById("e_"+k).textContent=v;load(false);}
+ else el.checked=!el.checked;}
 load(true);
-setInterval(()=>load(false).catch(()=>{st.textContent="offline?"}),5000);
+setInterval(()=>load(false).catch(()=>{stchip.textContent="offline?";stchip.className="chip fault"}),5000);
 </script></body></html>
 )html";
 
@@ -877,6 +987,7 @@ static void http_buildCfgJson() {
   kwHttpJson[0] = '{'; kwHttpJson[1] = '\0'; kwHttpJsonLen = 1;
   httpJsonKV("_state", machStateNames[machineState]);
   httpJsonInt("_temp", hardware_getCausticTemp());
+  httpJsonKV("_warn", kwLowTempWarn ? "1" : "0");   // LOW TEMP chip on the page
   httpJsonKV("_fw", KW_FIRMWARE_VERSION);
   httpJsonUL("dirtyDrainTimer", dirtyDrainTimer);
   httpJsonUL("dirtyRinseTimer", dirtyRinseTimer);
@@ -897,6 +1008,7 @@ static void http_buildCfgJson() {
   httpJsonInt("optimalCausticTemp", optimalCausticTemp);
   httpJsonInt("maxCausticTemp",     maxCausticTemp);
   httpJsonKV("heaterMode", heaterExternal ? "ext" : "fw");
+  httpJsonKV("benchMode", kwBenchMode ? "on" : "off");
   httpJsonUL("maxHeatingMs", maxHeatingMs);
   httpJsonInt("minHeatingRate", minHeatingRate);
   snprintf(b, sizeof(b), "%.1f", (double)etsShuntOhms);

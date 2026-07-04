@@ -41,6 +41,12 @@ rinsePurgeTimer=10000      # air-blow the rinse water out (to drain)
 #         which means the thermostat failed to regulate.
 heaterMode=fw
 
+# Bench mode WITH a card (on|off, default off). on = readiness + resource
+# safety gates bypassed, but this file's timers/thresholds are used (unlike
+# cardless bench, which also compresses every stage to 5 s). Cardless boots
+# are always bench mode regardless of this key.
+benchMode=off
+
 # Full-keg drain: DIRTY_DRAIN runs this long INSTEAD of dirtyDrainTimer while
 # the latching DRAIN switch (IO2) is on — for sessions of spoiled/undersold
 # kegs that arrive full. Keg-size scaled like every stage timer.

@@ -59,8 +59,14 @@ float         etsShuntOhms   = DEF_ETS_SHUNT_OHMS;
 bool heaterExternal = false;
 
 // Runtime bench mode — set in config_init(): no SD config -> bench (gates
-// bypassed + 5 s stages); card present -> production gates. See KegConfig.h.
+// bypassed + 5 s stages); card present -> production gates, unless the card
+// (or a remote edit) says benchMode=on. See KegConfig.h.
 bool kwBenchMode = false;
+// benchMode SD key state: seen-in-file + its value. Needed because the loader
+// runs BEFORE config_init() decides the card-present default — config_init
+// consults these instead of the (would-be-clobbered) kwBenchMode itself.
+static bool cfgBenchKeySeen = false;
+static bool cfgBenchKeyVal  = false;
 
 // MQTT broker config — seeded from KegSecrets.h; SD-overridable per device.
 char mqttBrokerIp[16]  = KW_STR(MQTT_BROKER_IP_0) "." KW_STR(MQTT_BROKER_IP_1) "."
@@ -179,6 +185,17 @@ byte config_applyKV(const char* key, const char* value) {
     etsShuntOhms = (float)v;
     return KW_CFG_APPLIED;
   }
+  else if (strcmp(key, "benchMode")       == 0) {
+    // Bench with a card: gates bypassed, but the card's timers/thresholds are
+    // used (the 5 s compression is cardless-only). Applies immediately on a
+    // remote set; at boot config_init() finalizes from cfgBenchKey*.
+    if      (strcmp(value, "on")  == 0) cfgBenchKeyVal = true;
+    else if (strcmp(value, "off") == 0) cfgBenchKeyVal = false;
+    else { logOutOfRange(key, value); return KW_CFG_REJECTED; }
+    cfgBenchKeySeen = true;
+    kwBenchMode = cfgBenchKeyVal;
+    return KW_CFG_APPLIED;
+  }
   // (maxEnclosureTemp/fanOnTemp/fanOffTemp keys retired — enclosure temp/fan
   //  are off-controller now; such keys in an old WASHER.CFG are silently ignored.)
   // MQTT broker config (override the KegSecrets.h compiled defaults)
@@ -211,7 +228,9 @@ void config_init() {
 
   if (config_loadFromSD()) {
     cfgLoadedFromSD = true;
-    kwBenchMode = false;            // card present -> production gates
+    // Card present -> production gates, unless the card explicitly says
+    // benchMode=on (bench work with real timers/thresholds loaded).
+    kwBenchMode = cfgBenchKeySeen ? cfgBenchKeyVal : false;
   } else {
     cfgLoadedFromSD = false;
     config_setDefaults();
@@ -310,6 +329,7 @@ void config_saveToSD() {
   settingsFile.print("heaterMode=");         settingsFile.println(heaterExternal ? "ext" : "fw");
 
   // SD-only keys — same full-rewrite survival requirement as heaterMode.
+  settingsFile.print("benchMode=");          settingsFile.println(kwBenchMode ? "on" : "off");
   settingsFile.print("maxHeatingMs=");       settingsFile.println(maxHeatingMs);
   settingsFile.print("minHeatingRate=");     settingsFile.println(minHeatingRate);
   settingsFile.print("etsShuntOhms=");       settingsFile.println(etsShuntOhms, 1);

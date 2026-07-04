@@ -26,7 +26,7 @@ Tests live under `tests/DisplayTest/` as a separate sketch — only run when wor
 
 ## Bench mode — read before changing safety code
 
-Bench mode is **runtime**, decided by SD-card presence at boot (since 2026-06-10; the old compile-time `#define BENCH_MODE` is gone): no readable `WASHER.CFG` → `kwBenchMode = true`. When true the firmware:
+Bench mode is **runtime**, decided by SD-card presence at boot (since 2026-06-10; the old compile-time `#define BENCH_MODE` is gone): no readable `WASHER.CFG` → `kwBenchMode = true`. A card can also force it with the `benchMode=on` key (2026-07-04; remote-toggleable via the config editors) — gates bypassed but the card's timers/thresholds are used, unlike cardless bench which also compresses stages to 5 s. When true the firmware:
 
 - `hardware_allSystemsGo()` returns true unconditionally (gates incl. caustic LEVEL bypassed)
 - skips `STARTING` (heating) — START goes straight to the recipe
