@@ -358,11 +358,15 @@ static void kw_remoteCfgApply(const char* kvline, char* ack, size_t ackLen) {
       minCausticTemp = oldMin; optimalCausticTemp = oldOpt; maxCausticTemp = oldMax;
       snprintf(ack, ackLen, "ERR temps must be floor<=target<cutoff: %s=%s", key, value);
     } else if (r == KW_CFG_APPLIED) {
+      // Web-auth credentials never echo back in cleartext (the ack goes to
+      // the MQTT log mirror too).
+      const char* shown = (strncmp(key, "web", 3) == 0 && value[0]) ? "****"
+                                                                    : value;
       if (cfgLoadedFromSD) {
         config_saveToSD();
-        snprintf(ack, ackLen, "OK %s=%s", key, value);
+        snprintf(ack, ackLen, "OK %s=%s", key, shown);
       } else {
-        snprintf(ack, ackLen, "OK %s=%s (RAM only - no SD)", key, value);
+        snprintf(ack, ackLen, "OK %s=%s (RAM only - no SD)", key, shown);
       }
       mqtt_publishConfig();   // refresh the retained cfg/* mirror
     } else if (r == KW_CFG_UNKNOWN) {
@@ -797,6 +801,25 @@ static void mqtt_publishHeartbeat() {
 // as the rest of the shop network; the busy/mqtt* gates still apply.
 static EthernetServer kwHttpServer(80);
 static bool kwHttpUp = false;
+static unsigned long kwHttpLastReqMs = 0;   // last handled request (footer W dot)
+
+// Base64 (RFC 4648) — just enough to compute the expected value of the
+// "Authorization: Basic <token>" header when webUser/webPass are configured.
+static void kw_b64enc(const char* in, char* out, size_t outCap) {
+  static const char T[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  size_t len = strlen(in), o = 0;
+  for (size_t i = 0; i < len && o + 5 < outCap; i += 3) {
+    uint32_t v = (uint32_t)(uint8_t)in[i] << 16;
+    if (i + 1 < len) v |= (uint32_t)(uint8_t)in[i + 1] << 8;
+    if (i + 2 < len) v |= (uint8_t)in[i + 2];
+    out[o++] = T[(v >> 18) & 63];
+    out[o++] = T[(v >> 12) & 63];
+    out[o++] = (i + 1 < len) ? T[(v >> 6) & 63] : '=';
+    out[o++] = (i + 2 < len) ? T[v & 63] : '=';
+  }
+  out[o] = '\0';
+}
 
 static const char KW_HTTP_PAGE[] =
 R"html(<!doctype html><html><head><meta charset="utf-8">
@@ -1053,12 +1076,14 @@ static void httpWriteAll(EthernetClient& c, const char* s, size_t len) {
 }
 
 static void httpRespond(EthernetClient& c, const char* status,
-                        const char* ctype, const char* body, size_t bodyLen) {
-  char hdr[160];
+                        const char* ctype, const char* body, size_t bodyLen,
+                        const char* extraHdr = nullptr) {
+  char hdr[224];
   int n = snprintf(hdr, sizeof(hdr),
                    "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %u\r\n"
-                   "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
-                   status, ctype, (unsigned)bodyLen);
+                   "Cache-Control: no-store\r\nConnection: close\r\n%s\r\n",
+                   status, ctype, (unsigned)bodyLen,
+                   extraHdr ? extraHdr : "");
   httpWriteAll(c, hdr, (size_t)n);
   httpWriteAll(c, body, bodyLen);
 }
@@ -1083,6 +1108,9 @@ static void http_process() {
   // internally refreshes the stack so new segments surface mid-loop).
   char req[160];
   size_t n = 0;
+  char hline[100];   // current header line — scanned for Authorization
+  size_t hn = 0;
+  char auth[80] = "";   // base64 token from "Authorization: Basic <token>"
   bool firstLineDone = false, endOfHeaders = false;
   uint32_t tail = 0;   // rolling last-4-bytes window ("\r\n\r\n" detector)
   unsigned long t0 = millis(), lastByteMs = millis();
@@ -1102,6 +1130,16 @@ static void http_process() {
         if (ch == '\n') firstLineDone = true;
         else if (ch != '\r' && n < sizeof(req) - 1) req[n++] = (char)ch;
       }
+      if (ch == '\n') {
+        hline[hn] = '\0';
+        if (strncasecmp(hline, "Authorization:", 14) == 0) {
+          const char* b = strstr(hline, "Basic ");
+          if (b) snprintf(auth, sizeof(auth), "%s", b + 6);
+        }
+        hn = 0;
+      } else if (ch != '\r' && hn < sizeof(hline) - 1) {
+        hline[hn++] = (char)ch;
+      }
     }
   }
   req[n] = '\0';
@@ -1113,6 +1151,24 @@ static void http_process() {
     path = req + 4;
     char* sp = strchr(path, ' ');
     if (sp) *sp = '\0';
+    kwHttpLastReqMs = millis();   // real request — light the footer W dot
+  }
+
+  // Optional HTTP Basic auth: active when BOTH webUser and webPass are set
+  // (SD keys; empty/absent = open, the pre-auth behavior). Compare against the
+  // expected base64("user:pass") — no decode needed. LAN-grade protection:
+  // credentials travel base64 over plain HTTP, so this is a shop-floor lock,
+  // not internet-facing security.
+  if (path && webUser[0] && webPass[0]) {
+    char cred[52], expect[80];
+    snprintf(cred, sizeof(cred), "%s:%s", webUser, webPass);
+    kw_b64enc(cred, expect, sizeof(expect));
+    if (strcmp(auth, expect) != 0) {
+      httpRespond(c, "401 Unauthorized", "text/plain", "auth required\n", 14,
+                  "WWW-Authenticate: Basic realm=\"KegWasher\"\r\n");
+      kwHttpClients--;
+      return;
+    }
   }
 
   if (!path) {
@@ -1426,13 +1482,17 @@ void loop() {
   // throttled to MQTT_HEARTBEAT_INTERVAL_MS (5 s).
   mqtt_publishHeartbeat();
 
-  // Refresh the footer MQTT pub/sub indicator dots (~4 Hz). P blinks on each
-  // heartbeat publish, S blinks when a command is received over MQTT.
+  // Refresh the footer indicator dots (~4 Hz). P blinks on each heartbeat
+  // publish, S blinks when a command is received over MQTT, W holds green
+  // while the web editor is in use (its page polls every 5 s, so a 12 s
+  // window ≈ "a browser has the page open").
   if (millis() >= kwMqttIndNextMs) {
     kwMqttIndNextMs = millis() + 250;
     display_setMqttIndicators(kwMqttReady,
                               (millis() - kwMqttLastPubMs) < 400,
-                              (millis() - kwMqttLastRxMs) < 400);
+                              (millis() - kwMqttLastRxMs) < 400,
+                              (millis() - kwHttpLastReqMs) < 12000 &&
+                                  kwHttpLastReqMs != 0);
   }
 
   // Update the loop-max accumulator with this iteration's work time.

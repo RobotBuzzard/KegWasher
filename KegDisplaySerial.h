@@ -50,7 +50,8 @@ void mark(int x, int y);          // draw a small marker at a panel coord (touch
 void setTouchCalibration(float a, float b, float c, float d, float e, float f);
 
 // ---- footer MQTT pub/sub indicators (partial update; call on MQTT state change) ----
-void mqttIndicators(bool connected, bool pubActive, bool subActive);
+void mqttIndicators(bool connected, bool pubActive, bool subActive,
+                    bool webActive = false);   // web = HTTP editor activity dot
 void footer(const char* ip);                                // redraw footer bar + IP + P/S labels
 // Alert strip. Default y = the reserved zone under the title rule; pass y1/y2
 // to place it elsewhere (READY's zone is occupied by the sensor grid).

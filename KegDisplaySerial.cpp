@@ -77,6 +77,7 @@ namespace {
   const int IO_X0   = LX + 34;              // cells start right of the OUT/IN tags
   const int IO_OUT_PITCH = 46;              // 4 columns
   const int IO_IN_PITCH  = 41;              // 5 columns
+  const int FOOT_DOT_WEB_X = 220;   // web-editor activity (green when browsing)
   const int FOOT_DOT_PUB_X = 238, FOOT_DOT_SUB_X = 256, FOOT_DOT_Y = DH - 9;
 
   Diablo_Serial_4DLib* D = nullptr;
@@ -308,6 +309,7 @@ namespace {
   }
   void footerIP(const char* ip) {
     lbl(8, FOOT_Y + 3, false, 1, 1, C_SUB, C_CARD, ip);
+    disc(FOOT_DOT_WEB_X, FOOT_DOT_Y, 4, C_TRACK); // web idle-grey at draw
     disc(FOOT_DOT_PUB_X, FOOT_DOT_Y, 4, C_RED);   // dots start "disconnected"
     disc(FOOT_DOT_SUB_X, FOOT_DOT_Y, 4, C_RED);   // until mqttIndicators() runs
   }
@@ -603,9 +605,11 @@ void touchEnable() { drain(); D->touch_Set(TOUCH_ENABLE); }
 
 void mark(int x, int y) { disc(x, y, 7, C_TXT); disc(x, y, 3, C_RED); }
 
-void mqttIndicators(bool connected, bool pubActive, bool subActive) {
+void mqttIndicators(bool connected, bool pubActive, bool subActive,
+                    bool webActive) {
   word pc = !connected ? C_RED : (pubActive ? C_AMB : C_DIMGRN);
   word sc = !connected ? C_RED : (subActive ? C_CYAN : C_DIMGRN);
+  disc(FOOT_DOT_WEB_X, FOOT_DOT_Y, 4, webActive ? C_GRN : C_TRACK);
   disc(FOOT_DOT_PUB_X, FOOT_DOT_Y, 4, pc);
   disc(FOOT_DOT_SUB_X, FOOT_DOT_Y, 4, sc);
 }

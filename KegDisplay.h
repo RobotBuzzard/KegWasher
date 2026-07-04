@@ -68,7 +68,8 @@ void display_updateLowTempWarnOp(bool show);
 
 // ── Footer (IP) + MQTT pub/sub indicators ──────────────────────────────
 void display_updateFooter();
-void display_setMqttIndicators(bool connected, bool pubActive, bool subActive);
+void display_setMqttIndicators(bool connected, bool pubActive, bool subActive,
+                               bool webActive = false);   // web-editor dot
 
 // ── Touch event pump — call every loop (replaces genie.DoEvents) ───────
 void display_doEvents();

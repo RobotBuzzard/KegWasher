@@ -22,9 +22,9 @@ static const char* ipStr() {
   return buf;
 }
 
-// Remembered MQTT indicator state so a full screen redraw re-applies the dots.
-static bool g_mqttUp = false, g_pub = false, g_sub = false;
-static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub); }
+// Remembered MQTT/web indicator state so a full screen redraw re-applies the dots.
+static bool g_mqttUp = false, g_pub = false, g_sub = false, g_web = false;
+static void reapplyMqtt() { KDS::mqttIndicators(g_mqttUp, g_pub, g_sub, g_web); }
 
 // Current screen id — mirrored to the retained MQTT topic kegwasher/screen
 // (change-detected in mqtt_publishStatus) so the dashboard's panel replica
@@ -445,9 +445,10 @@ void display_updateLowTempWarnOp(bool show) { KDS::operatingLowTemp(show); }
 
 void display_updateFooter() { KDS::footer(ipStr()); reapplyMqtt(); }
 
-void display_setMqttIndicators(bool connected, bool pubActive, bool subActive) {
-  g_mqttUp = connected; g_pub = pubActive; g_sub = subActive;
-  KDS::mqttIndicators(connected, pubActive, subActive);
+void display_setMqttIndicators(bool connected, bool pubActive, bool subActive,
+                               bool webActive) {
+  g_mqttUp = connected; g_pub = pubActive; g_sub = subActive; g_web = webActive;
+  KDS::mqttIndicators(connected, pubActive, subActive, webActive);
 }
 
 // Hit-test: is (x,y) inside rect (rx,ry,rw,rh)?

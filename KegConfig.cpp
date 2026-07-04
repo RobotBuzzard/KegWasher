@@ -68,6 +68,14 @@ bool kwBenchMode = false;
 static bool cfgBenchKeySeen = false;
 static bool cfgBenchKeyVal  = false;
 
+// Web editor HTTP Basic auth — both must be non-empty to arm it. Never
+// published to the cfg/* mirror or cfg.json; settable remotely (masked in
+// acks/logs) so the lock can be enabled from the editor itself. Recovery
+// from a lost password: pull the card and edit/delete the webUser/webPass
+// lines in WASHER.CFG.
+char webUser[24] = "";
+char webPass[24] = "";
+
 // MQTT broker config — seeded from KegSecrets.h; SD-overridable per device.
 char mqttBrokerIp[16]  = KW_STR(MQTT_BROKER_IP_0) "." KW_STR(MQTT_BROKER_IP_1) "."
                          KW_STR(MQTT_BROKER_IP_2) "." KW_STR(MQTT_BROKER_IP_3);
@@ -185,6 +193,8 @@ byte config_applyKV(const char* key, const char* value) {
     etsShuntOhms = (float)v;
     return KW_CFG_APPLIED;
   }
+  else if (strcmp(key, "webUser")         == 0) { applyStrKey(value, webUser, sizeof(webUser)); return KW_CFG_APPLIED; }
+  else if (strcmp(key, "webPass")         == 0) { applyStrKey(value, webPass, sizeof(webPass)); return KW_CFG_APPLIED; }
   else if (strcmp(key, "benchMode")       == 0) {
     // Bench with a card: gates bypassed, but the card's timers/thresholds are
     // used (the 5 s compression is cardless-only). Applies immediately on a
@@ -333,6 +343,13 @@ void config_saveToSD() {
   settingsFile.print("maxHeatingMs=");       settingsFile.println(maxHeatingMs);
   settingsFile.print("minHeatingRate=");     settingsFile.println(minHeatingRate);
   settingsFile.print("etsShuntOhms=");       settingsFile.println(etsShuntOhms, 1);
+  // Web-editor auth: written only when armed (both set), so an unused lock
+  // doesn't leave empty keys in the file. Survives the full rewrite like
+  // heaterMode — dropping them would silently unlock the editor.
+  if (webUser[0] && webPass[0]) {
+    settingsFile.print("webUser=");          settingsFile.println(webUser);
+    settingsFile.print("webPass=");          settingsFile.println(webPass);
+  }
   // Touch calibration: only present when the SD supplied it (cfgTouchCalValid);
   // dropping it here would silently revert touch to the baked-in cal on reboot.
   if (cfgTouchCalValid) {
@@ -377,6 +394,8 @@ void config_setDefaults() {
   minHeatingRate     = DEF_MIN_HEATING_RATE;
   maxHeatingMs       = DEF_MAX_HEATING_MS;
   etsShuntOhms       = DEF_ETS_SHUNT_OHMS;
+  webUser[0]         = '\0';
+  webPass[0]         = '\0';
 
   snprintf(mqttBrokerIp, sizeof(mqttBrokerIp), "%d.%d.%d.%d",
            MQTT_BROKER_IP_0, MQTT_BROKER_IP_1, MQTT_BROKER_IP_2, MQTT_BROKER_IP_3);

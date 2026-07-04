@@ -252,6 +252,12 @@ extern char mqttPass[32];
 extern char mqttClientId[32];
 extern char mqttTopicRoot[32];
 
+// Web-editor HTTP Basic auth (SD keys webUser/webPass). Both non-empty = auth
+// required on every route; either empty = editor open (default). Never
+// mirrored to cfg/* / cfg.json; values masked in acks and logs.
+extern char webUser[24];
+extern char webPass[24];
+
 // ---------- API ----------
 // NOTE: config_init() must be called AFTER display_init() so failure
 // messages have somewhere to render.

@@ -117,6 +117,15 @@ tempCalOffsetC10=0         # trim vs a reference thermometer, tenths of a °C
 #touchCalF=-15.0
 
 # ============================================================
+# WEB EDITOR LOGIN (optional). Set BOTH to require a username/password on the
+# browser config editor (HTTP Basic auth — a shop-floor lock, not internet
+# security). Leave unset/empty for an open editor. Lost the password? Pull
+# this card and delete these two lines.
+# ============================================================
+#webUser=brewer
+#webPass=changeme
+
+# ============================================================
 # MQTT BROKER  (overrides the compiled KegSecrets.h defaults)
 # Lets a shipped binary be configured per-device with no rebuild. All values
 # are capped at 29 characters. Omit this whole block to use the compiled creds.
