@@ -39,6 +39,7 @@ void operatingStatus(int tempC10, bool water, bool air, bool co2, bool estop, bo
 void operatingTemp(int tempC10);               // temp-only partial update (tenths C)
 void operatingIO(byte outBits, byte inBits);   // OUT (8 actuators) / IN (5 inputs) dot grid
 void operatingLowTemp(bool show);              // steady LOW TEMP banner; safe to call per tick
+void readinessTemp(int tempC, bool warn);      // tank temp cell on READY/NOT_READY; per tick OK
 
 // ---- touch ----
 void touchEnable();

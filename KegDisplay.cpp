@@ -443,6 +443,9 @@ void display_showLowTempWarn(bool show) {
 // when nothing changed.
 void display_updateLowTempWarnOp(bool show) { KDS::operatingLowTemp(show); }
 
+// Live tank temp on the READY/NOT_READY screens (change-detected in KDS).
+void display_updateReadyTemp(int tempC, bool warn) { KDS::readinessTemp(tempC, warn); }
+
 void display_updateFooter() { KDS::footer(ipStr()); reapplyMqtt(); }
 
 void display_setMqttIndicators(bool connected, bool pubActive, bool subActive,

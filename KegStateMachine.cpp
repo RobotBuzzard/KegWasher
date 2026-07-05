@@ -660,6 +660,8 @@ static void state_idle() {
         prevWater = waterOk; prevAir = airOk; prevCo2 = co2Ok; prevEstop = estopOk;
         prevLevel = levelOk;
       }
+      // Live tank temp cell (change-detected in KDS — serial-silent per tick).
+      display_updateReadyTemp(hardware_getCausticTemp(), kwLowTempWarn);
       // No flashing banner here — the amber title + signal rows convey readiness
       // (banner is reserved for action/attention states).
 
@@ -703,6 +705,10 @@ static void state_idle() {
         tempWarnShown = kwLowTempWarn;
         display_showLowTempWarn(kwLowTempWarn);
       }
+      // Live tank temp cell — the operator can watch the tank come up to the
+      // wash floor right on the READY screen (dot flips amber→green with the
+      // LOW TEMP warn state).
+      display_updateReadyTemp(hardware_getCausticTemp(), kwLowTempWarn);
 
       if (!hardware_allSystemsGo()) {   // a system went offline
         drawn = false;

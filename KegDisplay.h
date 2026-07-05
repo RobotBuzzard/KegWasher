@@ -65,6 +65,8 @@ void display_flashBanner(const char* text, word bgColor, bool visible);
 void display_showLowTempWarn(bool show);
 // Same warning on the operating screen; call per tick (change-detected in KDS).
 void display_updateLowTempWarnOp(bool show);
+// Tank temp cell on READY/NOT_READY (dot green ≥ floor, amber = LOW TEMP warn).
+void display_updateReadyTemp(int tempC, bool warn);
 
 // ── Footer (IP) + MQTT pub/sub indicators ──────────────────────────────
 void display_updateFooter();

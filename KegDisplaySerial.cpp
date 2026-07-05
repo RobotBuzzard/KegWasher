@@ -292,6 +292,7 @@ namespace {
   int  g_lastOut  = -1;     // operating OUT dots (8 actuator bits)
   int  g_lastIn   = -1;     // operating IN dots (5 input bits)
   int  g_opWarn   = 0;      // LOW TEMP banner shown-state (operatingLowTemp)
+  int  g_rdyTemp  = -9999;  // readiness temp cell cache (temp*2 + warn bit)
   word g_stripCol = 0;      // current state colour of the edge strip
   int  g_stripTop = 0;      // top y of the remaining (filled) strip portion
 
@@ -426,9 +427,27 @@ void readiness(bool water, bool air, bool co2, bool estop, bool level,
   int y5 = 94 + 2 * 34;
   disc(LX + 6, y5 + 13, 6, level ? C_GRN : C_RED);
   lbl(LX + 19, y5, false, 2, 2, (!level) ? C_TXT : C_SUB, C_BG, "LEVEL");
+  g_rdyTemp = -9999;   // 6th cell (tank temp) redraws via readinessTemp()
   hline(LX, RX, 198, C_TRACK);
   footerIP(ip);
 }
+
+// Live tank temp in the readiness grid's free cell (row 3, col 1) — dot green
+// at/above the wash floor, amber while the LOW TEMP warning is active.
+// Change-detected: call every tick; draws only when the whole-°C value or the
+// warn state moves (readiness() resets the cache on every full draw).
+void readinessTemp(int tempC, bool warn) {
+  int sig = tempC * 2 + (warn ? 1 : 0);
+  if (sig == g_rdyTemp) return;
+  g_rdyTemp = sig;
+  int x = LX + 124, y = 94 + 2 * 34;
+  disc(x + 6, y + 13, 6, warn ? C_AMB : C_GRN);
+  char b[10];
+  snprintf(b, sizeof(b), "%dC", tempC);
+  rect(x + 19, y, x + 110, y + 18, C_BG);   // clear shrinking digits
+  lbl(x + 19, y, false, 2, 2, warn ? C_AMB : C_SUB, C_BG, b);
+}
+
 void notReady(bool water, bool air, bool co2, bool estop, const char* ip) {
   readiness(water, air, co2, estop, true, false, ip);
 }

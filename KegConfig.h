@@ -139,7 +139,7 @@ extern bool kwBenchMode;
 #define IDLE_SETTINGS          3   // on-screen settings editor (Phase 5 — not yet wired)
 
 // ---------- Firmware version (published on kegwasher/firmware) ----------
-#define KW_FIRMWARE_VERSION    "1.0.0"
+#define KW_FIRMWARE_VERSION    "1.0.1"
 
 // ---------- ADC ----------
 #define adcResolution          12
