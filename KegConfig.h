@@ -139,7 +139,7 @@ extern bool kwBenchMode;
 #define IDLE_SETTINGS          3   // on-screen settings editor (Phase 5 — not yet wired)
 
 // ---------- Firmware version (published on kegwasher/firmware) ----------
-#define KW_FIRMWARE_VERSION    "1.0.1"
+#define KW_FIRMWARE_VERSION    "1.0.2"
 
 // ---------- ADC ----------
 #define adcResolution          12
@@ -266,6 +266,10 @@ extern char netIp[16];
 extern char netMask[16];
 extern char netGw[16];
 bool config_parseIp(const char* s, uint8_t out[4]);
+
+// Raised by config_saveToSD(); the main loop republishes the retained MQTT
+// cfg/* mirror and clears it (keeps panel-editor saves in sync remotely).
+extern bool kwCfgMirrorDirty;
 
 // ---------- API ----------
 // NOTE: config_init() must be called AFTER display_init() so failure

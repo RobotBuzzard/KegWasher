@@ -444,7 +444,9 @@ void readinessTemp(int tempC, bool warn) {
   disc(x + 6, y + 13, 6, warn ? C_AMB : C_GRN);
   char b[10];
   snprintf(b, sizeof(b), "%dC", tempC);
-  rect(x + 19, y, x + 110, y + 18, C_BG);   // clear shrinking digits
+  // Full-height clear: 2x glyphs are ~24 px tall — an undersized rect left
+  // the bottoms of the previous digits behind ("crumbly" readings).
+  rect(x + 17, y - 2, RX, y + 26, C_BG);
   lbl(x + 19, y, false, 2, 2, warn ? C_AMB : C_SUB, C_BG, b);
 }
 

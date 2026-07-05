@@ -115,6 +115,13 @@ float cfgTouchCal[6]  = {1, 0, 0, 0, 1, 0};
 bool  cfgTouchCalValid = false;
 bool  cfgLoadedFromSD  = false;   // set by config_init(); drives the boot-screen SD line
 
+// Set by every config_saveToSD(); the main loop republishes the MQTT cfg/*
+// mirror and clears it. Closes the two-editor desync: the PANEL settings
+// editor saves without touching MQTT, which left the mirror (and anything
+// watching it) showing stale values — bitten 2026-07-05 when MIN TEMP was
+// changed on-panel while the mirror still said the web-set value.
+bool kwCfgMirrorDirty = false;
+
 static File settingsFile;
 
 // Accept timer values from 5s to 30min. The 5s floor allows the genuinely short
@@ -401,6 +408,8 @@ void config_saveToSD() {
       settingsFile.print("=");        settingsFile.println(cfgTouchCal[i], 6);
     }
   }
+
+  kwCfgMirrorDirty = true;   // main loop republishes the cfg/* mirror
 
   // NOTE: the MQTT broker block is intentionally NOT written here. This save does
   // SD.remove + full rewrite, so it INTENTIONALLY drops any MQTT block from the

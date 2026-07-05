@@ -1527,6 +1527,14 @@ void loop() {
   // to invoke every loop.
   mqtt_publishStatus();
 
+  // A config save from ANY editor (panel SETTINGS included — it has no MQTT
+  // path of its own) marks the cfg/* mirror dirty; republish so remote views
+  // can never go stale against the panel.
+  if (kwCfgMirrorDirty && kwMqttReady) {
+    kwCfgMirrorDirty = false;
+    mqtt_publishConfig();
+  }
+
   // Loop-health heartbeat (uptime, free RAM, longest loop). Internally
   // throttled to MQTT_HEARTBEAT_INTERVAL_MS (5 s).
   mqtt_publishHeartbeat();
